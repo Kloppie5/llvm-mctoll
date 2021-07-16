@@ -1,6 +1,6 @@
 // RUN: clang %S/../Inputs/factorial.c -o %t.so --target=%arm_triple -fuse-ld=lld -shared
 // RUN: llvm-mctoll -d %t.so
-// RUN: clang -o %t1 %s %t-dis.ll -mx32
+// RUN: clang -o %t1 %s %t-dis.ll
 // RUN: %t1 2>&1 | FileCheck %s
 // CHECK: Factorial of 10 3628800
 

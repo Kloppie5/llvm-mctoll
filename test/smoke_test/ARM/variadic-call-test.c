@@ -1,6 +1,6 @@
 // RUN: clang -o %t %s --target=%arm_triple -fuse-ld=lld
 // RUN: llvm-mctoll -d -I /usr/include/stdio.h %t
-// RUN: clang -o %t1 %t-dis.ll -mx32
+// RUN: clang -o %t1 %t-dis.ll
 // RUN: %t1 2>&1 | FileCheck %s
 // CHECK: Hello, World!
 // CHECK: Hello again, World!
