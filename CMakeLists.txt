@@ -53,10 +53,8 @@ add_subdirectory(test)
 
 add_llvm_tool(llvm-mctoll
   llvm-mctoll.cpp
-  COFFDump.cpp
   ExternalFunctions.cpp
   FunctionFilter.cpp
-  MachODump.cpp
   ModuleRaiser.cpp
   MachineFunctionRaiser.cpp
   MCInstOrData.cpp

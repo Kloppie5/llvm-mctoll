@@ -1491,11 +1491,6 @@ static void DumpObject(ObjectFile *o, const Archive *a = nullptr) {
   DisassembleObject(o, /* InlineRelocations */ false);
 }
 
-static void DumpObject(const COFFImportFile *I, const Archive *A) {
-  assert(false &&
-         "This function needs to be deleted and is not expected to be called.");
-}
-
 /// @brief Dump each object file in \a a;
 static void DumpArchive(const Archive *a) {
   Error Err = Error::success();
@@ -1508,8 +1503,6 @@ static void DumpArchive(const Archive *a) {
     }
     if (ObjectFile *o = dyn_cast<ObjectFile>(&*ChildOrErr.get()))
       DumpObject(o, a);
-    else if (COFFImportFile *I = dyn_cast<COFFImportFile>(&*ChildOrErr.get()))
-      DumpObject(I, a);
     else
       report_error(errorCodeToError(object_error::invalid_file_type),
                    a->getFileName());
@@ -1520,13 +1513,6 @@ static void DumpArchive(const Archive *a) {
 
 /// @brief Open file and figure out how to dump it.
 static void DumpInput(StringRef file) {
-  // If we are using the Mach-O specific object file parser, then let it parse
-  // the file and process the command line options.  So the -arch flags can
-  // be used to select specific slices, etc.
-  if (MachOOpt) {
-    parseInputMachO(file);
-    return;
-  }
 
   // Attempt to open the binary.
   Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(file);
