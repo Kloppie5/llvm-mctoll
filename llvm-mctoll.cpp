@@ -120,18 +120,6 @@ cl::opt<CodeGenFileType> OutputFormat(
                           "Emit nothing, for performance testing")),
     cl::cat(LLVMMCToLLCategory), cl::NotHidden);
 
-cl::opt<bool> llvm::Disassemble("raise", cl::desc("Raise machine instruction"),
-                                cl::cat(LLVMMCToLLCategory), cl::NotHidden);
-
-cl::alias Disassembled("d", cl::desc("Alias for -raise"),
-                       cl::aliasopt(Disassemble), cl::cat(LLVMMCToLLCategory),
-                       cl::NotHidden);
-
-static cl::opt<bool>
-    MachOOpt("macho", cl::desc("Use MachO specific object file parser"));
-static cl::alias MachOm("m", cl::desc("Alias for --macho"),
-                        cl::aliasopt(MachOOpt));
-
 static cl::opt<bool> NoVerify("disable-verify", cl::Hidden,
                               cl::desc("Do not verify input module"));
 
@@ -164,9 +152,6 @@ cl::alias static FilterSectionsj("j", cl::desc("Alias for --section"),
 cl::opt<bool>
     llvm::PrintImmHex("print-imm-hex",
                       cl::desc("Use hex format for immediate values"));
-
-cl::opt<bool> PrintFaultMaps("fault-map-section",
-                             cl::desc("Display contents of faultmap section"));
 
 cl::opt<unsigned long long>
     StartAddress("start-address", cl::desc("Disassemble beginning at address"),
@@ -1540,7 +1525,6 @@ int main(int argc, char **argv) {
   }
 
   // Disassemble contents of .text section.
-  Disassemble = true;
   FilterSections.addValue(".text");
 
   llvm::setCurrentDebugType(DEBUG_TYPE);

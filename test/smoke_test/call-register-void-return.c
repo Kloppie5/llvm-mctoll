@@ -1,11 +1,11 @@
 // REQUIRES: system-linux
 // RUN: clang -o %t-clang-noopt %s 
-// RUN: llvm-mctoll -d -I /usr/include/stdio.h %t-clang-noopt
+// RUN: llvm-mctoll -I /usr/include/stdio.h %t-clang-noopt
 // RUN: clang -o %t-clang-noopt-dis %t-clang-noopt-dis.ll
 // RUN: %t-clang-noopt-dis 2>&1 | FileCheck %s 
 
 // RUN: gcc -o %t-gcc-noopt %s 
-// RUN: llvm-mctoll -d -I /usr/include/stdio.h %t-gcc-noopt
+// RUN: llvm-mctoll -I /usr/include/stdio.h %t-gcc-noopt
 // RUN: clang -o %t-gcc-noopt-dis %t-gcc-noopt-dis.ll
 // RUN: %t-gcc-noopt-dis 2>&1 | FileCheck %s
 

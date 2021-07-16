@@ -3,7 +3,7 @@
 C functions to include or exclude from being raised may be specified using the `--filter-functions-file` option.
 
 ```
-llvm-mctoll -d --filter-functions-file=restrict.txt a.out
+llvm-mctoll --filter-functions-file=restrict.txt a.out
 ```
 
 This may be done in a plain text file with `exclude-functions` and `include-functions` sections. Inside each section list the file and function prototype seperated by a colon. Use [LLVM IR function types](https://llvm.org/docs/LangRef.html#function-type) when defining the return and argument types for a function prototype. Here is a simple example.
@@ -31,12 +31,12 @@ provide prototypes of externally linked functions (such as `printf`) using
 command-line options `-I` or `--include-files` For example,
 
 ```
-llvm-mctoll -d --include-files="/usr/include/stdio.h,/usr/include/stdlib.h,/usr/include/string.h" matmul
+llvm-mctoll --include-files="/usr/include/stdio.h,/usr/include/stdlib.h,/usr/include/string.h" matmul
 ````
 
 or
 ```
-llvm-mctoll -d -I /usr/include/stdio.h -I /usr/include/stdlib.h -I /usr/include/string.h matmul
+llvm-mctoll -I /usr/include/stdio.h -I /usr/include/stdlib.h -I /usr/include/string.h matmul
 ````
 
 
@@ -47,7 +47,7 @@ being raised, using standard C syntax, can be used. For example, if the binary
 binary (i.e., `hello`) can be raised using the comand
 
 ```
-llvm-mctoll -d -I  $HOME/myinclude.h hello
+llvm-mctoll -I  $HOME/myinclude.h hello
 ```
 
 where `$HOME/myinclude.h` contains
@@ -60,6 +60,6 @@ int puts(const char *s);
 
 If you build `llvm-mctoll` with assertions enabled you can print the LLVM IR after each pass of the raiser to assist with debugging.
 ```
-llvm-mctoll -d -debug a.out
+llvm-mctoll -debug a.out
 ```
 
