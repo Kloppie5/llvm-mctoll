@@ -828,7 +828,7 @@ ModuleRaiser *getModuleRaiser(const TargetMachine *tm) {
 
 } // namespace RaiserContext
 
-static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
+static void RaiseELFObjectFile(const ObjectFile *Obj) {
   if (StartAddress > StopAddress)
     error("Start address should be less than stop address");
 
@@ -1045,19 +1045,6 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
         DisAsm->setSymbolizer(std::move(Symbolizer));
       }
     }
-
-    // Make a list of all the relocations for this section.
-    std::vector<RelocationRef> Rels;
-    if (InlineRelocs) {
-      for (const SectionRef &RelocSec : SectionRelocMap[Section]) {
-        for (const RelocationRef &Reloc : RelocSec.relocations()) {
-          Rels.push_back(Reloc);
-        }
-      }
-    }
-
-    // Sort relocations by address.
-    std::sort(Rels.begin(), Rels.end(), RelocAddressLess);
 
     // If the section has no symbol at the start, just insert a dummy one.
     StringRef name;
@@ -1478,78 +1465,35 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
   PM.run(module);
 }
 
-static void DumpObject(ObjectFile *o, const Archive *a = nullptr) {
-  // Avoid other output when using a raw option.
-  LLVM_DEBUG(dbgs() << '\n');
-  if (a)
-    LLVM_DEBUG(dbgs() << a->getFileName() << "(" << o->getFileName() << ")");
-  else
-    LLVM_DEBUG(dbgs() << "; " << o->getFileName());
-  LLVM_DEBUG(dbgs() << ":\tfile format " << o->getFileFormatName() << "\n\n");
-
-  assert(Disassemble && "Disassemble not set!");
-  DisassembleObject(o, /* InlineRelocations */ false);
-}
-
-/// @brief Dump each object file in \a a;
-static void DumpArchive(const Archive *a) {
-  Error Err = Error::success();
-  for (auto &C : a->children(Err)) {
-    Expected<std::unique_ptr<Binary>> ChildOrErr = C.getAsBinary();
-    if (!ChildOrErr) {
-      if (auto E = isNotObjectErrorInvalidFileType(ChildOrErr.takeError()))
-        report_error(std::move(E), a->getFileName(), C);
-      continue;
-    }
-    if (ObjectFile *o = dyn_cast<ObjectFile>(&*ChildOrErr.get()))
-      DumpObject(o, a);
-    else
-      report_error(errorCodeToError(object_error::invalid_file_type),
-                   a->getFileName());
+static void RaiseInput(StringRef Filename) {
+  ErrorOr<std::unique_ptr<MemoryBuffer>> BufferPtrOrError = MemoryBuffer::getFile(Filename, false, false, false);
+  if (std::error_code EC = BufferPtrOrError.getError()) {
+    WithColor(errs(), HighlightColor::Error) << "Failed to create MemoryBuffer for file; " << EC.message();
+    exit(1);
   }
-  if (Err)
-    report_error(std::move(Err), a->getFileName());
-}
+  std::unique_ptr<MemoryBuffer> &BufferPtr = BufferPtrOrError.get();
 
-/// @brief Open file and figure out how to dump it.
-static void DumpInput(StringRef file) {
-
-  // Attempt to open the binary.
-  Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(file);
-  if (!BinaryOrErr)
-    report_error(BinaryOrErr.takeError(), file);
-  Binary &Binary = *BinaryOrErr.get().getBinary();
-
-  if (Archive *a = dyn_cast<Archive>(&Binary))
-    DumpArchive(a);
-  else if (ObjectFile *o = dyn_cast<ObjectFile>(&Binary)) {
-    if (o->getArch() == Triple::x86_64) {
-      const ELF64LEObjectFile *Elf64LEObjFile = dyn_cast<ELF64LEObjectFile>(o);
-      if (Elf64LEObjFile == nullptr) {
-        errs() << "\n\n*** " << file << " : Not 64-bit ELF binary\n"
-               << "*** Currently only 64-bit ELF binary raising supported.\n"
-               << "*** Please consider contributing support to raise other "
-                  "binary formats. Thanks!\n";
+  file_magic Type = identify_magic(BufferPtr->getBuffer());
+  switch (Type) {
+    case file_magic::elf:
+    case file_magic::elf_relocatable:
+    case file_magic::elf_executable:
+    case file_magic::elf_shared_object:
+    case file_magic::elf_core:
+    {
+      Expected<std::unique_ptr<ObjectFile>> FilePtrExpected = ObjectFile::createELFObjectFile(BufferPtr->getMemBufferRef());
+      if(Error E = FilePtrExpected.takeError()) {
+        WithColor(errs(), HighlightColor::Error) << "Encountered an error initializing ELFObjectFile; " << E;
         exit(1);
       }
-      // Raise x86_64 relocatable binaries (.o files) is not supported.
-      auto EType = Elf64LEObjFile->getELFFile().getHeader().e_type;
-      if ((EType == ELF::ET_DYN) || (EType == ELF::ET_EXEC))
-        DumpObject(o);
-      else {
-        errs() << "Raising x64 relocatable (.o) x64 binaries not supported\n";
-        exit(1);
-      }
-    } else if (o->getArch() == Triple::arm)
-      DumpObject(o);
-    else {
-      errs() << "\n\n*** No support to raise Binaries other than x64 and ARM\n"
-             << "*** Please consider contributing support to raise other "
-                "ISAs. Thanks!\n";
-      exit(1);
+      RaiseELFObjectFile(FilePtrExpected->get());
+      break;
     }
-  } else
-    report_error(errorCodeToError(object_error::invalid_file_type), file);
+    default:
+      WithColor(errs(), HighlightColor::Error)
+        << "Encountered unsupported file type " << Type << "\n";
+      exit(1);
+  }
 }
 
 int main(int argc, char **argv) {
@@ -1600,7 +1544,7 @@ int main(int argc, char **argv) {
   FilterSections.addValue(".text");
 
   llvm::setCurrentDebugType(DEBUG_TYPE);
-  std::for_each(InputFilenames.begin(), InputFilenames.end(), DumpInput);
+  std::for_each(InputFilenames.begin(), InputFilenames.end(), RaiseInput);
 
   return EXIT_SUCCESS;
 }
