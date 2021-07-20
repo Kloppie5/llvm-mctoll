@@ -18,7 +18,7 @@
 #include "SelectionCommon.h"
 #include "llvm/ADT/DenseMap.h"
 
-/// This is a extention of SelectionDAG. It contains additional information
+/// This is an extention of SelectionDAG. It contains additional information
 /// of DAG which is used by llvm-mctoll.
 class DAGRaisingInfo {
 public:
@@ -29,11 +29,11 @@ public:
   SelectionDAG &getCurDAG() { return DAG; }
   /// Gets the related IR Value of given SDNode.
   Value *getRealValue(SDNode *Node);
-  /// Set the related IR Value to SDNode.
+  /// Sets the related IR Value to SDNode.
   void setRealValue(SDNode *N, Value *V);
 
   SelectionDAG &DAG;
-  /// The map for each SDNode with its additional preperty.
+  /// The map for each SDNode with its additional property.
   DenseMap<SDNode *, NodePropertyInfo *> NPMap;
 };
 
