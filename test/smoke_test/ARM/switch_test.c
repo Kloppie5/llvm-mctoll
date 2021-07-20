@@ -1,6 +1,3 @@
-// This test is disabled till work resumes on support for
-// raising ARM binaries to catch-up with that for x64 binaries.
-// UNSUPPORTED: -linux-
 // RUN: clang %S/../Inputs/switch_func.c -o %t.so --target=%arm_triple -fuse-ld=lld -shared -fPIC
 // RUN: llvm-mctoll %t.so
 // RUN: clang -o %t1 %s %t-dis.ll
