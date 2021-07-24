@@ -1,4 +1,4 @@
-# RUN: clang -o %t %s --target=%arm_triple
+# RUN: clang -O0 -o %t %s --target=%arm_triple -march=armv8-a
 # RUN: llvm-mctoll %t
 # RUN: clang -o %t-dis %t-dis.ll
 # RUN: %t-dis 2>&1
@@ -10,9 +10,8 @@
   .global main
   .type main, %function
   main:
-    mov R7, #1   ;@ exit,           01 70 a0 e3
-      mov R0, #0 ;@ error_code = 0, 00 00 a0 e3
-    svc 0        ;@ syscall,        00 00 00 ef
+    isb        ;@ isb,             DF3 1111 03D5
 
+    mov R0, #0 ;@ return code = 0, 00 00 a0 e3
     bx lr
   .size main, .-main

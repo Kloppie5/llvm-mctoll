@@ -1,4 +1,4 @@
-# RUN: clang -o %t %s --target=%arm_triple -mfloat-abi=soft
+# RUN: clang -o %t %s --target=%arm_triple
 # RUN: llvm-mctoll %t
 # RUN: clang -o %t-dis %t-dis.ll
 # RUN: %t-dis 2>&1 | FileCheck %s
@@ -17,10 +17,7 @@
       mov R2, #13        ;@ count = 13,         0d 20 a0 e3
     svc 0                ;@ syscall,            00 00 00 ef
 
-    mov R7, #1           ;@ exit,               01 70 a0 e3
-      mov R0, #0         ;@ error_code = 0,     00 00 a0 e3
-    svc 0                ;@ syscall,            00 00 00 ef
-
+    mov R0, #0           ;@ return code = 0,    00 00 a0 e3
     bx lr
   .size main, .-main
 
