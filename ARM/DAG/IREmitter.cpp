@@ -656,7 +656,7 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
   BasicBlock *CurBB = getCurBlock();
   switch (Opc) {
   default:
-    // assert(false && "Unknown SDNode Type!");
+    assert(false && "Unknown SDNode Type!");
     break;
   case EXT_ARMISD::BX_RET: {
     Value *Ret = getIRValue(Node->getOperand(0));
