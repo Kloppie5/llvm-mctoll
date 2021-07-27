@@ -16,6 +16,7 @@
 #include "SelectionCommon.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
+#include "llvm/CodeGen/TargetInstrInfo.h"
 
 using namespace llvm;
 
@@ -649,16 +650,35 @@ void IREmitter::emitSDNode(SDNode *Node) {
 }
 
 void IREmitter::emitSpecialNode(SDNode *Node) {
+  if (!Node->isMachineOpcode()) {
+    unsigned Opc = Node->getOpcode();
+    WithColor(errs(), HighlightColor::Warning) << "IREmitter::emitSpecialNode should not be called for non MachineOpcode " << Opc << " (" << format("%04x", Opc) << "); "
+                                               << Node->getOperationName() << "\n";
+    // return;
+  }
+  
   unsigned Opc = Node->getOpcode();
   Module &M = *MR->getModule();
 
   BasicBlock *BB = getBlock();
   BasicBlock *CurBB = getCurBlock();
   switch (Opc) {
-  default:
-    assert(false && "Unknown SDNode Type!");
+  default: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    if(Node->isMachineOpcode()){
+      unsigned MOpc = Node->getMachineOpcode();
+      WithColor(errs(), HighlightColor::Error) << "Encountered unsupported opcode " << Opc << "/" << MOpc << " (" << format("%04x", MOpc) << "); "
+                                              << (MOpc < TII->getNumOpcodes() ? TII->getName(MOpc) : "UNKNOWN") << "\n";
+    }
+    //assert(false && "Unsupported opcode");
+    //exit(1);
     break;
+  }
   case EXT_ARMISD::BX_RET: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
+                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::BX_RET\n";
+    assert(false && "Invalid case");
     Value *Ret = getIRValue(Node->getOperand(0));
     if (!ConstantSDNode::classof(Node->getOperand(0).getNode()))
       IRB.CreateRet(Ret);
@@ -917,6 +937,10 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::BIC: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
+                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::BIC\n";
+    assert(false && "Invalid case");
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
     Type *tp = getDefaultType();
@@ -998,6 +1022,10 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
     FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
   } break;
   case EXT_ARMISD::MLA: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
+                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::MLA\n";
+    assert(false && "Invalid case");
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
     Value *S2 = getIRValue(Node->getOperand(2));
@@ -1009,6 +1037,10 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
     FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
   } break;
   case EXT_ARMISD::TST: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
+                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::TST\n";
+    assert(false && "Invalid case");
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
 
@@ -1035,6 +1067,10 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::SBC: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
+                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::SBC\n";
+    assert(false && "Invalid case");
     Value *S1 = getIRValue(Node->getOperand(0));
     Value *S2 = getIRValue(Node->getOperand(1));
     Type *Ty = getDefaultType();
@@ -1084,6 +1120,10 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::TEQ: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
+                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::TEQ\n";
+    assert(false && "Invalid case");
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
 
@@ -1109,6 +1149,10 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::MSR: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
+                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::MSR\n";
+    assert(false && "Invalid case");
     Value *Cond = getIRValue(Node->getOperand(0));
     // 1 1 1 1
     // N set 1 0 0 0   8
@@ -1141,6 +1185,10 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::MRS: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
+                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::MRS\n";
+    assert(false && "Invalid case");
     Value *Rn = getIRValue(Node->getOperand(0));
     // Reserved || N_Flag << 31 || Z_Flag << 30 || C_Flag << 29 || V_Flag << 28
     PointerType *PtrTy = PointerType::getInt32PtrTy(*CTX);
@@ -1236,6 +1284,10 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::RSC: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
+                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::RSC\n";
+    assert(false && "Invalid case");
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
 
@@ -1248,6 +1300,10 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
     FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
   } break;
   case EXT_ARMISD::UXTB: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
+                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::UXTB\n";
+    assert(false && "Invalid case");
     Value *S1 = getIRValue(Node->getOperand(1));
     Value *Rotation = getIRValue(Node->getOperand(2));
     Value *ror_val = ConstantInt::get(getDefaultType(), 8, true);
@@ -1260,6 +1316,10 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
     DAGInfo->setRealValue(Node, Inst_and);
   } break;
   case EXT_ARMISD::RSB: {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
+                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::RSB\n";
+    assert(false && "Invalid case");
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
 
