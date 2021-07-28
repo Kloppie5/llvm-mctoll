@@ -1,4 +1,4 @@
-# RUN: clang -o %t %s --target=%arm_triple
+# RUN: clang -O0 -o %t %s --target=arm-linux-gnueabi -march=armv8-a
 # RUN: llvm-mctoll %t
 # RUN: clang -o %t-dis %t-dis.ll
 # RUN: %t-dis 2>&1 | FileCheck %s
