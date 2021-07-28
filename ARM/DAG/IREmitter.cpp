@@ -47,7 +47,7 @@ static int raiseISDOpcodeToInstruction(unsigned Opcode) {
     return Sub;
   case ISD::FSUB:
     return FSub;
-  case ISD::MUL:
+  case ISD::MUL: // 57
     return Mul;
   case ISD::FMUL:
     return FMul;
@@ -65,11 +65,11 @@ static int raiseISDOpcodeToInstruction(unsigned Opcode) {
     return FRem;
   case ISD::SHL:
     return Shl;
-  case ISD::SRL:
+  case ISD::SRL: // 171
     return LShr;
-  case ISD::SRA:
+  case ISD::SRA: // 170
     return AShr;
-  case ISD::AND:
+  case ISD::AND: // 165
     return And;
   case ISD::OR:
     return Or;
@@ -133,97 +133,97 @@ static const std::vector<StringRef> CPSR({"N_Flag", "Z_Flag", "C_Flag",
 void IREmitter::emitCondCode(unsigned CondValue, BasicBlock *BB,
                              BasicBlock *IfBB, BasicBlock *ElseBB) {
   switch (CondValue) {
-  default:
-    break;
-  case ARMCC::EQ: { // EQ  Z set
-    Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
-    Value *InstEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getTrue());
-    IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
-  } break;
-  case ARMCC::NE: { // NE Z clear
-    Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
-    Value *InstEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getFalse());
-    IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
-  } break;
-  case ARMCC::HS: { // CS  C set
-    Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-    Value *InstEQ = IRB.CreateICmpEQ(C_Flag, IRB.getTrue());
-    IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
-  } break;
-  case ARMCC::LO: { // CC  C clear
-    Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-    Value *InstEQ = IRB.CreateICmpEQ(C_Flag, IRB.getFalse());
-    IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
-  } break;
-  case ARMCC::MI: { // MI  N set
-    Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
-    Value *InstEQ = IRB.CreateICmpEQ(N_Flag, IRB.getTrue());
-    IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
-  } break;
-  case ARMCC::PL: { // PL  N clear
-    Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
-    Value *InstEQ = IRB.CreateICmpEQ(N_Flag, IRB.getFalse());
-    IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
-  } break;
-  case ARMCC::VS: { // VS  V set
-    Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
-    Value *InstEQ = IRB.CreateICmpEQ(V_Flag, IRB.getTrue());
-    IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
-  } break;
-  case ARMCC::VC: { // VC  V clear
-    Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
-    Value *InstEQ = IRB.CreateICmpEQ(V_Flag, IRB.getFalse());
-    IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
-  } break;
-  case ARMCC::HI: { // HI  C set & Z clear
-    Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-    Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
-    Value *InstCEQ = IRB.CreateICmpEQ(C_Flag, IRB.getTrue());
-    Value *InstZEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getFalse());
-    Value *CondPass = IRB.CreateICmpEQ(InstCEQ, InstZEQ);
-    IRB.CreateCondBr(CondPass, IfBB, ElseBB);
-  } break;
-  case ARMCC::LS: { // LS  C clear or Z set
-    Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-    Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
-    Value *InstCEQ = IRB.CreateICmpEQ(C_Flag, IRB.getFalse());
-    Value *InstZEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getTrue());
-    Value *CondPass = IRB.CreateXor(InstCEQ, InstZEQ);
-    IRB.CreateCondBr(CondPass, IfBB, ElseBB);
-  } break;
-  case ARMCC::GE: { // GE  N = V
-    Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
-    Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
-    Value *InstEQ = IRB.CreateICmpEQ(N_Flag, V_Flag);
-    IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
-  } break;
-  case ARMCC::LT: { // LT  N != V
-    Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
-    Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
-    Value *InstNE = IRB.CreateICmpNE(N_Flag, V_Flag);
-    IRB.CreateCondBr(InstNE, IfBB, ElseBB);
-  } break;
-  case ARMCC::GT: { // GT  Z clear & N = V
-    Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
-    Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
-    Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
-    Value *InstZEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getFalse());
-    Value *InstNZEQ = IRB.CreateICmpEQ(N_Flag, V_Flag);
-    Value *CondPass = IRB.CreateICmpEQ(InstZEQ, InstNZEQ);
-    IRB.CreateCondBr(CondPass, IfBB, ElseBB);
-  } break;
-  case ARMCC::LE: { // LE  Z set or N != V
-    Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
-    Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
-    Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
-    Value *InstZEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getTrue());
-    Value *InstNZNE = IRB.CreateICmpNE(N_Flag, V_Flag);
-    Value *CondPass = IRB.CreateXor(InstZEQ, InstNZNE);
-    IRB.CreateCondBr(CondPass, IfBB, ElseBB);
-  } break;
-  case ARMCC::AL: { // AL
-    assert(false && "Emit conditional code [ARMCC::AL]. Should not get here!");
-  } break;
+    default:
+      break;
+    case ARMCC::EQ: { // EQ  Z set
+      Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
+      Value *InstEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getTrue());
+      IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
+    } break;
+    case ARMCC::NE: { // NE Z clear
+      Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
+      Value *InstEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getFalse());
+      IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
+    } break;
+    case ARMCC::HS: { // CS  C set
+      Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+      Value *InstEQ = IRB.CreateICmpEQ(C_Flag, IRB.getTrue());
+      IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
+    } break;
+    case ARMCC::LO: { // CC  C clear
+      Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+      Value *InstEQ = IRB.CreateICmpEQ(C_Flag, IRB.getFalse());
+      IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
+    } break;
+    case ARMCC::MI: { // MI  N set
+      Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
+      Value *InstEQ = IRB.CreateICmpEQ(N_Flag, IRB.getTrue());
+      IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
+    } break;
+    case ARMCC::PL: { // PL  N clear
+      Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
+      Value *InstEQ = IRB.CreateICmpEQ(N_Flag, IRB.getFalse());
+      IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
+    } break;
+    case ARMCC::VS: { // VS  V set
+      Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
+      Value *InstEQ = IRB.CreateICmpEQ(V_Flag, IRB.getTrue());
+      IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
+    } break;
+    case ARMCC::VC: { // VC  V clear
+      Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
+      Value *InstEQ = IRB.CreateICmpEQ(V_Flag, IRB.getFalse());
+      IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
+    } break;
+    case ARMCC::HI: { // HI  C set & Z clear
+      Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+      Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
+      Value *InstCEQ = IRB.CreateICmpEQ(C_Flag, IRB.getTrue());
+      Value *InstZEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getFalse());
+      Value *CondPass = IRB.CreateICmpEQ(InstCEQ, InstZEQ);
+      IRB.CreateCondBr(CondPass, IfBB, ElseBB);
+    } break;
+    case ARMCC::LS: { // LS  C clear or Z set
+      Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+      Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
+      Value *InstCEQ = IRB.CreateICmpEQ(C_Flag, IRB.getFalse());
+      Value *InstZEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getTrue());
+      Value *CondPass = IRB.CreateXor(InstCEQ, InstZEQ);
+      IRB.CreateCondBr(CondPass, IfBB, ElseBB);
+    } break;
+    case ARMCC::GE: { // GE  N = V
+      Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
+      Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
+      Value *InstEQ = IRB.CreateICmpEQ(N_Flag, V_Flag);
+      IRB.CreateCondBr(InstEQ, IfBB, ElseBB);
+    } break;
+    case ARMCC::LT: { // LT  N != V
+      Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
+      Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
+      Value *InstNE = IRB.CreateICmpNE(N_Flag, V_Flag);
+      IRB.CreateCondBr(InstNE, IfBB, ElseBB);
+    } break;
+    case ARMCC::GT: { // GT  Z clear & N = V
+      Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
+      Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
+      Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
+      Value *InstZEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getFalse());
+      Value *InstNZEQ = IRB.CreateICmpEQ(N_Flag, V_Flag);
+      Value *CondPass = IRB.CreateICmpEQ(InstZEQ, InstNZEQ);
+      IRB.CreateCondBr(CondPass, IfBB, ElseBB);
+    } break;
+    case ARMCC::LE: { // LE  Z set or N != V
+      Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
+      Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
+      Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
+      Value *InstZEQ = IRB.CreateICmpEQ(Z_Flag, IRB.getTrue());
+      Value *InstNZNE = IRB.CreateICmpNE(N_Flag, V_Flag);
+      Value *CondPass = IRB.CreateXor(InstZEQ, InstNZNE);
+      IRB.CreateCondBr(CondPass, IfBB, ElseBB);
+    } break;
+    case ARMCC::AL: { // AL
+      assert(false && "Emit conditional code [ARMCC::AL]. Should not get here!");
+    } break;
   }
 }
 
@@ -351,76 +351,76 @@ void IREmitter::emitBinaryCPSR(Value *Inst, BasicBlock *BB, unsigned Opcode,
   Value *S1 = getIRValue(Node->getOperand(1));
 
   switch (Opcode) {
-  case Instruction::Add: {
-    emitCPSR(S0, S1, BB, 0);
-  } break;
-  case Instruction::Sub: {
-    Value *InstNot = nullptr;
-    if (ConstantSDNode::classof(Node->getOperand(1).getNode())) {
-      Value *InstTp = IRB.CreateSub(S0, S0);
-      Value *InstAdd = IRB.CreateAdd(InstTp, S1);
-      InstNot = IRB.CreateNot(InstAdd);
-    } else {
-      InstNot = IRB.CreateNot(S1, "");
-    }
-    emitCPSR(S0, InstNot, BB, 1);
-  } break;
-  case Instruction::And: {
-    emitSpecialCPSR(Inst, BB, 0);
-  } break;
-  case Instruction::Mul: {
-    emitSpecialCPSR(Inst, BB, 0);
-  } break;
-  case Instruction::Or: {
-    emitSpecialCPSR(Inst, BB, 0);
-    /* How to deal with C Flag? */
-  } break;
-  case Instruction::Xor: {
-    emitSpecialCPSR(Inst, BB, 0);
-    /* How to deal with C Flag? */
-  } break;
-  case Instruction::Shl: {
-    emitSpecialCPSR(Inst, BB, 0);
+    case Instruction::Add: {
+      emitCPSR(S0, S1, BB, 0);
+    } break;
+    case Instruction::Sub: {
+      Value *InstNot = nullptr;
+      if (ConstantSDNode::classof(Node->getOperand(1).getNode())) {
+        Value *InstTp = IRB.CreateSub(S0, S0);
+        Value *InstAdd = IRB.CreateAdd(InstTp, S1);
+        InstNot = IRB.CreateNot(InstAdd);
+      } else {
+        InstNot = IRB.CreateNot(S1, "");
+      }
+      emitCPSR(S0, InstNot, BB, 1);
+    } break;
+    case Instruction::And: {
+      emitSpecialCPSR(Inst, BB, 0);
+    } break;
+    case Instruction::Mul: {
+      emitSpecialCPSR(Inst, BB, 0);
+    } break;
+    case Instruction::Or: {
+      emitSpecialCPSR(Inst, BB, 0);
+      /* How to deal with C Flag? */
+    } break;
+    case Instruction::Xor: {
+      emitSpecialCPSR(Inst, BB, 0);
+      /* How to deal with C Flag? */
+    } break;
+    case Instruction::Shl: {
+      emitSpecialCPSR(Inst, BB, 0);
 
-    // Update C flag.
-    // extended_x = x : Zeros(shift), c flag = extend_x[N];
-    // c flag = (s0 lsl (s1 -1))[31]
-    Type *Ty = IRB.getInt1Ty();
-    Value *Val = cast<Value>(ConstantInt::get(getDefaultType(), 1, true));
-    Value *C_Flag = IRB.CreateSub(S1, Val);
-    C_Flag = IRB.CreateShl(S0, C_Flag);
-    C_Flag = IRB.CreateLShr(C_Flag, IRB.getInt32(31));
-    Value *CTrunc = IRB.CreateTrunc(C_Flag, Ty);
+      // Update C flag.
+      // extended_x = x : Zeros(shift), c flag = extend_x[N];
+      // c flag = (s0 lsl (s1 -1))[31]
+      Type *Ty = IRB.getInt1Ty();
+      Value *Val = cast<Value>(ConstantInt::get(getDefaultType(), 1, true));
+      Value *C_Flag = IRB.CreateSub(S1, Val);
+      C_Flag = IRB.CreateShl(S0, C_Flag);
+      C_Flag = IRB.CreateLShr(C_Flag, IRB.getInt32(31));
+      Value *CTrunc = IRB.CreateTrunc(C_Flag, Ty);
 
-    IRB.CreateStore(CTrunc, FuncInfo->AllocaMap[2]);
-  } break;
-  case Instruction::LShr: {
-    emitSpecialCPSR(Inst, BB, 0);
+      IRB.CreateStore(CTrunc, FuncInfo->AllocaMap[2]);
+    } break;
+    case Instruction::LShr: {
+      emitSpecialCPSR(Inst, BB, 0);
 
-    // Update C flag.
-    // c flag = (s0 lsr (s1 -1))[0]
-    Type *Ty = IRB.getInt1Ty();
-    Value *Val = cast<Value>(ConstantInt::get(getDefaultType(), 1, true));
-    Value *C_Flag = IRB.CreateSub(S1, Val);
-    C_Flag = IRB.CreateLShr(S0, C_Flag);
-    C_Flag = IRB.CreateAnd(C_Flag, Val);
-    Value *CTrunc = IRB.CreateTrunc(C_Flag, Ty);
+      // Update C flag.
+      // c flag = (s0 lsr (s1 -1))[0]
+      Type *Ty = IRB.getInt1Ty();
+      Value *Val = cast<Value>(ConstantInt::get(getDefaultType(), 1, true));
+      Value *C_Flag = IRB.CreateSub(S1, Val);
+      C_Flag = IRB.CreateLShr(S0, C_Flag);
+      C_Flag = IRB.CreateAnd(C_Flag, Val);
+      Value *CTrunc = IRB.CreateTrunc(C_Flag, Ty);
 
-    IRB.CreateStore(CTrunc, FuncInfo->AllocaMap[2]);
-  } break;
-  case Instruction::AShr: {
-    emitSpecialCPSR(Inst, BB, 0);
+      IRB.CreateStore(CTrunc, FuncInfo->AllocaMap[2]);
+    } break;
+    case Instruction::AShr: {
+      emitSpecialCPSR(Inst, BB, 0);
 
-    // Update C flag.
-    // c flag = (s0 asr (s1 -1))[0]
-    Type *Ty = IRB.getInt1Ty();
-    Value *Val = ConstantInt::get(getDefaultType(), 1, true);
-    Value *C_Flag = IRB.CreateSub(S1, Val);
-    C_Flag = IRB.CreateAShr(S0, C_Flag);
-    C_Flag = IRB.CreateAnd(C_Flag, Val);
-    Value *CTrunc = IRB.CreateTrunc(C_Flag, Ty);
-    IRB.CreateStore(CTrunc, FuncInfo->AllocaMap[2]);
-  } break;
+      // Update C flag.
+      // c flag = (s0 asr (s1 -1))[0]
+      Type *Ty = IRB.getInt1Ty();
+      Value *Val = ConstantInt::get(getDefaultType(), 1, true);
+      Value *C_Flag = IRB.CreateSub(S1, Val);
+      C_Flag = IRB.CreateAShr(S0, C_Flag);
+      C_Flag = IRB.CreateAnd(C_Flag, Val);
+      Value *CTrunc = IRB.CreateTrunc(C_Flag, Ty);
+      IRB.CreateStore(CTrunc, FuncInfo->AllocaMap[2]);
+    } break;
   }
 }
 
@@ -489,406 +489,137 @@ static uint64_t getMCInstIndex(const MachineInstr &MI) {
   return ArbPrecInt.getSExtValue();
 }
 
-/// Generate SDNode code for a target-independent node.
-/// Emit SDNode to Instruction and add to BasicBlock.
-/// 1. Map ISD opcode to Instruction opcode.
-/// 2. Abstract node to instruction.
-void IREmitter::emitSDNode(SDNode *Node) {
-  unsigned Opc = Node->getOpcode();
-  BasicBlock *BB = getBlock();
-
-  IRB.SetCurrentDebugLocation(Node->getDebugLoc());
-
-  // Mapping ISD opcode to Instruction opcode.
-  int InstOpc = raiseISDOpcodeToInstruction(Opc);
-
-  enum InstructionOpcodes {
-#define HANDLE_INST(NUM, OPCODE, CLASS) OPCODE = NUM,
-#define LAST_OTHER_INST(NUM) InstructionOpcodesCount = NUM
-#include "llvm/IR/Instruction.def"
-  };
-
-  switch (InstOpc) {
-  default:
-    emitSpecialNode(Node);
-    break;
-  case Add:
-  case Sub:
-  case Mul:
-  case And:
-  case Or:
-  case Xor:
-  case Shl:
-  case AShr:
-  case LShr:
-    emitBinary(Node);
-    break;
-  case Load: {
-    Value *S = getIRValue(Node->getOperand(0));
-    Value *Ptr = nullptr;
-    if (S->getType()->isPointerTy())
-      Ptr = S;
-    else
-      Ptr = IRB.CreateIntToPtr(
-          S, Node->getValueType(0).getTypeForEVT(*CTX)->getPointerTo());
-
-    Value *Inst = nullptr;
-    if (DAGInfo->NPMap[Node]->HasCPSR) {
-      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
-      // Create new BB for EQ instructin exectute.
-      BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
-      // Create new BB to update the DAG BB.
-      BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
-
-      // Emit the condition code.
-      emitCondCode(CondValue, BB, IfBB, ElseBB);
-      IRB.SetInsertPoint(IfBB);
-      if (GlobalVariable::classof(Ptr))
-        Inst = IRB.CreatePtrToInt(Ptr, getDefaultType());
-      else
-        Inst = CallCreateAlignedLoad(
-            Ptr, MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
-
-      PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
-                                          dyn_cast<Instruction>(Inst));
-      DAGInfo->setRealValue(Node, Phi);
-      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
-
-      IRB.CreateBr(ElseBB);
-      IRB.SetInsertPoint(ElseBB);
-    } else {
-      if (GlobalVariable::classof(Ptr)) {
-        // Inst = IRB.CreatePtrToInt(Ptr, getDefaultType());
-        Inst = new PtrToIntInst(Ptr, getDefaultType(), "", BB);
-      } else {
-        Inst = CallCreateAlignedLoad(
-            Ptr, MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
-
-        // TODO:
-        // Temporary method for this.
-        if (Inst->getType() == Type::getInt64Ty(*CTX))
-          Inst = IRB.CreateTrunc(Inst, getDefaultType());
-        else if (Inst->getType() != getDefaultType())
-          Inst = IRB.CreateSExt(Inst, getDefaultType());
-      }
-
-      DAGInfo->setRealValue(Node, Inst);
-      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
-    }
-  } break;
-  case Store: {
-    Value *Val = getIRValue(Node->getOperand(0));
-    Value *S = getIRValue(Node->getOperand(1));
-    Value *Ptr = nullptr;
-    Type *Nty = Node->getValueType(0).getTypeForEVT(*CTX);
-
-    if (Val->getType() != Nty) {
-      Val = IRB.CreateTrunc(Val, Nty);
-    }
-
-    if (S->getType()->isPointerTy()) {
-      if (S->getType() != Nty->getPointerTo()) {
-        Ptr = IRB.CreateBitCast(S, Nty->getPointerTo());
-      } else {
-        Ptr = S;
-      }
-    } else {
-      Ptr = IRB.CreateIntToPtr(S, Nty->getPointerTo());
-    }
-
-    if (DAGInfo->NPMap[Node]->HasCPSR) {
-      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
-      // Create new BB for EQ instructin exectute.
-      BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
-      // Create new BB to update the DAG BB.
-      BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
-
-      // Emit the condition code.
-      emitCondCode(CondValue, BB, IfBB, ElseBB);
-      IRB.SetInsertPoint(IfBB);
-
-      IRB.CreateAlignedStore(Val, Ptr,
-                             MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
-
-      IRB.CreateBr(ElseBB);
-      IRB.SetInsertPoint(ElseBB);
-    } else {
-      IRB.CreateAlignedStore(Val, Ptr,
-                             MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
-    }
-  } break;
-  case ICmp: {
-    Value *LHS = getIRValue(Node->getOperand(0));
-    Value *RHS = getIRValue(Node->getOperand(1));
-
-    Value *InstNot = nullptr;
-    if (ConstantSDNode::classof(Node->getOperand(1).getNode())) {
-      Value *InstTp = IRB.CreateSub(LHS, LHS);
-      Value *InstAdd = IRB.CreateAdd(InstTp, RHS);
-      InstNot = IRB.CreateNot(InstAdd);
-    } else {
-      InstNot = IRB.CreateNot(RHS);
-    }
-    emitCPSR(LHS, InstNot, BB, 1);
-  } break;
-  case FCmp: {
-    Value *LHS = getIRValue(Node->getOperand(0));
-    Value *RHS = getIRValue(Node->getOperand(1));
-
-    Value *InstNot = nullptr;
-    if (ConstantSDNode::classof(Node->getOperand(1).getNode())) {
-      Value *InstTp = IRB.CreateSub(LHS, LHS);
-      Value *InstAdd = IRB.CreateAdd(InstTp, RHS);
-      InstNot = IRB.CreateNot(InstAdd);
-    } else {
-      InstNot = IRB.CreateNot(RHS);
-    }
-
-    emitCPSR(LHS, InstNot, BB, 1);
-  } break;
+void IREmitter::emitMachineOpcodeNode ( SDNode *Node ) {
+  if ( Node->isTargetOpcode() ) {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    ARMISD::NodeType ARMISDOpcode = (ARMISD::NodeType) Node->getOpcode();
+    WithColor(errs(), HighlightColor::Error) << "emitMachineOpcodeNode should not be called for TargetOpcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
+                                            << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+    return;
   }
+  if ( !Node->isMachineOpcode() ) {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    unsigned ARMISDOpcode = Node->getOpcode();
+    WithColor(errs(), HighlightColor::Error) << "emitMachineOpcodeNode should not be called for target-independent opcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
+                                            << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+    return;
+  }
+
+  unsigned ARMOpcode = Node->getMachineOpcode();
+  
+  switch(ARMOpcode) {
+    default: {
+      const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+      WithColor(errs(), HighlightColor::Error) << "emitMachineOpcodeNode called for MachineOpcode " << ARMOpcode << " (" << format("%04x", ARMOpcode) << "); "
+                                              << (ARMOpcode < TII->getNumOpcodes() ? TII->getName(ARMOpcode) : "UNKNOWN") << "\n";
+      assert(false && "Unsupported opcode");
+    }
+    case ARM::BX_RET: // 718
+    case ARM::DMB: // 773
+    case ARM::DSB: // 774
+    case ARM::ISB: // 793
+    case ARM::SVC: // 1932
+      break;
+  }
+  return; 
 }
 
-void IREmitter::emitSpecialNode(SDNode *Node) {
-  if (!Node->isMachineOpcode()) {
-    unsigned Opc = Node->getOpcode();
-    WithColor(errs(), HighlightColor::Warning) << "IREmitter::emitSpecialNode should not be called for non MachineOpcode " << Opc << " (" << format("%04x", Opc) << "); "
-                                               << Node->getOperationName() << "\n";
-    // return;
+void IREmitter::emitTargetDependentNode ( SDNode *Node ) {
+  if ( Node->isMachineOpcode() ) {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    unsigned ARMISDOpcode = Node->getMachineOpcode();
+    WithColor(errs(), HighlightColor::Error) << "emitTargetDependentNode should not be called for MachineOpcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
+                                            << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+    return;
   }
-  
-  unsigned Opc = Node->getOpcode();
+  if ( !Node->isTargetOpcode() ) {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    ARMISD::NodeType ARMISDOpcode = (ARMISD::NodeType) Node->getOpcode();
+    WithColor(errs(), HighlightColor::Error) << "emitTargetDependentNode should not be called for target-independent Opcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
+                                            << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+    return;
+  }
+
   Module &M = *MR->getModule();
-
   BasicBlock *BB = getBlock();
-  BasicBlock *CurBB = getCurBlock();
-  switch (Opc) {
-  default: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    if(Node->isMachineOpcode()){
-      unsigned MOpc = Node->getMachineOpcode();
-      WithColor(errs(), HighlightColor::Error) << "Encountered unsupported opcode " << Opc << "/" << MOpc << " (" << format("%04x", MOpc) << "); "
-                                              << (MOpc < TII->getNumOpcodes() ? TII->getName(MOpc) : "UNKNOWN") << "\n";
+
+  unsigned ARMISDOpcode = Node->getOpcode();
+  switch(ARMISDOpcode) {
+    default: {
+      const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+      WithColor(errs(), HighlightColor::Error) << "emitTargetDependentNode called for TargetOpcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
+                                                << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+      assert(false && "Unsupported opcode");
     }
-    //assert(false && "Unsupported opcode");
-    //exit(1);
-    break;
-  }
-  case EXT_ARMISD::BX_RET: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
-                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::BX_RET\n";
-    assert(false && "Invalid case");
-    Value *Ret = getIRValue(Node->getOperand(0));
-    if (!ConstantSDNode::classof(Node->getOperand(0).getNode()))
-      IRB.CreateRet(Ret);
-    else
-      IRB.CreateRetVoid();
-  } break;
-  // TODO:
-  // Specical instruction we do here. e.g Br Invoke IndirectBr ..
-  case ISD::BRCOND: {
-    unsigned Cond = cast<ConstantSDNode>(Node->getOperand(1))->getZExtValue();
-    // br i1 %cmp, label %if.then, label %if.else
-    MachineBasicBlock *MBB = FuncInfo->MBBMap[CurBB];
-    MachineBasicBlock::succ_iterator SuI = MBB->succ_begin();
-    BasicBlock *Iftrue = FuncInfo->getOrCreateBasicBlock(*SuI);
-    MachineBasicBlock *NextMBB = &*std::next(MBB->getIterator());
-    BasicBlock *NextBB = FuncInfo->getOrCreateBasicBlock(NextMBB);
 
-    emitCondCode(Cond, BB, Iftrue, NextBB);
-  } break;
-  case ISD::BR: {
-    // br label %xxx
-    MachineBasicBlock *LMBB = FuncInfo->MBBMap[CurBB];
-    MachineBasicBlock::succ_iterator SuI = LMBB->succ_begin();
-    if (SuI != LMBB->succ_end()) {
-      BasicBlock *BrDest = FuncInfo->getOrCreateBasicBlock(*SuI);
-      IRB.CreateBr(BrDest);
-      break;
-    }
-    LLVM_FALLTHROUGH;
-  }
-  case EXT_ARMISD::BRD: {
-    // Get the function call Index.
-    uint64_t Index = Node->getConstantOperandVal(0);
-    // Get function from ModuleRaiser.
-    Function *CallFunc = MR->getRaisedFunctionAt(Index);
-    unsigned IFFuncArgNum = 0; // The argument number which gets from analyzing
-                               // variadic function prototype.
-    bool IsSyscall = false;
-    if (CallFunc == nullptr) {
-      // According MI to get BL instruction address.
-      // uint64_t callAddr = DAGInfo->NPMap[Node]->InstAddr;
-      uint64_t CallAddr = MR->getTextSectionAddress() +
-                          getMCInstIndex(*(DAGInfo->NPMap[Node]->MI));
-      Function *IndefiniteFunc = MR->getCallFunc(CallAddr);
-      CallFunc = MR->getSyscallFunc(Index);
-      if (CallFunc != nullptr && IndefiniteFunc != nullptr) {
-        IFFuncArgNum = MR->getFunctionArgNum(CallAddr);
-        IsSyscall = true;
-      }
-    }
-    assert(CallFunc && "Failed to get called function!");
-    // Get argument number from callee.
-    unsigned ArgNum = CallFunc->arg_size();
-    if (IFFuncArgNum > ArgNum)
-      ArgNum = IFFuncArgNum;
-    Argument *CalledFuncArgs = CallFunc->arg_begin();
-    std::vector<Value *> CallInstFuncArgs;
-    CallInst *Inst = nullptr;
-    if (ArgNum > 0) {
-      Value *ArgVal = nullptr;
-      const MachineFrameInfo &MFI = FuncInfo->MF->getFrameInfo();
-      unsigned StackArg = 0; // Initialize argument size on stack to 0.
-      if (ArgNum > 4) {
-        StackArg = ArgNum - 4;
-
-        unsigned StackNum = MFI.getNumObjects() - 2;
-        if (StackNum > StackArg)
-          StackArg = StackNum;
-      }
-      for (unsigned i = 0; i < ArgNum; i++) {
-        if (i < 4)
-          ArgVal = FuncInfo->ArgValMap[ARM::R0 + i];
-        else {
-          const Value *StackAlloc =
-              MFI.getObjectAllocation(StackArg - i - 4 + 1);
-          ArgVal = CallCreateAlignedLoad(
-              const_cast<Value *>(StackAlloc),
-              MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
-        }
-        if (IsSyscall && i < CallFunc->arg_size() &&
-            ArgVal->getType() != CalledFuncArgs[i].getType()) {
-          CastInst *CInst = CastInst::Create(
-              CastInst::getCastOpcode(ArgVal, false,
-                                      CalledFuncArgs[i].getType(), false),
-              ArgVal, CalledFuncArgs[i].getType());
-          IRB.GetInsertBlock()->getInstList().push_back(CInst);
-          ArgVal = CInst;
-        }
-        CallInstFuncArgs.push_back(ArgVal);
-      }
-      Inst = IRB.CreateCall(CallFunc, ArrayRef<Value *>(CallInstFuncArgs));
-    } else
-      Inst = IRB.CreateCall(CallFunc);
-
-    DAGInfo->setRealValue(Node, Inst);
-  } break;
-  case ISD::BRIND: {
-    Value *Func = getIRValue(Node->getOperand(0));
-    unsigned NumDests = Node->getNumOperands();
-    IRB.CreateIndirectBr(Func, NumDests);
-  } break;
-  case ISD::BR_JT: {
-    // Emit the switch instruction.
-    if (jtList.size() > 0) {
-      MachineBasicBlock *mbb = FuncInfo->MBBMap[CurBB];
-      MachineFunction *MF = mbb->getParent();
-
-      std::vector<JumpTableBlock> JTCases;
-      const MachineJumpTableInfo *MJT = MF->getJumpTableInfo();
-      unsigned jtIndex = Node->getConstantOperandVal(0);
-      std::vector<MachineJumpTableEntry> JumpTables = MJT->getJumpTables();
-      for (unsigned j = 0, f = JumpTables[jtIndex].MBBs.size(); j != f; ++j) {
-        llvm::Type *i32_type = llvm::IntegerType::getInt32Ty(*CTX);
-        llvm::ConstantInt *i32_val =
-            cast<ConstantInt>(llvm::ConstantInt::get(i32_type, j, true));
-        MachineBasicBlock *Succ = JumpTables[jtIndex].MBBs[j];
-        ConstantInt *CaseVal = i32_val;
-        JTCases.push_back(std::make_pair(CaseVal, Succ));
-      }
-      // main->getEntryBlock().setName("entry");
-
-      unsigned int numCases = JTCases.size();
-      BasicBlock *def_bb =
-          FuncInfo->getOrCreateBasicBlock(jtList[jtIndex].df_MBB);
-
-      BasicBlock *cd_bb =
-          FuncInfo->getOrCreateBasicBlock(jtList[jtIndex].conditionMBB);
-
-      // conditon instruction
-      Instruction *cdi = nullptr;
-      for (BasicBlock::iterator DI = cd_bb->begin(); DI != cd_bb->end(); DI++) {
-        Instruction *ins = dyn_cast<Instruction>(DI);
-        if (isa<LoadInst>(DI) && !cdi) {
-          cdi = ins;
-        }
-
-        if (cdi && (ins->getOpcode() == Instruction::Sub)) {
-          if (isa<ConstantInt>(ins->getOperand(1))) {
-            ConstantInt *opr = dyn_cast<ConstantInt>(ins->getOperand(1));
-            if (opr->uge(0)) {
-              cdi = ins;
-            }
-          }
-        }
-      }
-
-      SwitchInst *Inst = IRB.CreateSwitch(cdi, def_bb, numCases);
-      for (unsigned i = 0, e = numCases; i != e; ++i) {
-        BasicBlock *case_bb =
-            FuncInfo->getOrCreateBasicBlock(JTCases[i].second);
-        Inst->addCase(JTCases[i].first, case_bb);
-      }
-    }
-  } break;
-  case ISD::ROTR: {
-    Value *S0 = getIRValue(Node->getOperand(0));
-    Value *S1 = getIRValue(Node->getOperand(1));
-    Type *Ty = getDefaultType();
-    Value *Val = ConstantInt::get(Ty, 32, true);
-
-    if (DAGInfo->NPMap[Node]->HasCPSR) {
-      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
-
-      if (DAGInfo->NPMap[Node]->UpdateCPSR) {
-        Value *InstSub = IRB.CreateSub(Val, S1);
-        Value *InstLShr = IRB.CreateLShr(S0, S1);
-        Value *InstShl = IRB.CreateShl(S0, InstSub);
-        Value *Inst = IRB.CreateOr(InstLShr, InstShl);
-        DAGInfo->setRealValue(Node, Inst);
-        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
-
-        emitSpecialCPSR(Inst, BB, 0);
-      } else {
-        // Create new BB for EQ instructin exectute.
-        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
-        // Create new BB to update the DAG BB.
-        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
-
-        // Emit the condition code.
-        emitCondCode(CondValue, BB, IfBB, ElseBB);
-        IRB.SetInsertPoint(IfBB);
-        Value *InstSub = IRB.CreateSub(Val, S1);
-        Value *InstLShr = IRB.CreateLShr(S0, S1);
-        Value *InstShl = IRB.CreateShl(S0, InstSub);
-        Value *Inst = IRB.CreateOr(InstLShr, InstShl);
-        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
-                                            dyn_cast<Instruction>(Inst));
-        DAGInfo->setRealValue(Node, Phi);
-        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+    case ARMISD::CMN: { // 370
+      assert(false && "ARMISD::CMN is untested");
+      Value *S0 = getIRValue(Node->getOperand(0));
+      Value *S1 = getIRValue(Node->getOperand(1));
+      Value *Inst;
+      if (DAGInfo->NPMap[Node]->HasCPSR) {
+        unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+        HANDLE_EMIT_CONDCODE_COMMON(Add)
+        emitCPSR(S0, S1, IfBB, 0);
         IRB.CreateBr(ElseBB);
         IRB.SetInsertPoint(ElseBB);
+      } else {
+        Inst = IRB.CreateAdd(S0, S1);
+        DAGInfo->setRealValue(Node, Inst);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+        emitCPSR(S0, S1, BB, 0);
       }
-    } else {
-      Value *InstSub = IRB.CreateSub(Val, S1);
-      Value *InstLShr = IRB.CreateLShr(S0, S1);
-      Value *InstShl = IRB.CreateShl(S0, InstSub);
-      Value *Inst = IRB.CreateOr(InstLShr, InstShl);
-      DAGInfo->setRealValue(Node, Inst);
-      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
-    }
-  } break;
-  case ARMISD::RRX: {
-    Value *S0 = getIRValue(Node->getOperand(0));
-    Type *Ty = getDefaultType();
-    Value *Val1 = ConstantInt::get(Ty, 1, true);
-    Value *Val2 = ConstantInt::get(Ty, 31, true);
-    if (DAGInfo->NPMap[Node]->HasCPSR) {
-      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+    } break;
+    case ARMISD::CMOV: // 377
+      emitBinary(Node);
+      break;
+    case ARMISD::RRX: { // 384
+      Value *S0 = getIRValue(Node->getOperand(0));
+      Type *Ty = getDefaultType();
+      Value *Val1 = ConstantInt::get(Ty, 1, true);
+      Value *Val2 = ConstantInt::get(Ty, 31, true);
+      if (DAGInfo->NPMap[Node]->HasCPSR) {
+        unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
 
-      if (DAGInfo->NPMap[Node]->UpdateCPSR) {
+        if (DAGInfo->NPMap[Node]->UpdateCPSR) {
+          Value *InstLShr = IRB.CreateLShr(S0, Val1);
+          Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+          C_Flag = IRB.CreateZExt(C_Flag, Ty);
+          Value *Bit31 = IRB.CreateShl(C_Flag, Val2);
+          Value *Inst = IRB.CreateAdd(InstLShr, Bit31);
+          DAGInfo->setRealValue(Node, Inst);
+          FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+
+          /**************************************/
+          emitSpecialCPSR(Inst, BB, 0);
+          // Update C flag.
+          // c flag = s0[0]
+          C_Flag = IRB.CreateAnd(S0, Val1);
+          IRB.CreateStore(C_Flag, FuncInfo->AllocaMap[2]);
+        } else {
+          // Create new BB for EQ instructin exectute.
+          BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+          // Create new BB to update the DAG BB.
+          BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+
+          // Emit the condition code.
+          emitCondCode(CondValue, BB, IfBB, ElseBB);
+          IRB.SetInsertPoint(IfBB);
+          Value *InstLShr = IRB.CreateLShr(S0, Val1);
+          Value *C_Flag = nullptr;
+
+          C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+          C_Flag = IRB.CreateZExt(C_Flag, Ty);
+          Value *Bit31 = IRB.CreateShl(C_Flag, Val2);
+          Value *Inst = IRB.CreateAdd(InstLShr, Bit31);
+          PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                              dyn_cast<Instruction>(Inst));
+          DAGInfo->setRealValue(Node, Phi);
+          FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+          IRB.CreateBr(ElseBB);
+          IRB.SetInsertPoint(ElseBB);
+        }
+      } else {
         Value *InstLShr = IRB.CreateLShr(S0, Val1);
         Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
         C_Flag = IRB.CreateZExt(C_Flag, Ty);
@@ -896,14 +627,95 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
         Value *Inst = IRB.CreateAdd(InstLShr, Bit31);
         DAGInfo->setRealValue(Node, Inst);
         FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+      }
+    } break;
+    case EXT_ARMISD::BX_RET: { // 551
+      assert(false && "EXT_ARMISD::BX_RET is untested");
+      
+      Value *Ret = getIRValue(Node->getOperand(0));
+      if (!ConstantSDNode::classof(Node->getOperand(0).getNode()))
+        IRB.CreateRet(Ret);
+      else
+        IRB.CreateRetVoid();
+    } break;
+    case EXT_ARMISD::BRD: { // 552
+      // Get the function call Index.
+      uint64_t Index = Node->getConstantOperandVal(0);
+      // Get function from ModuleRaiser.
+      Function *CallFunc = MR->getRaisedFunctionAt(Index);
+      unsigned IFFuncArgNum = 0; // The argument number which gets from analyzing
+                                // variadic function prototype.
+      bool IsSyscall = false;
+      if (CallFunc == nullptr) {
+        // According MI to get BL instruction address.
+        // uint64_t callAddr = DAGInfo->NPMap[Node]->InstAddr;
+        uint64_t CallAddr = MR->getTextSectionAddress() +
+                            getMCInstIndex(*(DAGInfo->NPMap[Node]->MI));
+        Function *IndefiniteFunc = MR->getCallFunc(CallAddr);
+        CallFunc = MR->getSyscallFunc(Index);
+        if (CallFunc != nullptr && IndefiniteFunc != nullptr) {
+          IFFuncArgNum = MR->getFunctionArgNum(CallAddr);
+          IsSyscall = true;
+        }
+      }
+      assert(CallFunc && "Failed to get called function!");
+      // Get argument number from callee.
+      unsigned ArgNum = CallFunc->arg_size();
+      if (IFFuncArgNum > ArgNum)
+        ArgNum = IFFuncArgNum;
+      Argument *CalledFuncArgs = CallFunc->arg_begin();
+      std::vector<Value *> CallInstFuncArgs;
+      CallInst *Inst = nullptr;
+      if (ArgNum > 0) {
+        Value *ArgVal = nullptr;
+        const MachineFrameInfo &MFI = FuncInfo->MF->getFrameInfo();
+        unsigned StackArg = 0; // Initialize argument size on stack to 0.
+        if (ArgNum > 4) {
+          StackArg = ArgNum - 4;
 
-        /**************************************/
-        emitSpecialCPSR(Inst, BB, 0);
-        // Update C flag.
-        // c flag = s0[0]
-        C_Flag = IRB.CreateAnd(S0, Val1);
-        IRB.CreateStore(C_Flag, FuncInfo->AllocaMap[2]);
-      } else {
+          unsigned StackNum = MFI.getNumObjects() - 2;
+          if (StackNum > StackArg)
+            StackArg = StackNum;
+        }
+        for (unsigned i = 0; i < ArgNum; i++) {
+          if (i < 4)
+            ArgVal = FuncInfo->ArgValMap[ARM::R0 + i];
+          else {
+            const Value *StackAlloc =
+                MFI.getObjectAllocation(StackArg - i - 4 + 1);
+            ArgVal = CallCreateAlignedLoad(
+                const_cast<Value *>(StackAlloc),
+                MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
+          }
+          if (IsSyscall && i < CallFunc->arg_size() &&
+              ArgVal->getType() != CalledFuncArgs[i].getType()) {
+            CastInst *CInst = CastInst::Create(
+                CastInst::getCastOpcode(ArgVal, false,
+                                        CalledFuncArgs[i].getType(), false),
+                ArgVal, CalledFuncArgs[i].getType());
+            IRB.GetInsertBlock()->getInstList().push_back(CInst);
+            ArgVal = CInst;
+          }
+          CallInstFuncArgs.push_back(ArgVal);
+        }
+        Inst = IRB.CreateCall(CallFunc, ArrayRef<Value *>(CallInstFuncArgs));
+      } else
+        Inst = IRB.CreateCall(CallFunc);
+
+      DAGInfo->setRealValue(Node, Inst);
+    } break;
+    case EXT_ARMISD::LOAD: { // 553
+      Value *S = getIRValue(Node->getOperand(0));
+      Value *Ptr = nullptr;
+      if (S->getType()->isPointerTy())
+        Ptr = S;
+      else
+        Ptr = IRB.CreateIntToPtr(
+            S, Node->getValueType(0).getTypeForEVT(*CTX)->getPointerTo());
+
+      Value *Inst = nullptr;
+      if (DAGInfo->NPMap[Node]->HasCPSR) {
+        unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
         // Create new BB for EQ instructin exectute.
         BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
         // Create new BB to update the DAG BB.
@@ -912,435 +724,719 @@ void IREmitter::emitSpecialNode(SDNode *Node) {
         // Emit the condition code.
         emitCondCode(CondValue, BB, IfBB, ElseBB);
         IRB.SetInsertPoint(IfBB);
-        Value *InstLShr = IRB.CreateLShr(S0, Val1);
-        Value *C_Flag = nullptr;
+        if (GlobalVariable::classof(Ptr))
+          Inst = IRB.CreatePtrToInt(Ptr, getDefaultType());
+        else
+          Inst = CallCreateAlignedLoad(
+              Ptr, MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
 
-        C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-        C_Flag = IRB.CreateZExt(C_Flag, Ty);
-        Value *Bit31 = IRB.CreateShl(C_Flag, Val2);
-        Value *Inst = IRB.CreateAdd(InstLShr, Bit31);
         PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
                                             dyn_cast<Instruction>(Inst));
         DAGInfo->setRealValue(Node, Phi);
         FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+
         IRB.CreateBr(ElseBB);
         IRB.SetInsertPoint(ElseBB);
-      }
-    } else {
-      Value *InstLShr = IRB.CreateLShr(S0, Val1);
-      Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-      C_Flag = IRB.CreateZExt(C_Flag, Ty);
-      Value *Bit31 = IRB.CreateShl(C_Flag, Val2);
-      Value *Inst = IRB.CreateAdd(InstLShr, Bit31);
-      DAGInfo->setRealValue(Node, Inst);
-      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
-    }
-  } break;
-  case EXT_ARMISD::BIC: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
-                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::BIC\n";
-    assert(false && "Invalid case");
-    Value *S0 = getIRValue(Node->getOperand(0));
-    Value *S1 = getIRValue(Node->getOperand(1));
-    Type *tp = getDefaultType();
-    Value *val = ConstantInt::get(tp, -1, true);
+      } else {
+        if (GlobalVariable::classof(Ptr)) {
+          // Inst = IRB.CreatePtrToInt(Ptr, getDefaultType());
+          Inst = new PtrToIntInst(Ptr, getDefaultType(), "", BB);
+        } else {
+          Inst = CallCreateAlignedLoad(
+              Ptr, MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
 
-    if (DAGInfo->NPMap[Node]->HasCPSR) {
-      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
-
-      if (DAGInfo->NPMap[Node]->UpdateCPSR) {
-        Value *InstXor = IRB.CreateXor(val, S1);
-        Value *Inst = IRB.CreateAnd(S0, InstXor);
+          // TODO:
+          // Temporary method for this.
+          if (Inst->getType() == Type::getInt64Ty(*CTX))
+            Inst = IRB.CreateTrunc(Inst, getDefaultType());
+          else if (Inst->getType() != getDefaultType())
+            Inst = IRB.CreateSExt(Inst, getDefaultType());
+        }
 
         DAGInfo->setRealValue(Node, Inst);
         FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+      }
+    } break;
+    case EXT_ARMISD::STORE: { // 554
+      Value *Val = getIRValue(Node->getOperand(0));
+      Value *S = getIRValue(Node->getOperand(1));
+      Value *Ptr = nullptr;
+      Type *Nty = Node->getValueType(0).getTypeForEVT(*CTX);
 
-        emitSpecialCPSR(Inst, BB, 0);
-        // Update C flag.
-        // C flag not change.
+      if (Val->getType() != Nty) {
+        Val = IRB.CreateTrunc(Val, Nty);
+      }
 
-        // Update V flag.
-        // unchanged.
+      if (S->getType()->isPointerTy()) {
+        if (S->getType() != Nty->getPointerTo()) {
+          Ptr = IRB.CreateBitCast(S, Nty->getPointerTo());
+        } else {
+          Ptr = S;
+        }
       } else {
+        Ptr = IRB.CreateIntToPtr(S, Nty->getPointerTo());
+      }
+
+      if (DAGInfo->NPMap[Node]->HasCPSR) {
+        unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
         // Create new BB for EQ instructin exectute.
         BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
         // Create new BB to update the DAG BB.
         BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+
         // Emit the condition code.
         emitCondCode(CondValue, BB, IfBB, ElseBB);
         IRB.SetInsertPoint(IfBB);
-        Value *InstXor = IRB.CreateXor(val, S1);
-        Value *Inst = IRB.CreateAnd(S0, InstXor);
-        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
-                                            dyn_cast<Instruction>(Inst));
-        DAGInfo->setRealValue(Node, Phi);
-        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+
+        IRB.CreateAlignedStore(Val, Ptr,
+                              MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
 
         IRB.CreateBr(ElseBB);
         IRB.SetInsertPoint(ElseBB);
+      } else {
+        IRB.CreateAlignedStore(Val, Ptr,
+                              MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
       }
-    } else {
-      Value *InstXor, *Inst;
-      InstXor = IRB.CreateXor(val, S1);
-      Inst = IRB.CreateAnd(S0, InstXor);
+    } break;
+    case EXT_ARMISD::MSR: { // 555
+      assert(false && "EXT_ARMISD::MSR is untested");
+
+      Value *Cond = getIRValue(Node->getOperand(0));
+      // 1 1 1 1
+      // N set 1 0 0 0   8
+      // Z set 0 1 0 0   4
+      // C set 0 0 1 0   2
+      // Z set 0 0 0 1   1
+      IRB.CreateStore(Cond, dyn_cast<Value>(M.getGlobalVariable("Reserved")));
+      // Pattern msr CPSR_f, Rn
+      if (1) {
+        Value *Shift_Num = IRB.getInt32(28);
+        Value *Shift = IRB.CreateLShr(Cond, Shift_Num);
+        // Update N Flag.
+        Value *N_Cmp = IRB.getInt32(8);
+        Value *N_Flag = IRB.CreateICmpEQ(Shift, N_Cmp);
+        IRB.CreateStore(N_Flag, FuncInfo->AllocaMap[0]);
+        // Update Z Flag.
+        Value *Z_Cmp = IRB.getInt32(4);
+        Value *Z_Flag = IRB.CreateICmpEQ(Shift, Z_Cmp);
+        IRB.CreateStore(Z_Flag, FuncInfo->AllocaMap[1]);
+        // Update C Flag.
+        Value *C_Cmp = IRB.getInt32(2);
+        Value *C_Flag = IRB.CreateICmpEQ(Shift, C_Cmp);
+        IRB.CreateStore(C_Flag, FuncInfo->AllocaMap[2]);
+        // Update V Flag.
+        Value *V_Cmp = IRB.getInt32(1);
+        Value *V_Flag = IRB.CreateICmpEQ(Shift, V_Cmp);
+        IRB.CreateStore(V_Flag, FuncInfo->AllocaMap[3]);
+      } else {
+        // Pattern msr CSR_f, #const.
+      }
+    } break;
+    case EXT_ARMISD::MRS: { // 556
+      assert(false && "EXT_ARMISD::MRS is untested");
+
+      Value *Rn = getIRValue(Node->getOperand(0));
+      // Reserved || N_Flag << 31 || Z_Flag << 30 || C_Flag << 29 || V_Flag << 28
+      PointerType *PtrTy = PointerType::getInt32PtrTy(*CTX);
+      Type *Ty = Type::getInt32Ty(*CTX);
+
+      Value *BitNShift = IRB.getInt32(31);
+      Value *BitZShift = IRB.getInt32(30);
+      Value *BitCShift = IRB.getInt32(29);
+      Value *BitVShift = IRB.getInt32(28);
+
+      Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
+      Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
+      Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+      Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
+
+      N_Flag = IRB.CreateZExt(N_Flag, Ty);
+      Z_Flag = IRB.CreateZExt(Z_Flag, Ty);
+      C_Flag = IRB.CreateZExt(C_Flag, Ty);
+      V_Flag = IRB.CreateZExt(V_Flag, Ty);
+
+      Value *N_Shift = IRB.CreateShl(N_Flag, BitNShift);
+      Value *Z_Shift = IRB.CreateShl(Z_Flag, BitZShift);
+      Value *C_Shift = IRB.CreateShl(C_Flag, BitCShift);
+      Value *V_Shift = IRB.CreateShl(V_Flag, BitVShift);
+      Value *NZ_Val = IRB.CreateAdd(N_Shift, Z_Shift);
+      Value *CV_Val = IRB.CreateAdd(C_Shift, V_Shift);
+      Value *NZCV_Val = IRB.CreateAdd(NZ_Val, CV_Val);
+      Value *Reserved =
+          CallCreateAlignedLoad(dyn_cast<Value>(M.getGlobalVariable("Reserved")));
+
+      Value *CPSR_Val = IRB.CreateAdd(NZCV_Val, Reserved);
+      Value *Rn_Ptr = IRB.CreateIntToPtr(Rn, PtrTy);
+      Value *RnStore = IRB.CreateStore(CPSR_Val, Rn_Ptr);
+
+      DAGInfo->setRealValue(Node, RnStore);
+      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = RnStore;
+    } break;
+    case EXT_ARMISD::RSB: { // 557
+      assert(false && "EXT_ARMISD::RSB is untested");
+      
+      Value *S0 = getIRValue(Node->getOperand(0));
+      Value *S1 = getIRValue(Node->getOperand(1));
+
+      if (DAGInfo->NPMap[Node]->HasCPSR) {
+        unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+        if (DAGInfo->NPMap[Node]->UpdateCPSR) {
+          // Create add emit.
+          Value *Inst = IRB.CreateSub(S0, S1);
+          DAGInfo->setRealValue(Node, Inst);
+          FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+
+          Value *InstNot = IRB.CreateNot(S1);
+          emitCPSR(InstNot, S0, BB, 1);
+        } else {
+          HANDLE_EMIT_CONDCODE(Sub)
+        }
+      } else {
+        Value *Inst = IRB.CreateSub(S0, S1);
+        DAGInfo->setRealValue(Node, Inst);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+      }
+    } break;
+    case EXT_ARMISD::RSC: { // 558
+      assert(false && "EXT_ARMISD::RSC is untested");
+
+      Value *S0 = getIRValue(Node->getOperand(0));
+      Value *S1 = getIRValue(Node->getOperand(1));
+
+      Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+      Value *CZext = IRB.CreateZExt(C_Flag, getDefaultType());
+
+      Value *Inst = IRB.CreateAdd(S0, CZext);
+      Inst = IRB.CreateSub(S1, Inst);
       DAGInfo->setRealValue(Node, Inst);
       FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
-    }
-  } break;
-  case ARMISD::CMN: {
-    Value *S0 = getIRValue(Node->getOperand(0));
-    Value *S1 = getIRValue(Node->getOperand(1));
-    Value *Inst;
-    if (DAGInfo->NPMap[Node]->HasCPSR) {
-      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
-      HANDLE_EMIT_CONDCODE_COMMON(Add)
-      emitCPSR(S0, S1, IfBB, 0);
-      IRB.CreateBr(ElseBB);
-      IRB.SetInsertPoint(ElseBB);
-    } else {
-      Inst = IRB.CreateAdd(S0, S1);
-      DAGInfo->setRealValue(Node, Inst);
-      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
-      emitCPSR(S0, S1, BB, 0);
-    }
-  } break;
-  case ISD::CTLZ: {
-    Value *S0 = getIRValue(Node->getOperand(0));
-    Function *CTLZ = Intrinsic::getDeclaration(BB->getParent()->getParent(),
-                                               Intrinsic::ctlz, S0->getType());
-    Type *i1_type = llvm::IntegerType::getInt1Ty(*CTX);
-    Value *is_zero_undef = ConstantInt::get(i1_type, true, true);
+    } break;
+    case EXT_ARMISD::SBC: { // 559
+      assert(false && "EXT_ARMISD::SBC is untested");
 
-    std::vector<Value *> Vec;
-    Vec.push_back(S0);
-    Vec.push_back(is_zero_undef);
-    ArrayRef<Value *> Args(Vec);
+      Value *S1 = getIRValue(Node->getOperand(0));
+      Value *S2 = getIRValue(Node->getOperand(1));
+      Type *Ty = getDefaultType();
 
-    Value *Inst = IRB.CreateCall(CTLZ, Args);
-    DAGInfo->setRealValue(Node, Inst);
-    FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
-  } break;
-  case EXT_ARMISD::MLA: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
-                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::MLA\n";
-    assert(false && "Invalid case");
-    Value *S0 = getIRValue(Node->getOperand(0));
-    Value *S1 = getIRValue(Node->getOperand(1));
-    Value *S2 = getIRValue(Node->getOperand(2));
+      if (DAGInfo->NPMap[Node]->HasCPSR) {
+        unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
 
-    Value *InstMul = IRB.CreateMul(S0, S1);
-    Value *Inst = IRB.CreateAdd(InstMul, S2);
+        if (DAGInfo->NPMap[Node]->UpdateCPSR) {
+          Value *InstSub = IRB.CreateSub(S1, S2);
+          Value *C_Flag = nullptr;
+          C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+          Value *CZext = IRB.CreateZExt(C_Flag, Ty);
+          Value *InstSBC = IRB.CreateAdd(InstSub, CZext);
+          DAGInfo->setRealValue(Node, InstSBC);
+          Value *InstNot = IRB.CreateNot(S2);
+          if (1)
+            emitCPSR(S1, InstNot, BB, 0);
+          else
+            emitCPSR(S1, InstNot, BB, 1);
+        } else {
+          BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+          BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
 
-    DAGInfo->setRealValue(Node, Inst);
-    FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
-  } break;
-  case EXT_ARMISD::TST: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
-                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::TST\n";
-    assert(false && "Invalid case");
-    Value *S0 = getIRValue(Node->getOperand(0));
-    Value *S1 = getIRValue(Node->getOperand(1));
+          emitCondCode(CondValue, BB, IfBB, ElseBB);
 
-    if (DAGInfo->NPMap[Node]->HasCPSR) {
-      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
-      // Create new BB for EQ instructin exectute.
-      BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
-      // Create new BB to update the DAG BB.
-      BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+          IRB.SetInsertPoint(IfBB);
+          Value *InstSub = IRB.CreateSub(S1, S2);
+          Value *C_Flag = nullptr;
+          C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+          Value *CZext = IRB.CreateZExt(C_Flag, Ty);
+          Value *Inst = IRB.CreateAdd(InstSub, CZext);
+          PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                              dyn_cast<Instruction>(Inst));
+          DAGInfo->setRealValue(Node, Phi);
+          FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
 
-      // TODO:
-      // Not change def. Consider how to use PHI.
-      // PHINode *Phi = createAndEmitPHINode(Node, BB, ElseBB);
-
-      emitCondCode(CondValue, BB, IfBB, ElseBB);
-      IRB.SetInsertPoint(IfBB);
-      Value *Inst = IRB.CreateAnd(S0, S1);
-      emitSpecialCPSR(Inst, IfBB, 0);
-      IRB.CreateBr(ElseBB);
-      IRB.SetInsertPoint(ElseBB);
-    } else {
-      Value *Inst = IRB.CreateAnd(S0, S1);
-      emitSpecialCPSR(Inst, BB, 0);
-    }
-  } break;
-  case EXT_ARMISD::SBC: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
-                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::SBC\n";
-    assert(false && "Invalid case");
-    Value *S1 = getIRValue(Node->getOperand(0));
-    Value *S2 = getIRValue(Node->getOperand(1));
-    Type *Ty = getDefaultType();
-
-    if (DAGInfo->NPMap[Node]->HasCPSR) {
-      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
-
-      if (DAGInfo->NPMap[Node]->UpdateCPSR) {
+          IRB.CreateBr(ElseBB);
+          IRB.SetInsertPoint(ElseBB);
+        }
+      } else {
         Value *InstSub = IRB.CreateSub(S1, S2);
         Value *C_Flag = nullptr;
         C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
         Value *CZext = IRB.CreateZExt(C_Flag, Ty);
         Value *InstSBC = IRB.CreateAdd(InstSub, CZext);
         DAGInfo->setRealValue(Node, InstSBC);
-        Value *InstNot = IRB.CreateNot(S2);
-        if (1)
-          emitCPSR(S1, InstNot, BB, 0);
-        else
-          emitCPSR(S1, InstNot, BB, 1);
-      } else {
-        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
-        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
-
-        emitCondCode(CondValue, BB, IfBB, ElseBB);
-
-        IRB.SetInsertPoint(IfBB);
-        Value *InstSub = IRB.CreateSub(S1, S2);
-        Value *C_Flag = nullptr;
-        C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-        Value *CZext = IRB.CreateZExt(C_Flag, Ty);
-        Value *Inst = IRB.CreateAdd(InstSub, CZext);
-        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
-                                            dyn_cast<Instruction>(Inst));
-        DAGInfo->setRealValue(Node, Phi);
-        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
-
-        IRB.CreateBr(ElseBB);
-        IRB.SetInsertPoint(ElseBB);
       }
-    } else {
-      Value *InstSub = IRB.CreateSub(S1, S2);
-      Value *C_Flag = nullptr;
-      C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-      Value *CZext = IRB.CreateZExt(C_Flag, Ty);
-      Value *InstSBC = IRB.CreateAdd(InstSub, CZext);
-      DAGInfo->setRealValue(Node, InstSBC);
-    }
-  } break;
-  case EXT_ARMISD::TEQ: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
-                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::TEQ\n";
-    assert(false && "Invalid case");
-    Value *S0 = getIRValue(Node->getOperand(0));
-    Value *S1 = getIRValue(Node->getOperand(1));
+    } break;
+    case EXT_ARMISD::TEQ: { // 560
+      assert(false && "EXT_ARMISD::TEQ is untested");
 
-    if (DAGInfo->NPMap[Node]->HasCPSR) {
-      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
-      // Create new BB for EQ instructin exectute.
-      BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
-      // Create new BB to update the DAG BB.
-      BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+      Value *S0 = getIRValue(Node->getOperand(0));
+      Value *S1 = getIRValue(Node->getOperand(1));
 
-      // TODO:
-      // This instruction not change def, consider phi later.
-
-      emitCondCode(CondValue, BB, IfBB, ElseBB);
-      IRB.SetInsertPoint(IfBB);
-      Value *Inst = IRB.CreateXor(S0, S1);
-      emitSpecialCPSR(Inst, IfBB, 0);
-      IRB.CreateBr(ElseBB);
-      IRB.SetInsertPoint(ElseBB);
-    } else {
-      Value *Inst = IRB.CreateXor(S0, S1);
-      emitSpecialCPSR(Inst, BB, 0);
-    }
-  } break;
-  case EXT_ARMISD::MSR: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
-                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::MSR\n";
-    assert(false && "Invalid case");
-    Value *Cond = getIRValue(Node->getOperand(0));
-    // 1 1 1 1
-    // N set 1 0 0 0   8
-    // Z set 0 1 0 0   4
-    // C set 0 0 1 0   2
-    // Z set 0 0 0 1   1
-    IRB.CreateStore(Cond, dyn_cast<Value>(M.getGlobalVariable("Reserved")));
-    // Pattern msr CPSR_f, Rn
-    if (1) {
-      Value *Shift_Num = IRB.getInt32(28);
-      Value *Shift = IRB.CreateLShr(Cond, Shift_Num);
-      // Update N Flag.
-      Value *N_Cmp = IRB.getInt32(8);
-      Value *N_Flag = IRB.CreateICmpEQ(Shift, N_Cmp);
-      IRB.CreateStore(N_Flag, FuncInfo->AllocaMap[0]);
-      // Update Z Flag.
-      Value *Z_Cmp = IRB.getInt32(4);
-      Value *Z_Flag = IRB.CreateICmpEQ(Shift, Z_Cmp);
-      IRB.CreateStore(Z_Flag, FuncInfo->AllocaMap[1]);
-      // Update C Flag.
-      Value *C_Cmp = IRB.getInt32(2);
-      Value *C_Flag = IRB.CreateICmpEQ(Shift, C_Cmp);
-      IRB.CreateStore(C_Flag, FuncInfo->AllocaMap[2]);
-      // Update V Flag.
-      Value *V_Cmp = IRB.getInt32(1);
-      Value *V_Flag = IRB.CreateICmpEQ(Shift, V_Cmp);
-      IRB.CreateStore(V_Flag, FuncInfo->AllocaMap[3]);
-    } else {
-      // Pattern msr CSR_f, #const.
-    }
-  } break;
-  case EXT_ARMISD::MRS: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
-                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::MRS\n";
-    assert(false && "Invalid case");
-    Value *Rn = getIRValue(Node->getOperand(0));
-    // Reserved || N_Flag << 31 || Z_Flag << 30 || C_Flag << 29 || V_Flag << 28
-    PointerType *PtrTy = PointerType::getInt32PtrTy(*CTX);
-    Type *Ty = Type::getInt32Ty(*CTX);
-
-    Value *BitNShift = IRB.getInt32(31);
-    Value *BitZShift = IRB.getInt32(30);
-    Value *BitCShift = IRB.getInt32(29);
-    Value *BitVShift = IRB.getInt32(28);
-
-    Value *N_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[0]);
-    Value *Z_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[1]);
-    Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-    Value *V_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[3]);
-
-    N_Flag = IRB.CreateZExt(N_Flag, Ty);
-    Z_Flag = IRB.CreateZExt(Z_Flag, Ty);
-    C_Flag = IRB.CreateZExt(C_Flag, Ty);
-    V_Flag = IRB.CreateZExt(V_Flag, Ty);
-
-    Value *N_Shift = IRB.CreateShl(N_Flag, BitNShift);
-    Value *Z_Shift = IRB.CreateShl(Z_Flag, BitZShift);
-    Value *C_Shift = IRB.CreateShl(C_Flag, BitCShift);
-    Value *V_Shift = IRB.CreateShl(V_Flag, BitVShift);
-    Value *NZ_Val = IRB.CreateAdd(N_Shift, Z_Shift);
-    Value *CV_Val = IRB.CreateAdd(C_Shift, V_Shift);
-    Value *NZCV_Val = IRB.CreateAdd(NZ_Val, CV_Val);
-    Value *Reserved =
-        CallCreateAlignedLoad(dyn_cast<Value>(M.getGlobalVariable("Reserved")));
-
-    Value *CPSR_Val = IRB.CreateAdd(NZCV_Val, Reserved);
-    Value *Rn_Ptr = IRB.CreateIntToPtr(Rn, PtrTy);
-    Value *RnStore = IRB.CreateStore(CPSR_Val, Rn_Ptr);
-
-    DAGInfo->setRealValue(Node, RnStore);
-    FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = RnStore;
-  } break;
-  case ISD::ADDC: {
-    Value *S0 = getIRValue(Node->getOperand(0));
-    Value *S1 = getIRValue(Node->getOperand(1));
-    Type *OperandTy = getDefaultType();
-
-    if (DAGInfo->NPMap[Node]->HasCPSR) {
-      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
-
-      if (DAGInfo->NPMap[Node]->UpdateCPSR) {
-        // Create add emit.
-        Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-        Value *Result = IRB.CreateAdd(S0, S1);
-        Value *CZext = IRB.CreateZExt(C_Flag, OperandTy);
-        Value *InstADC = IRB.CreateAdd(Result, CZext);
-        DAGInfo->setRealValue(Node, InstADC);
-        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] =
-            dyn_cast<Instruction>(InstADC);
-
-        // Update CPSR.
-        // TODO:
-        // Should consider how to do this.
-        if (1)
-          emitCPSR(S0, S1, BB, 1);
-        else
-          emitCPSR(S0, S1, BB, 0);
-      } else {
+      if (DAGInfo->NPMap[Node]->HasCPSR) {
+        unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
         // Create new BB for EQ instructin exectute.
         BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
         // Create new BB to update the DAG BB.
         BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
 
-        // Emit the condition code.
+        // TODO:
+        // This instruction not change def, consider phi later.
+
         emitCondCode(CondValue, BB, IfBB, ElseBB);
-
-        Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
         IRB.SetInsertPoint(IfBB);
-        Value *InstAdd = IRB.CreateAdd(S0, S1);
-        Value *CZext = IRB.CreateZExtOrTrunc(C_Flag, OperandTy);
-        Value *Inst = IRB.CreateAdd(InstAdd, CZext);
-        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
-                                            dyn_cast<Instruction>(Inst));
-        DAGInfo->setRealValue(Node, Phi);
-        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
-
+        Value *Inst = IRB.CreateXor(S0, S1);
+        emitSpecialCPSR(Inst, IfBB, 0);
         IRB.CreateBr(ElseBB);
         IRB.SetInsertPoint(ElseBB);
+      } else {
+        Value *Inst = IRB.CreateXor(S0, S1);
+        emitSpecialCPSR(Inst, BB, 0);
       }
-    } else {
-      Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-      Value *Inst = IRB.CreateAdd(S0, S1);
-      Value *CTrunc = IRB.CreateZExtOrTrunc(C_Flag, getDefaultType());
-      Value *InstADC = IRB.CreateAdd(Inst, CTrunc);
+    } break;
+    case EXT_ARMISD::TST: { // 561
+      assert(false && "EXT_ARMISD::TST is untested");
 
-      DAGInfo->setRealValue(Node, InstADC);
-      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = InstADC;
-    }
-  } break;
-  case EXT_ARMISD::RSC: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
-                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::RSC\n";
-    assert(false && "Invalid case");
-    Value *S0 = getIRValue(Node->getOperand(0));
-    Value *S1 = getIRValue(Node->getOperand(1));
+      Value *S0 = getIRValue(Node->getOperand(0));
+      Value *S1 = getIRValue(Node->getOperand(1));
 
-    Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
-    Value *CZext = IRB.CreateZExt(C_Flag, getDefaultType());
+      if (DAGInfo->NPMap[Node]->HasCPSR) {
+        unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+        // Create new BB for EQ instructin exectute.
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        // Create new BB to update the DAG BB.
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
 
-    Value *Inst = IRB.CreateAdd(S0, CZext);
-    Inst = IRB.CreateSub(S1, Inst);
-    DAGInfo->setRealValue(Node, Inst);
-    FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
-  } break;
-  case EXT_ARMISD::UXTB: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
-                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::UXTB\n";
-    assert(false && "Invalid case");
-    Value *S1 = getIRValue(Node->getOperand(1));
-    Value *Rotation = getIRValue(Node->getOperand(2));
-    Value *ror_val = ConstantInt::get(getDefaultType(), 8, true);
-    Value *add_val = ConstantInt::get(getDefaultType(), 0, true);
-    Value *and_val = ConstantInt::get(getDefaultType(), 0xff, true);
-    Value *Inst_mul = IRB.CreateMul(Rotation, ror_val);
-    Value *Inst_lshr = IRB.CreateLShr(S1, Inst_mul);
-    Value *Inst_add = IRB.CreateAdd(Inst_lshr, add_val);
-    Value *Inst_and = IRB.CreateAnd(Inst_add, and_val);
-    DAGInfo->setRealValue(Node, Inst_and);
-  } break;
-  case EXT_ARMISD::RSB: {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
-    WithColor(errs(), HighlightColor::Error) << "Instruction " << Opc << " (" << format("%04x", Opc) << "); "
-                                              << TII->getName(Opc) << "triggered invalid case EXT_ARMISD::RSB\n";
-    assert(false && "Invalid case");
-    Value *S0 = getIRValue(Node->getOperand(0));
-    Value *S1 = getIRValue(Node->getOperand(1));
+        // TODO:
+        // Not change def. Consider how to use PHI.
+        // PHINode *Phi = createAndEmitPHINode(Node, BB, ElseBB);
 
-    if (DAGInfo->NPMap[Node]->HasCPSR) {
-      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
-      if (DAGInfo->NPMap[Node]->UpdateCPSR) {
-        // Create add emit.
-        Value *Inst = IRB.CreateSub(S0, S1);
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        IRB.SetInsertPoint(IfBB);
+        Value *Inst = IRB.CreateAnd(S0, S1);
+        emitSpecialCPSR(Inst, IfBB, 0);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else {
+        Value *Inst = IRB.CreateAnd(S0, S1);
+        emitSpecialCPSR(Inst, BB, 0);
+      }
+    } break;
+    case EXT_ARMISD::BIC: { // 562
+      assert(false && "EXT_ARMISD::BIC is untested");
+
+      Value *S0 = getIRValue(Node->getOperand(0));
+      Value *S1 = getIRValue(Node->getOperand(1));
+      Type *tp = getDefaultType();
+      Value *val = ConstantInt::get(tp, -1, true);
+
+      if (DAGInfo->NPMap[Node]->HasCPSR) {
+        unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+
+        if (DAGInfo->NPMap[Node]->UpdateCPSR) {
+          Value *InstXor = IRB.CreateXor(val, S1);
+          Value *Inst = IRB.CreateAnd(S0, InstXor);
+
+          DAGInfo->setRealValue(Node, Inst);
+          FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+
+          emitSpecialCPSR(Inst, BB, 0);
+          // Update C flag.
+          // C flag not change.
+
+          // Update V flag.
+          // unchanged.
+        } else {
+          // Create new BB for EQ instructin exectute.
+          BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+          // Create new BB to update the DAG BB.
+          BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+          // Emit the condition code.
+          emitCondCode(CondValue, BB, IfBB, ElseBB);
+          IRB.SetInsertPoint(IfBB);
+          Value *InstXor = IRB.CreateXor(val, S1);
+          Value *Inst = IRB.CreateAnd(S0, InstXor);
+          PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                              dyn_cast<Instruction>(Inst));
+          DAGInfo->setRealValue(Node, Phi);
+          FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+
+          IRB.CreateBr(ElseBB);
+          IRB.SetInsertPoint(ElseBB);
+        }
+      } else {
+        Value *InstXor, *Inst;
+        InstXor = IRB.CreateXor(val, S1);
+        Inst = IRB.CreateAnd(S0, InstXor);
         DAGInfo->setRealValue(Node, Inst);
         FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
-
-        Value *InstNot = IRB.CreateNot(S1);
-        emitCPSR(InstNot, S0, BB, 1);
-      } else {
-        HANDLE_EMIT_CONDCODE(Sub)
       }
-    } else {
-      Value *Inst = IRB.CreateSub(S0, S1);
+    } break;
+    case EXT_ARMISD::MLA: { // 563
+      assert(false && "EXT_ARMISD::MLA is untested");
+
+      Value *S0 = getIRValue(Node->getOperand(0));
+      Value *S1 = getIRValue(Node->getOperand(1));
+      Value *S2 = getIRValue(Node->getOperand(2));
+
+      Value *InstMul = IRB.CreateMul(S0, S1);
+      Value *Inst = IRB.CreateAdd(InstMul, S2);
+
       DAGInfo->setRealValue(Node, Inst);
       FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+    } break;
+    case EXT_ARMISD::UXTB: { // 564
+      assert(false && "EXT_ARMISD::UXTB is untested");
+
+      Value *S1 = getIRValue(Node->getOperand(1));
+      Value *Rotation = getIRValue(Node->getOperand(2));
+      Value *ror_val = ConstantInt::get(getDefaultType(), 8, true);
+      Value *add_val = ConstantInt::get(getDefaultType(), 0, true);
+      Value *and_val = ConstantInt::get(getDefaultType(), 0xff, true);
+      Value *Inst_mul = IRB.CreateMul(Rotation, ror_val);
+      Value *Inst_lshr = IRB.CreateLShr(S1, Inst_mul);
+      Value *Inst_add = IRB.CreateAdd(Inst_lshr, add_val);
+      Value *Inst_and = IRB.CreateAnd(Inst_add, and_val);
+      DAGInfo->setRealValue(Node, Inst_and);
+    } break;
+  }
+}
+
+void IREmitter::emitTargetIndependentNode ( SDNode *Node ) {
+  if ( Node->isMachineOpcode() ) {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    unsigned ARMISDOpcode = Node->getMachineOpcode();
+    WithColor(errs(), HighlightColor::Error) << "emitTargetIndependentNode should not be called for MachineOpcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
+                                            << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+    return;
+  }
+  if ( Node->isTargetOpcode() ) {
+    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
+    ARMISD::NodeType ARMISDOpcode = (ARMISD::NodeType) Node->getOpcode();
+    WithColor(errs(), HighlightColor::Error) << "emitTargetIndependentNode should not be called for TargetOpcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
+                                            << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+    return;
+  }
+
+  BasicBlock *BB = getBlock();
+  BasicBlock *CurBB = getCurBlock();
+
+  ISD::NodeType ISDOpcode = (ISD::NodeType) Node->getOpcode();
+  switch (ISDOpcode) {
+    default: {
+      WithColor(errs(), HighlightColor::Error) << "emitTargetIndependentNode called for opcode " << ISDOpcode << " (" << format("%04x", ISDOpcode) << "); "
+                                               << Node->getOperationName() << "\n";
+      assert(false && "Unsupported opcode");
     }
-  } break;
+
+    case ISD::EntryToken: // 1
+    case ISD::Register: // 9
+    case ISD::Constant: // 11
+    case ISD::FrameIndex: // 15
+    case ISD::ExternalSymbol: // 18
+      break;
+    case ISD::ADD: // 55
+      emitBinary(Node);
+      break;
+    case ISD::SUB: // 56
+      emitBinary(Node);
+      break;
+    case ISD::MUL: // 57
+      emitBinary(Node);
+      break;
+    case ISD::ADDC: { // 67
+      assert(false && "ISD::ADDC is untested");
+
+      Value *S0 = getIRValue(Node->getOperand(0));
+      Value *S1 = getIRValue(Node->getOperand(1));
+      Type *OperandTy = getDefaultType();
+
+      if (DAGInfo->NPMap[Node]->HasCPSR) {
+        unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+
+        if (DAGInfo->NPMap[Node]->UpdateCPSR) {
+          // Create add emit.
+          Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+          Value *Result = IRB.CreateAdd(S0, S1);
+          Value *CZext = IRB.CreateZExt(C_Flag, OperandTy);
+          Value *InstADC = IRB.CreateAdd(Result, CZext);
+          DAGInfo->setRealValue(Node, InstADC);
+          FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] =
+              dyn_cast<Instruction>(InstADC);
+
+          // Update CPSR.
+          // TODO:
+          // Should consider how to do this.
+          if (1)
+            emitCPSR(S0, S1, BB, 1);
+          else
+            emitCPSR(S0, S1, BB, 0);
+        } else {
+          // Create new BB for EQ instructin exectute.
+          BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+          // Create new BB to update the DAG BB.
+          BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+
+          // Emit the condition code.
+          emitCondCode(CondValue, BB, IfBB, ElseBB);
+
+          Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+          IRB.SetInsertPoint(IfBB);
+          Value *InstAdd = IRB.CreateAdd(S0, S1);
+          Value *CZext = IRB.CreateZExtOrTrunc(C_Flag, OperandTy);
+          Value *Inst = IRB.CreateAdd(InstAdd, CZext);
+          PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                              dyn_cast<Instruction>(Inst));
+          DAGInfo->setRealValue(Node, Phi);
+          FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+
+          IRB.CreateBr(ElseBB);
+          IRB.SetInsertPoint(ElseBB);
+        }
+      } else {
+        Value *C_Flag = CallCreateAlignedLoad(FuncInfo->AllocaMap[2]);
+        Value *Inst = IRB.CreateAdd(S0, S1);
+        Value *CTrunc = IRB.CreateZExtOrTrunc(C_Flag, getDefaultType());
+        Value *InstADC = IRB.CreateAdd(Inst, CTrunc);
+
+        DAGInfo->setRealValue(Node, InstADC);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = InstADC;
+      }
+    } break;
+    case ISD::AND: // 165
+      emitBinary(Node);
+      break;
+    case ISD::OR: // 166
+      emitBinary(Node);
+      break;
+    case ISD::XOR: // 167
+      emitBinary(Node);
+      break;
+    case ISD::SHL: // 169
+      emitBinary(Node);
+      break;
+    case ISD::SRA: // 170
+      emitBinary(Node);
+      break;
+    case ISD::SRL: // 171
+      emitBinary(Node);
+      break;
+    case ISD::ROTR: { // 173
+      Value *S0 = getIRValue(Node->getOperand(0));
+      Value *S1 = getIRValue(Node->getOperand(1));
+      Type *Ty = getDefaultType();
+      Value *Val = ConstantInt::get(Ty, 32, true);
+
+      if (DAGInfo->NPMap[Node]->HasCPSR) {
+        unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+
+        if (DAGInfo->NPMap[Node]->UpdateCPSR) {
+          Value *InstSub = IRB.CreateSub(Val, S1);
+          Value *InstLShr = IRB.CreateLShr(S0, S1);
+          Value *InstShl = IRB.CreateShl(S0, InstSub);
+          Value *Inst = IRB.CreateOr(InstLShr, InstShl);
+          DAGInfo->setRealValue(Node, Inst);
+          FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+
+          emitSpecialCPSR(Inst, BB, 0);
+        } else {
+          // Create new BB for EQ instructin exectute.
+          BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+          // Create new BB to update the DAG BB.
+          BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+
+          // Emit the condition code.
+          emitCondCode(CondValue, BB, IfBB, ElseBB);
+          IRB.SetInsertPoint(IfBB);
+          Value *InstSub = IRB.CreateSub(Val, S1);
+          Value *InstLShr = IRB.CreateLShr(S0, S1);
+          Value *InstShl = IRB.CreateShl(S0, InstSub);
+          Value *Inst = IRB.CreateOr(InstLShr, InstShl);
+          PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                              dyn_cast<Instruction>(Inst));
+          DAGInfo->setRealValue(Node, Phi);
+          FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+          IRB.CreateBr(ElseBB);
+          IRB.SetInsertPoint(ElseBB);
+        }
+      } else {
+        Value *InstSub = IRB.CreateSub(Val, S1);
+        Value *InstLShr = IRB.CreateLShr(S0, S1);
+        Value *InstShl = IRB.CreateShl(S0, InstSub);
+        Value *Inst = IRB.CreateOr(InstLShr, InstShl);
+        DAGInfo->setRealValue(Node, Inst);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+      }
+    } break;
+    case ISD::CTLZ: { // 178
+      assert(false && "ISD::CTLZ is untested");
+      Value *S0 = getIRValue(Node->getOperand(0));
+      Function *CTLZ = Intrinsic::getDeclaration(BB->getParent()->getParent(),
+                                                Intrinsic::ctlz, S0->getType());
+      Type *i1_type = llvm::IntegerType::getInt1Ty(*CTX);
+      Value *is_zero_undef = ConstantInt::get(i1_type, true, true);
+
+      std::vector<Value *> Vec;
+      Vec.push_back(S0);
+      Vec.push_back(is_zero_undef);
+      ArrayRef<Value *> Args(Vec);
+
+      Value *Inst = IRB.CreateCall(CTLZ, Args);
+      DAGInfo->setRealValue(Node, Inst);
+      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+    } break;
+    case ISD::SETCC: { // 187
+      Value *LHS = getIRValue(Node->getOperand(0));
+      Value *RHS = getIRValue(Node->getOperand(1));
+
+      Value *InstNot = nullptr;
+      if (ConstantSDNode::classof(Node->getOperand(1).getNode())) {
+        Value *InstTp = IRB.CreateSub(LHS, LHS);
+        Value *InstAdd = IRB.CreateAdd(InstTp, RHS);
+        InstNot = IRB.CreateNot(InstAdd);
+      } else {
+        InstNot = IRB.CreateNot(RHS);
+      }
+      emitCPSR(LHS, InstNot, BB, 1);
+    } break;
+    case ISD::BR: { // 250
+      // br label %xxx
+      MachineBasicBlock *LMBB = FuncInfo->MBBMap[CurBB];
+      MachineBasicBlock::succ_iterator SuI = LMBB->succ_begin();
+      if (SuI != LMBB->succ_end()) {
+        BasicBlock *BrDest = FuncInfo->getOrCreateBasicBlock(*SuI);
+        IRB.CreateBr(BrDest);
+        break;
+      }
+
+      // Get the function call Index.
+      uint64_t Index = Node->getConstantOperandVal(0);
+      // Get function from ModuleRaiser.
+      Function *CallFunc = MR->getRaisedFunctionAt(Index);
+      unsigned IFFuncArgNum = 0; // The argument number which gets from analyzing
+                                // variadic function prototype.
+      bool IsSyscall = false;
+      if (CallFunc == nullptr) {
+        // According MI to get BL instruction address.
+        // uint64_t callAddr = DAGInfo->NPMap[Node]->InstAddr;
+        uint64_t CallAddr = MR->getTextSectionAddress() +
+                            getMCInstIndex(*(DAGInfo->NPMap[Node]->MI));
+        Function *IndefiniteFunc = MR->getCallFunc(CallAddr);
+        CallFunc = MR->getSyscallFunc(Index);
+        if (CallFunc != nullptr && IndefiniteFunc != nullptr) {
+          IFFuncArgNum = MR->getFunctionArgNum(CallAddr);
+          IsSyscall = true;
+        }
+      }
+      assert(CallFunc && "Failed to get called function!");
+      // Get argument number from callee.
+      unsigned ArgNum = CallFunc->arg_size();
+      if (IFFuncArgNum > ArgNum)
+        ArgNum = IFFuncArgNum;
+      Argument *CalledFuncArgs = CallFunc->arg_begin();
+      std::vector<Value *> CallInstFuncArgs;
+      CallInst *Inst = nullptr;
+      if (ArgNum > 0) {
+        Value *ArgVal = nullptr;
+        const MachineFrameInfo &MFI = FuncInfo->MF->getFrameInfo();
+        unsigned StackArg = 0; // Initialize argument size on stack to 0.
+        if (ArgNum > 4) {
+          StackArg = ArgNum - 4;
+
+          unsigned StackNum = MFI.getNumObjects() - 2;
+          if (StackNum > StackArg)
+            StackArg = StackNum;
+        }
+        for (unsigned i = 0; i < ArgNum; i++) {
+          if (i < 4)
+            ArgVal = FuncInfo->ArgValMap[ARM::R0 + i];
+          else {
+            const Value *StackAlloc =
+                MFI.getObjectAllocation(StackArg - i - 4 + 1);
+            ArgVal = CallCreateAlignedLoad(
+                const_cast<Value *>(StackAlloc),
+                MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
+          }
+          if (IsSyscall && i < CallFunc->arg_size() &&
+              ArgVal->getType() != CalledFuncArgs[i].getType()) {
+            CastInst *CInst = CastInst::Create(
+                CastInst::getCastOpcode(ArgVal, false,
+                                        CalledFuncArgs[i].getType(), false),
+                ArgVal, CalledFuncArgs[i].getType());
+            IRB.GetInsertBlock()->getInstList().push_back(CInst);
+            ArgVal = CInst;
+          }
+          CallInstFuncArgs.push_back(ArgVal);
+        }
+        Inst = IRB.CreateCall(CallFunc, ArrayRef<Value *>(CallInstFuncArgs));
+      } else
+        Inst = IRB.CreateCall(CallFunc);
+
+      DAGInfo->setRealValue(Node, Inst);
+    } break;
+    case ISD::BRIND: { // 251
+      Value *Func = getIRValue(Node->getOperand(0));
+      unsigned NumDests = Node->getNumOperands();
+      IRB.CreateIndirectBr(Func, NumDests);
+    } break;
+    case ISD::BR_JT: { // 252
+      if (jtList.size() > 0) {
+        MachineBasicBlock *mbb = FuncInfo->MBBMap[CurBB];
+        MachineFunction *MF = mbb->getParent();
+
+        std::vector<JumpTableBlock> JTCases;
+        const MachineJumpTableInfo *MJT = MF->getJumpTableInfo();
+        unsigned jtIndex = Node->getConstantOperandVal(0);
+        std::vector<MachineJumpTableEntry> JumpTables = MJT->getJumpTables();
+        for (unsigned j = 0, f = JumpTables[jtIndex].MBBs.size(); j != f; ++j) {
+          llvm::Type *i32_type = llvm::IntegerType::getInt32Ty(*CTX);
+          llvm::ConstantInt *i32_val =
+              cast<ConstantInt>(llvm::ConstantInt::get(i32_type, j, true));
+          MachineBasicBlock *Succ = JumpTables[jtIndex].MBBs[j];
+          ConstantInt *CaseVal = i32_val;
+          JTCases.push_back(std::make_pair(CaseVal, Succ));
+        }
+        // main->getEntryBlock().setName("entry");
+
+        unsigned int numCases = JTCases.size();
+        BasicBlock *def_bb =
+            FuncInfo->getOrCreateBasicBlock(jtList[jtIndex].df_MBB);
+
+        BasicBlock *cd_bb =
+            FuncInfo->getOrCreateBasicBlock(jtList[jtIndex].conditionMBB);
+
+        Instruction *cdi = nullptr;
+        for (BasicBlock::iterator DI = cd_bb->begin(); DI != cd_bb->end(); DI++) {
+          Instruction *ins = dyn_cast<Instruction>(DI);
+          if (isa<LoadInst>(DI) && !cdi) {
+            cdi = ins;
+          }
+
+          if (cdi && (ins->getOpcode() == Instruction::Sub)) {
+            if (isa<ConstantInt>(ins->getOperand(1))) {
+              ConstantInt *opr = dyn_cast<ConstantInt>(ins->getOperand(1));
+              if (opr->uge(0)) {
+                cdi = ins;
+              }
+            }
+          }
+        }
+
+        SwitchInst *Inst = IRB.CreateSwitch(cdi, def_bb, numCases);
+        for (unsigned i = 0, e = numCases; i != e; ++i) {
+          BasicBlock *case_bb =
+              FuncInfo->getOrCreateBasicBlock(JTCases[i].second);
+          Inst->addCase(JTCases[i].first, case_bb);
+        }
+      }
+    } break;
+    case ISD::BRCOND: { // 253
+      unsigned Cond = cast<ConstantSDNode>(Node->getOperand(1))->getZExtValue();
+      // br i1 %cmp, label %if.then, label %if.else
+      MachineBasicBlock *MBB = FuncInfo->MBBMap[CurBB];
+      MachineBasicBlock::succ_iterator SuI = MBB->succ_begin();
+      BasicBlock *Iftrue = FuncInfo->getOrCreateBasicBlock(*SuI);
+      MachineBasicBlock *NextMBB = &*std::next(MBB->getIterator());
+      BasicBlock *NextBB = FuncInfo->getOrCreateBasicBlock(NextMBB);
+
+      emitCondCode(Cond, BB, Iftrue, NextBB);
+    } break;
+    case ISD::MDNODE_SDNODE: // 272
+      break;
   }
 }
