@@ -1,6 +1,6 @@
 // RUN: clang %S/../Inputs/switch_func.c -o %t.so --target=%arm_triple -fuse-ld=lld -shared -fPIC
 // RUN: llvm-mctoll %t.so
-// RUN: clang -o %t1 %s %t-dis.ll
+// RUN: clang -o %t1 %s %t-dis.ll -mx32
 // RUN: %t1 2>&1 | FileCheck %s
 // CHECK: Switch 1
 // CHECK-NEXT: Return 15
