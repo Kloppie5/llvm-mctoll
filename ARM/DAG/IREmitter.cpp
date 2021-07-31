@@ -26,96 +26,6 @@ IREmitter::IREmitter(BasicBlock *bb, DAGRaisingInfo *dagInfo,
       DAG(&dagInfo->getCurDAG()), CTX(DAG->getContext()), FuncInfo(funcInfo),
       DLT(funcInfo->DLT), MR(funcInfo->MR), IRB(bb) {}
 
-// Map ISD opcode to Instruction opcode. But some instruction opcode without
-// corresponding ISD opcode mapping.
-static int raiseISDOpcodeToInstruction(unsigned Opcode) {
-  enum InstructionOpcodes {
-#define HANDLE_INST(NUM, OPCODE, CLASS) OPCODE = NUM,
-#define LAST_OTHER_INST(NUM) InstructionOpcodesCount = NUM
-#include "llvm/IR/Instruction.def"
-#define INVALID_INST (InstructionOpcodesCount + 1)
-  };
-  switch (Opcode) {
-  default:
-    return INVALID_INST;
-  case ISD::ADD:
-  case ARMISD::CMOV:
-    return Add;
-  case ISD::FADD:
-    return FAdd;
-  case ISD::SUB:
-    return Sub;
-  case ISD::FSUB:
-    return FSub;
-  case ISD::MUL: // 57
-    return Mul;
-  case ISD::FMUL:
-    return FMul;
-  case ISD::UDIV:
-    return UDiv;
-  case ISD::SDIV:
-    return SDiv;
-  case ISD::FDIV:
-    return FDiv;
-  case ISD::UREM:
-    return URem;
-  case ISD::SREM:
-    return SRem;
-  case ISD::FREM:
-    return FRem;
-  case ISD::SHL:
-    return Shl;
-  case ISD::SRL: // 171
-    return LShr;
-  case ISD::SRA: // 170
-    return AShr;
-  case ISD::AND: // 165
-    return And;
-  case ISD::OR:
-    return Or;
-  case ISD::XOR:
-    return Xor;
-  case EXT_ARMISD::LOAD:
-    return Load;
-  case EXT_ARMISD::STORE:
-    return Store;
-  case ISD::TRUNCATE:
-    return Trunc;
-  case ISD::ZERO_EXTEND:
-    return ZExt;
-  case ISD::SIGN_EXTEND:
-    return SExt;
-  case ISD::FP_TO_UINT:
-    return FPToUI;
-  case ISD::FP_TO_SINT:
-    return FPToSI;
-  case ISD::UINT_TO_FP:
-    return UIToFP;
-  case ISD::SINT_TO_FP:
-    return SIToFP;
-  case ISD::FP_ROUND:
-    return FPTrunc;
-  case ISD::FP_EXTEND:
-    return FPExt;
-  case ISD::BITCAST:
-    return BitCast;
-  case ISD::ADDRSPACECAST:
-    return AddrSpaceCast;
-  case ISD::SETCC:
-    return ICmp;
-  case ISD::SELECT:
-    return Select;
-  case ISD::EXTRACT_VECTOR_ELT:
-    return ExtractElement;
-  case ISD::INSERT_VECTOR_ELT:
-    return InsertElement;
-  case ISD::VECTOR_SHUFFLE:
-    return ShuffleVector;
-  case ISD::MERGE_VALUES:
-    return ExtractValue;
-  }
-}
-
 Value *IREmitter::getIRValue(SDValue val) {
   SDNode *N = val.getNode();
 
@@ -410,10 +320,8 @@ void IREmitter::emitBinary(SDNode *Node) {
   Value *S0 = getIRValue(Node->getOperand(0));
   Value *S1 = getIRValue(Node->getOperand(1));
 
-  int InstOpc = raiseISDOpcodeToInstruction(Opc);
-
-  switch (InstOpc) {
-  case Instruction::Add: {
+  switch (Opc) {
+  case ISD::ADD: {
     if (DAGInfo->NPMap[Node]->HasCPSR) {
       unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
       if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) {
@@ -439,14 +347,14 @@ void IREmitter::emitBinary(SDNode *Node) {
                                             dyn_cast<Instruction>(Inst));
         DAGInfo->setRealValue(Node, Phi);
         FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
-        emitBinaryCPSR(Inst, IfBB, InstOpc, Node);
+        emitBinaryCPSR(Inst, IfBB, Instruction::Add, Node);
         IRB.CreateBr(ElseBB);
         IRB.SetInsertPoint(ElseBB);
       } else {
         Value *Inst = IRB.CreateAdd(S0, S1);
         DAGInfo->setRealValue(Node, Inst);
         FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
-        emitBinaryCPSR(Inst, BB, InstOpc, Node);
+        emitBinaryCPSR(Inst, BB, Instruction::Add, Node);
       }
     } else {
       Value *Inst = BinaryOperator::CreateAdd(S0, S1);
@@ -457,14 +365,358 @@ void IREmitter::emitBinary(SDNode *Node) {
     }
     break;
   }
-    case Instruction::Sub: { if (DAGInfo->NPMap[Node]->HasCPSR) { unsigned CondValue = DAGInfo->NPMap[Node]->Cond; if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateSub(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; IRB.SetInsertPoint(IfBB); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else if (DAGInfo->NPMap[Node]->Special) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateSub(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; emitBinaryCPSR(Inst, IfBB, InstOpc, Node); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else { Value *Inst = IRB.CreateSub(S0, S1); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; emitBinaryCPSR(Inst, BB, InstOpc, Node); } } else { Value *Inst = BinaryOperator::CreateSub(S0, S1); BasicBlock *CBB = IRB.GetInsertBlock(); CBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; } break; }
-    case Instruction::Mul: { if (DAGInfo->NPMap[Node]->HasCPSR) { unsigned CondValue = DAGInfo->NPMap[Node]->Cond; if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateMul(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; IRB.SetInsertPoint(IfBB); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else if (DAGInfo->NPMap[Node]->Special) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateMul(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; emitBinaryCPSR(Inst, IfBB, InstOpc, Node); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else { Value *Inst = IRB.CreateMul(S0, S1); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; emitBinaryCPSR(Inst, BB, InstOpc, Node); } } else { Value *Inst = BinaryOperator::CreateMul(S0, S1); BasicBlock *CBB = IRB.GetInsertBlock(); CBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; } break; }
-    case Instruction::Shl: { if (DAGInfo->NPMap[Node]->HasCPSR) { unsigned CondValue = DAGInfo->NPMap[Node]->Cond; if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateShl(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; IRB.SetInsertPoint(IfBB); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else if (DAGInfo->NPMap[Node]->Special) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateShl(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; emitBinaryCPSR(Inst, IfBB, InstOpc, Node); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else { Value *Inst = IRB.CreateShl(S0, S1); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; emitBinaryCPSR(Inst, BB, InstOpc, Node); } } else { Value *Inst = BinaryOperator::CreateShl(S0, S1); BasicBlock *CBB = IRB.GetInsertBlock(); CBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; } break; }
-    case Instruction::LShr: { if (DAGInfo->NPMap[Node]->HasCPSR) { unsigned CondValue = DAGInfo->NPMap[Node]->Cond; if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateLShr(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; IRB.SetInsertPoint(IfBB); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else if (DAGInfo->NPMap[Node]->Special) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateLShr(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; emitBinaryCPSR(Inst, IfBB, InstOpc, Node); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else { Value *Inst = IRB.CreateLShr(S0, S1); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; emitBinaryCPSR(Inst, BB, InstOpc, Node); } } else { Value *Inst = BinaryOperator::CreateLShr(S0, S1); BasicBlock *CBB = IRB.GetInsertBlock(); CBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; } break; }
-    case Instruction::AShr: { if (DAGInfo->NPMap[Node]->HasCPSR) { unsigned CondValue = DAGInfo->NPMap[Node]->Cond; if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateAShr(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; IRB.SetInsertPoint(IfBB); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else if (DAGInfo->NPMap[Node]->Special) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateAShr(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; emitBinaryCPSR(Inst, IfBB, InstOpc, Node); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else { Value *Inst = IRB.CreateAShr(S0, S1); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; emitBinaryCPSR(Inst, BB, InstOpc, Node); } } else { Value *Inst = BinaryOperator::CreateAShr(S0, S1); BasicBlock *CBB = IRB.GetInsertBlock(); CBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; } break; }
-    case Instruction::And: { if (DAGInfo->NPMap[Node]->HasCPSR) { unsigned CondValue = DAGInfo->NPMap[Node]->Cond; if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateAnd(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; IRB.SetInsertPoint(IfBB); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else if (DAGInfo->NPMap[Node]->Special) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateAnd(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; emitBinaryCPSR(Inst, IfBB, InstOpc, Node); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else { Value *Inst = IRB.CreateAnd(S0, S1); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; emitBinaryCPSR(Inst, BB, InstOpc, Node); } } else { Value *Inst = BinaryOperator::CreateAnd(S0, S1); BasicBlock *CBB = IRB.GetInsertBlock(); CBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; } break; }
-    case Instruction::Or: { if (DAGInfo->NPMap[Node]->HasCPSR) { unsigned CondValue = DAGInfo->NPMap[Node]->Cond; if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateOr(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; IRB.SetInsertPoint(IfBB); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else if (DAGInfo->NPMap[Node]->Special) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateOr(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; emitBinaryCPSR(Inst, IfBB, InstOpc, Node); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else { Value *Inst = IRB.CreateOr(S0, S1); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; emitBinaryCPSR(Inst, BB, InstOpc, Node); } } else { Value *Inst = BinaryOperator::CreateOr(S0, S1); BasicBlock *CBB = IRB.GetInsertBlock(); CBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; } break; }
-    case Instruction::Xor: { if (DAGInfo->NPMap[Node]->HasCPSR) { unsigned CondValue = DAGInfo->NPMap[Node]->Cond; if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateXor(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; IRB.SetInsertPoint(IfBB); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else if (DAGInfo->NPMap[Node]->Special) { BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent()); BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent()); emitCondCode(CondValue, BB, IfBB, ElseBB); Value *Inst = BinaryOperator::CreateXor(S0, S1); IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB, dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Phi); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi; emitBinaryCPSR(Inst, IfBB, InstOpc, Node); IRB.CreateBr(ElseBB); IRB.SetInsertPoint(ElseBB); } else { Value *Inst = IRB.CreateXor(S0, S1); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; emitBinaryCPSR(Inst, BB, InstOpc, Node); } } else { Value *Inst = BinaryOperator::CreateXor(S0, S1); BasicBlock *CBB = IRB.GetInsertBlock(); CBB->getInstList().push_back(dyn_cast<Instruction>(Inst)); DAGInfo->setRealValue(Node, Inst); FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst; } break; }
+  case ISD::SUB: {
+    if (DAGInfo->NPMap[Node]->HasCPSR) {
+      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+      if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateSub(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        IRB.SetInsertPoint(IfBB);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else if (DAGInfo->NPMap[Node]->Special) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateSub(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        emitBinaryCPSR(Inst, IfBB, Instruction::Sub, Node);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else {
+        Value *Inst = IRB.CreateSub(S0, S1);
+        DAGInfo->setRealValue(Node, Inst);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+        emitBinaryCPSR(Inst, BB, Instruction::Sub, Node);
+      }
+    } else {
+      Value *Inst = BinaryOperator::CreateSub(S0, S1);
+      BasicBlock *CBB = IRB.GetInsertBlock();
+      CBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+      DAGInfo->setRealValue(Node, Inst);
+      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+    }
+    break;
+  }
+  case ISD::MUL: {
+    if (DAGInfo->NPMap[Node]->HasCPSR) {
+      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+      if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateMul(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        IRB.SetInsertPoint(IfBB);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else if (DAGInfo->NPMap[Node]->Special) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateMul(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        emitBinaryCPSR(Inst, IfBB, Instruction::Mul, Node);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else {
+        Value *Inst = IRB.CreateMul(S0, S1);
+        DAGInfo->setRealValue(Node, Inst);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+        emitBinaryCPSR(Inst, BB, Instruction::Mul, Node);
+      }
+    } else {
+      Value *Inst = BinaryOperator::CreateMul(S0, S1);
+      BasicBlock *CBB = IRB.GetInsertBlock();
+      CBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+      DAGInfo->setRealValue(Node, Inst);
+      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+    }
+    break;
+  }
+  case ISD::SHL: {
+    if (DAGInfo->NPMap[Node]->HasCPSR) {
+      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+      if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateShl(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        IRB.SetInsertPoint(IfBB);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else if (DAGInfo->NPMap[Node]->Special) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateShl(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        emitBinaryCPSR(Inst, IfBB, Instruction::Shl, Node);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else {
+        Value *Inst = IRB.CreateShl(S0, S1);
+        DAGInfo->setRealValue(Node, Inst);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+        emitBinaryCPSR(Inst, BB, Instruction::Shl, Node);
+      }
+    } else {
+      Value *Inst = BinaryOperator::CreateShl(S0, S1);
+      BasicBlock *CBB = IRB.GetInsertBlock();
+      CBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+      DAGInfo->setRealValue(Node, Inst);
+      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+    }
+    break;
+  }
+  case ISD::SRL: {
+    if (DAGInfo->NPMap[Node]->HasCPSR) {
+      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+      if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateLShr(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        IRB.SetInsertPoint(IfBB);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else if (DAGInfo->NPMap[Node]->Special) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateLShr(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        emitBinaryCPSR(Inst, IfBB, Instruction::LShr, Node);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else {
+        Value *Inst = IRB.CreateLShr(S0, S1);
+        DAGInfo->setRealValue(Node, Inst);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+        emitBinaryCPSR(Inst, BB, Instruction::LShr, Node);
+      }
+    } else {
+      Value *Inst = BinaryOperator::CreateLShr(S0, S1);
+      BasicBlock *CBB = IRB.GetInsertBlock();
+      CBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+      DAGInfo->setRealValue(Node, Inst);
+      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+    }
+    break;
+  }
+  case ISD::SRA: {
+    if (DAGInfo->NPMap[Node]->HasCPSR) {
+      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+      if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateAShr(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        IRB.SetInsertPoint(IfBB);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else if (DAGInfo->NPMap[Node]->Special) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateAShr(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        emitBinaryCPSR(Inst, IfBB, Instruction::AShr, Node);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else {
+        Value *Inst = IRB.CreateAShr(S0, S1);
+        DAGInfo->setRealValue(Node, Inst);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+        emitBinaryCPSR(Inst, BB, Instruction::AShr, Node);
+      }
+    } else {
+      Value *Inst = BinaryOperator::CreateAShr(S0, S1);
+      BasicBlock *CBB = IRB.GetInsertBlock();
+      CBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+      DAGInfo->setRealValue(Node, Inst);
+      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+    }
+    break;
+  }
+  case ISD::AND: {
+    if (DAGInfo->NPMap[Node]->HasCPSR) {
+      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+      if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateAnd(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        IRB.SetInsertPoint(IfBB);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else if (DAGInfo->NPMap[Node]->Special) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateAnd(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        emitBinaryCPSR(Inst, IfBB, Instruction::And, Node);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else {
+        Value *Inst = IRB.CreateAnd(S0, S1);
+        DAGInfo->setRealValue(Node, Inst);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+        emitBinaryCPSR(Inst, BB, Instruction::And, Node);
+      }
+    } else {
+      Value *Inst = BinaryOperator::CreateAnd(S0, S1);
+      BasicBlock *CBB = IRB.GetInsertBlock();
+      CBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+      DAGInfo->setRealValue(Node, Inst);
+      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+    }
+    break;
+  }
+  case ISD::OR: {
+    if (DAGInfo->NPMap[Node]->HasCPSR) {
+      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+      if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateOr(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        IRB.SetInsertPoint(IfBB);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else if (DAGInfo->NPMap[Node]->Special) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateOr(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        emitBinaryCPSR(Inst, IfBB, Instruction::Or, Node);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else {
+        Value *Inst = IRB.CreateOr(S0, S1);
+        DAGInfo->setRealValue(Node, Inst);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+        emitBinaryCPSR(Inst, BB, Instruction::Or, Node);
+      }
+    } else {
+      Value *Inst = BinaryOperator::CreateOr(S0, S1);
+      BasicBlock *CBB = IRB.GetInsertBlock();
+      CBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+      DAGInfo->setRealValue(Node, Inst);
+      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+    }
+    break;
+  }
+  case ISD::XOR: {
+    if (DAGInfo->NPMap[Node]->HasCPSR) {
+      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+      if (!(DAGInfo->NPMap[Node]->UpdateCPSR)) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateXor(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        IRB.SetInsertPoint(IfBB);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else if (DAGInfo->NPMap[Node]->Special) {
+        BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+        emitCondCode(CondValue, BB, IfBB, ElseBB);
+        Value *Inst = BinaryOperator::CreateXor(S0, S1);
+        IfBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+        PHINode *Phi = createAndEmitPHINode(Node, BB, IfBB, ElseBB,
+                                            dyn_cast<Instruction>(Inst));
+        DAGInfo->setRealValue(Node, Phi);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Phi;
+        emitBinaryCPSR(Inst, IfBB, Instruction::Xor, Node);
+        IRB.CreateBr(ElseBB);
+        IRB.SetInsertPoint(ElseBB);
+      } else {
+        Value *Inst = IRB.CreateXor(S0, S1);
+        DAGInfo->setRealValue(Node, Inst);
+        FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+        emitBinaryCPSR(Inst, BB, Instruction::Xor, Node);
+      }
+    } else {
+      Value *Inst = BinaryOperator::CreateXor(S0, S1);
+      BasicBlock *CBB = IRB.GetInsertBlock();
+      CBB->getInstList().push_back(dyn_cast<Instruction>(Inst));
+      DAGInfo->setRealValue(Node, Inst);
+      FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
+    }
+    break;
+  }
   }
 }
 
