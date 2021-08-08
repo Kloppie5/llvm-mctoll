@@ -20,6 +20,439 @@
 
 using namespace llvm;
 
+// TODO: Move helper function
+string getARMISDName(ARMISD::NodeType Opcode) {
+  switch (Opcode) {
+    default:
+    case ARMISD::FIRST_NUMBER: // 350
+      return "UNKNOWN";
+    case ARMISD::Wrapper: // 351
+      return "ARMISD::Wrapper";
+    case ARMISD::WrapperPIC: // 352
+      return "ARMISD::WrapperPIC";
+    case ARMISD::WrapperJT: // 353
+      return "ARMISD::WrapperJT";
+    case ARMISD::COPY_STRUCT_BYVAL: // 354
+      return "ARMISD::COPY_STRUCT_BYVAL";
+    case ARMISD::CALL: // 355
+      return "ARMISD::CALL";
+    case ARMISD::CALL_PRED: // 356
+      return "ARMISD::CALL_PRED";
+    case ARMISD::CALL_NOLINK: // 357
+      return "ARMISD::CALL_NOLINK";
+    case ARMISD::tSECALL: // 358
+      return "ARMISD::tSECALL";
+    case ARMISD::BRCOND: // 359
+      return "ARMISD::BRCOND";
+    case ARMISD::BR_JT: // 360
+      return "ARMISD::BR_JT";
+    case ARMISD::BR2_JT: // 361
+      return "ARMISD::BR2_JT";
+    case ARMISD::RET_FLAG: // 362
+      return "ARMISD::RET_FLAG";
+    case ARMISD::SERET_FLAG: // 363
+      return "ARMISD::SERET_FLAG";
+    case ARMISD::INTRET_FLAG: // 364
+      return "ARMISD::INTRET_FLAG";
+    case ARMISD::PIC_ADD: // 365
+      return "ARMISD::PIC_ADD";
+    case ARMISD::ASRL: // 366
+      return "ARMISD::ASRL";
+    case ARMISD::LSRL: // 367
+      return "ARMISD::LSRL";
+    case ARMISD::LSLL: // 368
+      return "ARMISD::LSLL";
+    case ARMISD::CMP: // 369
+      return "ARMISD::CMP";
+    case ARMISD::CMN: // 370
+      return "ARMISD::CMN";
+    case ARMISD::CMPZ: // 371
+      return "ARMISD::CMPZ";
+    case ARMISD::CMPFP: // 372
+      return "ARMISD::CMPFP";
+    case ARMISD::CMPFPE: // 373
+      return "ARMISD::CMPFPE";
+    case ARMISD::CMPFPw0: // 374
+      return "ARMISD::CMPFPw0";
+    case ARMISD::CMPFPEw0: // 375
+      return "ARMISD::CMPFPEw0";
+    case ARMISD::FMSTAT: // 376
+      return "ARMISD::FMSTAT";
+    case ARMISD::CMOV: // 377
+      return "ARMISD::CMOV";
+    case ARMISD::SUBS: // 378
+      return "ARMISD::SUBS";
+    case ARMISD::SSAT: // 379
+      return "ARMISD::SSAT";
+    case ARMISD::USAT: // 380
+      return "ARMISD::USAT";
+    case ARMISD::BCC_i64: // 381
+      return "ARMISD::BCC_i64";
+    case ARMISD::SRL_FLAG: // 382
+      return "ARMISD::SRL_FLAG";
+    case ARMISD::SRA_FLAG: // 383
+      return "ARMISD::SRA_FLAG";
+    case ARMISD::RRX: // 384
+      return "ARMISD::RRX";
+    case ARMISD::ADDC: // 385
+      return "ARMISD::ADDC";
+    case ARMISD::ADDE: // 386
+      return "ARMISD::ADDE";
+    case ARMISD::SUBC: // 387
+      return "ARMISD::SUBC";
+    case ARMISD::SUBE: // 388
+      return "ARMISD::SUBE";
+    case ARMISD::LSLS: // 389
+      return "ARMISD::LSLS";
+    case ARMISD::VMOVRRD: // 390
+      return "ARMISD::VMOVRRD";
+    case ARMISD::VMOVDRR: // 391
+      return "ARMISD::VMOVDRR";
+    case ARMISD::VMOVSR: // 392
+      return "ARMISD::VMOVSR";
+    case ARMISD::EH_SJLJ_SETJMP: // 393
+      return "ARMISD::EH_SJLJ_SETJMP";
+    case ARMISD::EH_SJLJ_LONGJMP: // 394
+      return "ARMISD::EH_SJLJ_LONGJMP";
+    case ARMISD::EH_SJLJ_SETUP_DISPATCH: // 395
+      return "ARMISD::EH_SJLJ_SETUP_DISPATCH";
+    case ARMISD::TC_RETURN: // 396
+      return "ARMISD::TC_RETURN";
+    case ARMISD::THREAD_POINTER: // 397
+      return "ARMISD::THREAD_POINTER";
+    case ARMISD::DYN_ALLOC: // 398
+      return "ARMISD::DYN_ALLOC";
+    case ARMISD::MEMBARRIER_MCR: // 399
+      return "ARMISD::MEMBARRIER_MCR";
+    case ARMISD::PRELOAD: // 400
+      return "ARMISD::PRELOAD";
+    case ARMISD::WIN__CHKSTK: // 401
+      return "ARMISD::WIN__CHKSTK";
+    case ARMISD::WIN__DBZCHK: // 402
+      return "ARMISD::WIN__DBZCHK";
+    case ARMISD::WLS: // 403
+      return "ARMISD::WLS";
+    case ARMISD::WLSSETUP: // 404
+      return "ARMISD::WLSSETUP";
+    case ARMISD::LOOP_DEC: // 405
+      return "ARMISD::LOOP_DEC";
+    case ARMISD::LE: // 406
+      return "ARMISD::LE";
+    case ARMISD::PREDICATE_CAST: // 407
+      return "ARMISD::PREDICATE_CAST";
+    case ARMISD::VECTOR_REG_CAST: // 408
+      return "ARMISD::VECTOR_REG_CAST";
+    case ARMISD::MVETRUNC: // 409
+      return "ARMISD::MVETRUNC";
+    case ARMISD::VCMP: // 410
+      return "ARMISD::VCMP";
+    case ARMISD::VCMPZ: // 411
+      return "ARMISD::VCMPZ";
+    case ARMISD::VTST: // 412
+      return "ARMISD::VTST";
+    case ARMISD::VSHLs: // 413
+      return "ARMISD::VSHLs";
+    case ARMISD::VSHLu: // 414
+      return "ARMISD::VSHLu";
+    case ARMISD::VSHLIMM: // 415
+      return "ARMISD::VSHLIMM";
+    case ARMISD::VSHRsIMM: // 416
+      return "ARMISD::VSHRsIMM";
+    case ARMISD::VSHRuIMM: // 417
+      return "ARMISD::VSHRuIMM";
+    case ARMISD::VRSHRsIMM: // 418
+      return "ARMISD::VRSHRsIMM";
+    case ARMISD::VRSHRuIMM: // 419
+      return "ARMISD::VRSHRuIMM";
+    case ARMISD::VRSHRNIMM: // 420
+      return "ARMISD::VRSHRNIMM";
+    case ARMISD::VQSHLsIMM: // 421
+      return "ARMISD::VQSHLsIMM";
+    case ARMISD::VQSHLuIMM: // 422
+      return "ARMISD::VQSHLuIMM";
+    case ARMISD::VQSHLsuIMM: // 423
+      return "ARMISD::VQSHLsuIMM";
+    case ARMISD::VQSHRNsIMM: // 424
+      return "ARMISD::VQSHRNsIMM";
+    case ARMISD::VQSHRNuIMM: // 425
+      return "ARMISD::VQSHRNuIMM";
+    case ARMISD::VQSHRNsuIMM: // 426
+      return "ARMISD::VQSHRNsuIMM";
+    case ARMISD::VQRSHRNsIMM: // 427
+      return "ARMISD::VQRSHRNsIMM";
+    case ARMISD::VQRSHRNuIMM: // 428
+      return "ARMISD::VQRSHRNuIMM";
+    case ARMISD::VQRSHRNsuIMM: // 429
+      return "ARMISD::VQRSHRNsuIMM";
+    case ARMISD::VSLIIMM: // 430
+      return "ARMISD::VSLIIMM";
+    case ARMISD::VSRIIMM: // 431
+      return "ARMISD::VSRIIMM";
+    case ARMISD::VGETLANEu: // 432
+      return "ARMISD::VGETLANEu";
+    case ARMISD::VGETLANEs: // 433
+      return "ARMISD::VGETLANEs";
+    case ARMISD::VMOVIMM: // 434
+      return "ARMISD::VMOVIMM";
+    case ARMISD::VMVNIMM: // 435
+      return "ARMISD::VMVNIMM";
+    case ARMISD::VMOVFPIMM: // 436
+      return "ARMISD::VMOVFPIMM";
+    case ARMISD::VMOVrh: // 437
+      return "ARMISD::VMOVrh";
+    case ARMISD::VMOVhr: // 438
+      return "ARMISD::VMOVhr";
+    case ARMISD::VDUP: // 439
+      return "ARMISD::VDUP";
+    case ARMISD::VDUPLANE: // 440
+      return "ARMISD::VDUPLANE";
+    case ARMISD::VEXT: // 441
+      return "ARMISD::VEXT";
+    case ARMISD::VREV64: // 442
+      return "ARMISD::VREV64";
+    case ARMISD::VREV32: // 443
+      return "ARMISD::VREV32";
+    case ARMISD::VREV16: // 444
+      return "ARMISD::VREV16";
+    case ARMISD::VZIP: // 445
+      return "ARMISD::VZIP";
+    case ARMISD::VUZP: // 446
+      return "ARMISD::VUZP";
+    case ARMISD::VTRN: // 447
+      return "ARMISD::VTRN";
+    case ARMISD::VTBL1: // 448
+      return "ARMISD::VTBL1";
+    case ARMISD::VTBL2: // 449
+      return "ARMISD::VTBL2";
+    case ARMISD::VMOVN: // 450
+      return "ARMISD::VMOVN";
+    case ARMISD::VQMOVNs: // 451
+      return "ARMISD::VQMOVNs";
+    case ARMISD::VQMOVNu: // 452
+      return "ARMISD::VQMOVNu";
+    case ARMISD::VCVTN: // 453
+      return "ARMISD::VCVTN";
+    case ARMISD::VCVTL: // 454
+      return "ARMISD::VCVTL";
+    case ARMISD::VIDUP: // 455
+      return "ARMISD::VIDUP";
+    case ARMISD::VMULLs: // 456
+      return "ARMISD::VMULLs";
+    case ARMISD::VMULLu: // 457
+      return "ARMISD::VMULLu";
+    case ARMISD::VQDMULH: // 458
+      return "ARMISD::VQDMULH";
+    case ARMISD::VADDVs: // 459
+      return "ARMISD::VADDVs";
+    case ARMISD::VADDVu: // 460
+      return "ARMISD::VADDVu";
+    case ARMISD::VADDVps: // 461
+      return "ARMISD::VADDVps";
+    case ARMISD::VADDVpu: // 462
+      return "ARMISD::VADDVpu";
+    case ARMISD::VADDLVs: // 463
+      return "ARMISD::VADDLVs";
+    case ARMISD::VADDLVu: // 464
+      return "ARMISD::VADDLVu";
+    case ARMISD::VADDLVAs: // 465
+      return "ARMISD::VADDLVAs";
+    case ARMISD::VADDLVAu: // 466
+      return "ARMISD::VADDLVAu";
+    case ARMISD::VADDLVps: // 467
+      return "ARMISD::VADDLVps";
+    case ARMISD::VADDLVpu: // 468
+      return "ARMISD::VADDLVpu";
+    case ARMISD::VADDLVAps: // 469
+      return "ARMISD::VADDLVAps";
+    case ARMISD::VADDLVApu: // 470
+      return "ARMISD::VADDLVApu";
+    case ARMISD::VMLAVs: // 471
+      return "ARMISD::VMLAVs";
+    case ARMISD::VMLAVu: // 472
+      return "ARMISD::VMLAVu";
+    case ARMISD::VMLAVps: // 473
+      return "ARMISD::VMLAVps";
+    case ARMISD::VMLAVpu: // 474
+      return "ARMISD::VMLAVpu";
+    case ARMISD::VMLALVs: // 475
+      return "ARMISD::VMLALVs";
+    case ARMISD::VMLALVu: // 476
+      return "ARMISD::VMLALVu";
+    case ARMISD::VMLALVps: // 477
+      return "ARMISD::VMLALVps";
+    case ARMISD::VMLALVpu: // 478
+      return "ARMISD::VMLALVpu";
+    case ARMISD::VMLALVAs: // 479
+      return "ARMISD::VMLALVAs";
+    case ARMISD::VMLALVAu: // 480
+      return "ARMISD::VMLALVAu";
+    case ARMISD::VMLALVAps: // 481
+      return "ARMISD::VMLALVAps";
+    case ARMISD::VMLALVApu: // 482
+      return "ARMISD::VMLALVApu";
+    case ARMISD::VMINVu: // 483
+      return "ARMISD::VMINVu";
+    case ARMISD::VMINVs: // 484
+      return "ARMISD::VMINVs";
+    case ARMISD::VMAXVu: // 485
+      return "ARMISD::VMAXVu";
+    case ARMISD::VMAXVs: // 486
+      return "ARMISD::VMAXVs";
+    case ARMISD::SMULWB: // 487
+      return "ARMISD::SMULWB";
+    case ARMISD::SMULWT: // 488
+      return "ARMISD::SMULWT";
+    case ARMISD::UMLAL: // 489
+      return "ARMISD::UMLAL";
+    case ARMISD::SMLAL: // 490
+      return "ARMISD::SMLAL";
+    case ARMISD::UMAAL: // 491
+      return "ARMISD::UMAAL";
+    case ARMISD::SMLALBB: // 492
+      return "ARMISD::SMLALBB";
+    case ARMISD::SMLALBT: // 493
+      return "ARMISD::SMLALBT";
+    case ARMISD::SMLALTB: // 494
+      return "ARMISD::SMLALTB";
+    case ARMISD::SMLALTT: // 495
+      return "ARMISD::SMLALTT";
+    case ARMISD::SMLALD: // 496
+      return "ARMISD::SMLALD";
+    case ARMISD::SMLALDX: // 497
+      return "ARMISD::SMLALDX";
+    case ARMISD::SMLSLD: // 498
+      return "ARMISD::SMLSLD";
+    case ARMISD::SMLSLDX: // 499
+      return "ARMISD::SMLSLDX";
+    case ARMISD::SMMLAR: // 500
+      return "ARMISD::SMMLAR";
+    case ARMISD::SMMLSR: // 501
+      return "ARMISD::SMMLSR";
+    case ARMISD::QADD8b: // 502
+      return "ARMISD::QADD8b";
+    case ARMISD::QSUB8b: // 503
+      return "ARMISD::QSUB8b";
+    case ARMISD::QADD16b: // 504
+      return "ARMISD::QADD16b";
+    case ARMISD::QSUB16b: // 505
+      return "ARMISD::QSUB16b";
+    case ARMISD::BUILD_VECTOR: // 506
+      return "ARMISD::BUILD_VECTOR";
+    case ARMISD::BFI: // 507
+      return "ARMISD::BFI";
+    case ARMISD::VORRIMM: // 508
+      return "ARMISD::VORRIMM";
+    case ARMISD::VBICIMM: // 509
+      return "ARMISD::VBICIMM";
+    case ARMISD::VBSP: // 510
+      return "ARMISD::VBSP";
+    case ARMISD::MEMCPY: // 511
+      return "ARMISD::MEMCPY";
+    case ARMISD::MEMCPYLOOP: // 512
+      return "ARMISD::MEMCPYLOOP";
+    case ARMISD::MEMSETLOOP: // 513
+      return "ARMISD::MEMSETLOOP";
+    case ARMISD::CSINV: // 514
+      return "ARMISD::CSINV";
+    case ARMISD::CSNEG: // 515
+      return "ARMISD::CSNEG";
+    case ARMISD::CSINC: // 516
+      return "ARMISD::CSINC";
+    
+    // NOTE: EXT_ARMISD warnings are intentionally left in
+    // for now until the entire enum is removed.
+    case EXT_ARMISD::BX_RET: // 551
+      return "EXT_ARMISD::BX_RET";
+    case EXT_ARMISD::BRD: // 552
+      return "EXT_ARMISD::BRD";
+    case EXT_ARMISD::LOAD: // 553
+      return "EXT_ARMISD::LOAD";
+    case EXT_ARMISD::STORE: // 554
+      return "EXT_ARMISD::STORE";
+    case EXT_ARMISD::MSR: // 555
+      return "EXT_ARMISD::MSR";
+    case EXT_ARMISD::MRS: // 556
+      return "EXT_ARMISD::MRS";
+    case EXT_ARMISD::RSB: // 557
+      return "EXT_ARMISD::RSB";
+    case EXT_ARMISD::RSC: // 558
+      return "EXT_ARMISD::RSC";
+    case EXT_ARMISD::SBC: // 559
+      return "EXT_ARMISD::SBC";
+    case EXT_ARMISD::TEQ: // 560
+      return "EXT_ARMISD::TEQ";
+    case EXT_ARMISD::TST: // 561
+      return "EXT_ARMISD::TST";
+    case EXT_ARMISD::BIC: // 562
+      return "EXT_ARMISD::BIC";
+    case EXT_ARMISD::MLA: // 563
+      return "EXT_ARMISD::MLA";
+    case EXT_ARMISD::UXTB: // 564
+      return "EXT_ARMISD::UXTB";
+
+    case ARMISD::VLD1DUP: // 850
+      return "ARMISD::VLD1DUP";
+    case ARMISD::VLD2DUP: // 851
+      return "ARMISD::VLD2DUP";
+    case ARMISD::VLD3DUP: // 852
+      return "ARMISD::VLD3DUP";
+    case ARMISD::VLD4DUP: // 853
+      return "ARMISD::VLD4DUP";
+    case ARMISD::VLD1_UPD: // 854
+      return "ARMISD::VLD1_UPD";
+    case ARMISD::VLD2_UPD: // 855
+      return "ARMISD::VLD2_UPD";
+    case ARMISD::VLD3_UPD: // 856
+      return "ARMISD::VLD3_UPD";
+    case ARMISD::VLD4_UPD: // 857
+      return "ARMISD::VLD4_UPD";
+    case ARMISD::VLD2LN_UPD: // 858
+      return "ARMISD::VLD2LN_UPD";
+    case ARMISD::VLD3LN_UPD: // 859
+      return "ARMISD::VLD3LN_UPD";
+    case ARMISD::VLD4LN_UPD: // 860
+      return "ARMISD::VLD4LN_UPD";
+    case ARMISD::VLD1DUP_UPD: // 861
+      return "ARMISD::VLD1DUP_UPD";
+    case ARMISD::VLD2DUP_UPD: // 862
+      return "ARMISD::VLD2DUP_UPD";
+    case ARMISD::VLD3DUP_UPD: // 863
+      return "ARMISD::VLD3DUP_UPD";
+    case ARMISD::VLD4DUP_UPD: // 864
+      return "ARMISD::VLD4DUP_UPD";
+    case ARMISD::VLD1x2_UPD: // 865
+      return "ARMISD::VLD1x2_UPD";
+    case ARMISD::VLD1x3_UPD: // 866
+      return "ARMISD::VLD1x3_UPD";
+    case ARMISD::VLD1x4_UPD: // 867
+      return "ARMISD::VLD1x4_UPD";
+    case ARMISD::VST1_UPD: // 868
+      return "ARMISD::VST1_UPD";
+    case ARMISD::VST2_UPD: // 869
+      return "ARMISD::VST2_UPD";
+    case ARMISD::VST3_UPD: // 870
+      return "ARMISD::VST3_UPD";
+    case ARMISD::VST4_UPD: // 871
+      return "ARMISD::VST4_UPD";
+    case ARMISD::VST2LN_UPD: // 872
+      return "ARMISD::VST2LN_UPD";
+    case ARMISD::VST3LN_UPD: // 873
+      return "ARMISD::VST3LN_UPD";
+    case ARMISD::VST4LN_UPD: // 874
+      return "ARMISD::VST4LN_UPD";
+    case ARMISD::VST1x2_UPD: // 875
+      return "ARMISD::VST1x2_UPD";
+    case ARMISD::VST1x3_UPD: // 876
+      return "ARMISD::VST1x3_UPD";
+    case ARMISD::VST1x4_UPD: // 877
+      return "ARMISD::VST1x4_UPD";
+    case ARMISD::LDRD: // 878
+      return "ARMISD::LDRD";
+    case ARMISD::STRD: // 879
+      return "ARMISD::STRD";
+  }
+}
+
 IREmitter::IREmitter(BasicBlock *bb, DAGRaisingInfo *dagInfo,
                      FunctionRaisingInfo *funcInfo)
     : FT(bb->getParent()), BB(bb), CurBB(bb), DAGInfo(dagInfo),
@@ -334,17 +767,16 @@ static uint64_t getMCInstIndex(const MachineInstr &MI) {
 
 void IREmitter::emitMachineOpcodeNode ( SDNode *Node ) {
   if ( Node->isTargetOpcode() ) {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
     ARMISD::NodeType ARMISDOpcode = (ARMISD::NodeType) Node->getOpcode();
     WithColor(errs(), HighlightColor::Error) << "emitMachineOpcodeNode should not be called for TargetOpcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
-                                            << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+                                             << getARMISDName(ARMISDOpcode) << "\n";
     return;
   }
   if ( !Node->isMachineOpcode() ) {
     const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
     unsigned ARMISDOpcode = Node->getOpcode();
     WithColor(errs(), HighlightColor::Error) << "emitMachineOpcodeNode should not be called for target-independent opcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
-                                            << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+                                             << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
     return;
   }
 
@@ -361,10 +793,10 @@ void IREmitter::emitMachineOpcodeNode ( SDNode *Node ) {
     case ARM::DMB: // 773
     case ARM::DSB: // 774
     case ARM::ISB: // 793
+    case ARM::LDAEX: // 796 v8 LL
+    case ARM::STLEX: // 1887 v8 SC
     case ARM::LDREX: // 836 v6/v7 LL
     case ARM::STREX: // 837 v6/v7 SC
-    //case ARM::LDXR: // ? v8 LL
-    //case ARM::STXR: // ? v8 SC
     case ARM::SVC: // 1932
       break;
   }
@@ -390,12 +822,11 @@ void IREmitter::emitTargetDependentNode ( SDNode *Node ) {
   Module &M = *MR->getModule();
   BasicBlock *BB = getBlock();
 
-  unsigned ARMISDOpcode = Node->getOpcode();
-  switch(ARMISDOpcode) {
+  ARMISD::NodeType ARMISDOpcode = (ARMISD::NodeType) Node->getOpcode();
+  switch (ARMISDOpcode) {
     default: {
-      const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
       WithColor(errs(), HighlightColor::Error) << "emitTargetDependentNode called for TargetOpcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
-                                                << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+                                               << getARMISDName(ARMISDOpcode) << "\n";
       assert(false && "Unsupported opcode");
     }
 
@@ -991,14 +1422,13 @@ void IREmitter::emitTargetIndependentNode ( SDNode *Node ) {
     const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
     unsigned ARMISDOpcode = Node->getMachineOpcode();
     WithColor(errs(), HighlightColor::Error) << "emitTargetIndependentNode should not be called for MachineOpcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
-                                            << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+                                             << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
     return;
   }
   if ( Node->isTargetOpcode() ) {
-    const TargetInstrInfo *TII = FuncInfo->MF->getSubtarget().getInstrInfo();
     ARMISD::NodeType ARMISDOpcode = (ARMISD::NodeType) Node->getOpcode();
     WithColor(errs(), HighlightColor::Error) << "emitTargetIndependentNode should not be called for TargetOpcode " << ARMISDOpcode << " (" << format("%04x", ARMISDOpcode) << "); "
-                                            << (ARMISDOpcode < TII->getNumOpcodes() ? TII->getName(ARMISDOpcode) : "UNKNOWN") << "\n";
+                                             << getARMISDName(ARMISDOpcode) << "\n";
     return;
   }
 
