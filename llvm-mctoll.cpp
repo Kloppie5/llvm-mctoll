@@ -1453,7 +1453,7 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
 static void RaiseInput(StringRef Filename) {
   ErrorOr<std::unique_ptr<MemoryBuffer>> BufferPtrOrError = MemoryBuffer::getFile(Filename, false, false, false);
   if (std::error_code EC = BufferPtrOrError.getError()) {
-    WithColor(errs(), HighlightColor::Error) << "Failed to create MemoryBuffer for file; " << EC.message();
+    WithColor(errs(), HighlightColor::Error) << "Failed to create MemoryBuffer for file; " << EC.message() << "\n";
     exit(1);
   }
   std::unique_ptr<MemoryBuffer> &BufferPtr = BufferPtrOrError.get();
@@ -1468,7 +1468,7 @@ static void RaiseInput(StringRef Filename) {
     {
       Expected<std::unique_ptr<ObjectFile>> FilePtrExpected = ObjectFile::createELFObjectFile(BufferPtr->getMemBufferRef());
       if(Error E = FilePtrExpected.takeError()) {
-        WithColor(errs(), HighlightColor::Error) << "Encountered an error initializing ELFObjectFile; " << E;
+        WithColor(errs(), HighlightColor::Error) << "Encountered an error initializing ELFObjectFile; " << E << "\n";
         exit(1);
       }
       RaiseELFObjectFile(FilePtrExpected->get());
