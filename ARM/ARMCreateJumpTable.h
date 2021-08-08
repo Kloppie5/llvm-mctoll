@@ -32,7 +32,7 @@ public:
 
 private:
   unsigned int getARMCPSR(unsigned int PhysReg);
-  bool raiseMaichineJumpTable(MachineFunction &MF);
+  bool raiseMachineJumpTable(MachineFunction &MF);
   /// Get the MachineBasicBlock to add the jumptable instruction.
   MachineBasicBlock *checkJumptableBB(MachineFunction &MF);
   bool UpdatetheBranchInst(MachineBasicBlock &MBB);
