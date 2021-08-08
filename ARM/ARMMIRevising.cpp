@@ -77,6 +77,7 @@ uint64_t getLoadAlignProgramHeader(const ELFFile<ELFT> *Obj) {
 }
 
 /// Create function for external function.
+// TODO: Should be part of objectfile type-specific handler
 uint64_t ARMMIRevising::getCalledFunctionAtPLTOffset(uint64_t PLTEndOff,
                                                      uint64_t CallAddr) {
   const ELF32LEObjectFile *Elf32LEObjFile =

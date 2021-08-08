@@ -22,6 +22,7 @@
 
 using namespace llvm;
 
+// TODO: Should not be a FunctionPass
 class ARMRaiserBase : public FunctionPass {
 protected:
   ARMRaiserBase() = delete;

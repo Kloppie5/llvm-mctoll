@@ -40,6 +40,8 @@ typedef struct ControlTransferInfo_t {
   bool Raised;
 } ControlTransferInfo;
 
+// TODO: Something called a MachineInstructionRaiser raises a MachineFunction,
+// while there is something called a MachineFunctionRaiser
 class MachineInstructionRaiser {
 public:
   MachineInstructionRaiser() = delete;

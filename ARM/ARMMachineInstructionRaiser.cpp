@@ -33,7 +33,7 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   const ARMModuleRaiser *amr = dyn_cast<ARMModuleRaiser>(MR);
   assert(amr != nullptr && "The ARM module raiser is not initialized!");
   ARMModuleRaiser &rmr = const_cast<ARMModuleRaiser &>(*amr);
-
+  // TODO: Should probably be separate passes
   ARMMIRevising mir(rmr);
   mir.init(&MF, raisedFunction);
   mir.setMCInstRaiser(mcInstRaiser);
