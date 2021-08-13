@@ -17,24 +17,6 @@ using namespace llvm;
 
 DAGRaisingInfo::DAGRaisingInfo(SelectionDAG &dag) : DAG(dag) {}
 
-/// Gets the related IR Value of given SDNode.
-Value *DAGRaisingInfo::getRealValue(SDNode *Node) {
-  assert(false && "By fire be purged");
-  assert(Node != nullptr && "Node cannot be nullptr!");
-  assert(NPMap[Node] != nullptr &&
-         "Cannot find the corresponding node property!");
-  return NPMap[Node]->Val;
-}
-
-/// Sets the related IR Value to SDNode.
-void DAGRaisingInfo::setRealValue(SDNode *N, Value *V) {
-  assert(false && "By fire be purged");
-  if (NPMap.count(N) == 0)
-    NPMap[N] = new NodePropertyInfo();
-
-  NPMap[N]->Val = V;
-}
-
 void DAGRaisingInfo::clear() {
   for (auto &elmt : NPMap)
     delete elmt.second;

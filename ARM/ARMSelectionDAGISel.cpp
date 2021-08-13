@@ -57,7 +57,7 @@ void ARMSelectionDAGISel::selectBasicBlock() {
   Type *RTy = FuncInfo->Fn->getReturnType();
   if (RTy != nullptr && !RTy->isVoidTy() && MBB->succ_size() == 0) {
     Instruction *TInst = dyn_cast<Instruction>(
-        DAGInfo->getRealValue(FuncInfo->RegValMap[ARM::R0]));
+        DAGInfo->NPMap[FuncInfo->RegValMap[ARM::R0]]->Val);
     assert(TInst && "A def R0 was pointed to a non-instruction!!!");
     BasicBlock *TBB = TInst->getParent();
     FuncInfo->RetValMap[TBB] = TInst;

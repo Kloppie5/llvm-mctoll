@@ -27,10 +27,6 @@ public:
   void clear();
   /// Gets corresponding SelectionDAG object.
   SelectionDAG &getCurDAG() { return DAG; }
-  /// Gets the related IR Value of given SDNode.
-  Value *getRealValue(SDNode *Node);
-  /// Sets the related IR Value to SDNode.
-  void setRealValue(SDNode *N, Value *V);
 
   SelectionDAG &DAG;
   /// The map for each SDNode with its additional property.
