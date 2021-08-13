@@ -1273,49 +1273,6 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
           }
         }
 
-        // If there is a data symbol inside an ELF text section and we are
-        // only disassembling text, we are in a situation where we must print
-        // the data and not disassemble it.
-        // TODO : Get rid of the following code in the if-block.
-        if (Obj->isELF() && Symbols[si].Type == ELF::STT_OBJECT &&
-            Section.isText()) {
-          // parse data up to 8 bytes at a time
-          uint8_t AsciiData[9] = {'\0'};
-          uint8_t Byte;
-          int NumBytes = 0;
-
-          for (Index = Start; Index < End; Index += 1) {
-            if (((SectionAddr + Index) < StartAddress) ||
-                ((SectionAddr + Index) > StopAddress))
-              continue;
-            if (NumBytes == 0) {
-              outs() << format("%8" PRIx64 ":", SectionAddr + Index);
-              outs() << "\t";
-            }
-            Byte = Bytes.slice(Index)[0];
-            outs() << format(" %02x", Byte);
-            AsciiData[NumBytes] = isprint(Byte) ? Byte : '.';
-
-            uint8_t IndentOffset = 0;
-            NumBytes++;
-            if (Index == End - 1 || NumBytes > 8) {
-              // Indent the space for less than 8 bytes data.
-              // 2 spaces for byte and one for space between bytes
-              IndentOffset = 3 * (8 - NumBytes);
-              for (int Excess = 8 - NumBytes; Excess < 8; Excess++)
-                AsciiData[Excess] = '\0';
-              NumBytes = 8;
-            }
-            if (NumBytes == 8) {
-              AsciiData[8] = '\0';
-              outs() << std::string(IndentOffset, ' ') << "         ";
-              outs() << reinterpret_cast<char *>(AsciiData);
-              outs() << '\n';
-              NumBytes = 0;
-            }
-          }
-        }
-
         if (Index >= End)
           break;
 
