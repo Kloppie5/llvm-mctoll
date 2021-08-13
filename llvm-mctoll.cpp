@@ -1269,10 +1269,18 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
         LLVM_DEBUG(
           auto OS = WithColor(dbgs(), HighlightColor::Remark);
           OS << "Parsed [ ";
-             dumpBytes(Bytes.slice(Index, Size), OS);
+              dumpBytes(Bytes.slice(Index, Size), OS);
           OS << "] to \"";
-            Inst.dump_pretty(OS, IP.get(), " ", MRI.get());
-          OS << "\"\n";
+            OS << IP->getOpcodeName(Inst.getOpcode());
+            OS << " (" << Inst.getOpcode() << ") {";
+            for (unsigned i = 0, e = Inst.getNumOperands(); i != e; ++i) {
+              OS << " ";
+              MCOperand OP = Inst.getOperand(i);
+              if (OP.isReg()) OS << "Reg:" << MRI->getName(OP.getReg());
+              if (OP.isImm()) OS << "Imm:" << OP.getImm();
+              if (OP.isInst()) OS << "Inst:" << *OP.getInst();
+            }
+          OS << " }\"\n";
         );
 
         mcInstRaiser->addMCInstOrData(Index, Inst);
