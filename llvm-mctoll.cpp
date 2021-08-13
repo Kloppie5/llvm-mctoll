@@ -1440,7 +1440,7 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
     }
 
     TPC.setInitialized();
-  } else if (Target->addPassesToEmitFile(
+  } else if (!Target->addPassesToEmitFile(
                  PM, *OS, nullptr, /* no dwarf output file stream*/
                  OutputFormat, NoVerify, machineModuleInfo)) {
     outs() << ToolName << "run system pass!\n";
