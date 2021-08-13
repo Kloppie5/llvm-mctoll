@@ -501,27 +501,6 @@ static bool isArmElf(const ObjectFile *Obj) {
            Obj->getArch() == Triple::thumbeb));
 }
 
-class PrettyPrinter {
-public:
-  virtual ~PrettyPrinter() {}
-  virtual void printInst(MCInstPrinter &IP, const MCInst *MI,
-                         ArrayRef<uint8_t> Bytes, uint64_t Address,
-                         raw_ostream &OS, StringRef Annot,
-                         MCSubtargetInfo const &STI) {
-    OS << format("%8" PRIx64 ":", Address);
-    OS << "\t";
-    dumpBytes(Bytes, OS);
-    if (MI)
-      IP.printInst(MI, 0, "", STI, OS);
-    else
-      OS << " <unknown>";
-  }
-};
-PrettyPrinter PrettyPrinterInst;
-
-PrettyPrinter &selectPrettyPrinter(Triple const &Triple) {
-  return PrettyPrinterInst;
-}
 } // namespace
 
 bool llvm::isRelocAddressLess(RelocationRef A, RelocationRef B) {
@@ -869,7 +848,6 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
     report_error(Obj->getFileName(),
                  "no instruction printer for target " + TripleName);
   IP->setPrintImmHex(PrintImmHex);
-  PrettyPrinter &PIP = selectPrettyPrinter(Triple(TripleName));
 
   LLVMContext llvmCtx;
   std::unique_ptr<TargetMachine> Target(
@@ -1276,61 +1254,61 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
         if (Index >= End)
           break;
 
-        // Disassemble a real instruction or a data
-        bool Disassembled = DisAsm->getInstruction(
+        MCDisassembler::DecodeStatus Status = DisAsm->getInstruction(
             Inst, Size, Bytes.slice(Index), SectionAddr + Index, CommentStream);
+        if (Status != MCDisassembler::Success) {
+          auto OS = WithColor(errs(), HighlightColor::Error);
+          OS << "MCDisassembler failed to parse [ ";
+            dumpBytes(Bytes.slice(Index, Size), OS);
+          OS << " ]\n";
+          exit(1);
+        }
         if (Size == 0)
           Size = 1;
 
-        if (!Disassembled) {
-          errs() << "**** Warning: Failed to decode instruction\n";
-          PIP.printInst(*IP, Disassembled ? &Inst : nullptr,
-                        Bytes.slice(Index, Size), SectionAddr + Index, outs(),
-                        "", *STI);
-          outs() << CommentStream.str();
-          Comments.clear();
-          errs() << "\n";
-        }
+        LLVM_DEBUG(
+          auto OS = WithColor(dbgs(), HighlightColor::Remark);
+          OS << "Parsed [ ";
+             dumpBytes(Bytes.slice(Index, Size), OS);
+          OS << "] to \"";
+            Inst.dump_pretty(OS, IP.get(), " ", MRI.get());
+          OS << "\"\n";
+        );
 
-        // Add MCInst to the list if all instructions were decoded
-        // successfully till now. Else, do not bother adding since no attempt
-        // will be made to raise this function.
-        if (Disassembled) {
-          mcInstRaiser->addMCInstOrData(Index, Inst);
+        mcInstRaiser->addMCInstOrData(Index, Inst);
 
-          // Find branch target and record it. Call targets are not
-          // recorded as they are not needed to build per-function CFG.
-          if (MIA && MIA->isBranch(Inst)) {
-            uint64_t Target;
-            if (MIA->evaluateBranch(Inst, Index, Size, Target)) {
-              // In a relocatable object, the target's section must reside in
-              // the same section as the call instruction or it is accessed
-              // through a relocation.
-              //
-              // In a non-relocatable object, the target may be in any
-              // section.
-              //
-              // N.B. We don't walk the relocations in the relocatable case
-              // yet.
-              if (!Obj->isRelocatableObject()) {
-                auto SectionAddress = std::upper_bound(
-                    SectionAddresses.begin(), SectionAddresses.end(), Target,
-                    [](uint64_t LHS,
-                       const std::pair<uint64_t, SectionRef> &RHS) {
-                      return LHS < RHS.first;
-                    });
-                if (SectionAddress != SectionAddresses.begin()) {
-                  --SectionAddress;
-                }
+        // Find branch target and record it. Call targets are not
+        // recorded as they are not needed to build per-function CFG.
+        if (MIA && MIA->isBranch(Inst)) {
+          uint64_t Target;
+          if (MIA->evaluateBranch(Inst, Index, Size, Target)) {
+            // In a relocatable object, the target's section must reside in
+            // the same section as the call instruction or it is accessed
+            // through a relocation.
+            //
+            // In a non-relocatable object, the target may be in any
+            // section.
+            //
+            // N.B. We don't walk the relocations in the relocatable case
+            // yet.
+            if (!Obj->isRelocatableObject()) {
+              auto SectionAddress = std::upper_bound(
+                  SectionAddresses.begin(), SectionAddresses.end(), Target,
+                  [](uint64_t LHS,
+                      const std::pair<uint64_t, SectionRef> &RHS) {
+                    return LHS < RHS.first;
+                  });
+              if (SectionAddress != SectionAddresses.begin()) {
+                --SectionAddress;
               }
-              // Add the index Target to target indices set.
-              branchTargetSet.insert(Target);
             }
-
-            // Mark the next instruction as a target.
-            uint64_t fallThruIndex = Index + Size;
-            branchTargetSet.insert(fallThruIndex);
+            // Add the index Target to target indices set.
+            branchTargetSet.insert(Target);
           }
+
+          // Mark the next instruction as a target.
+          uint64_t fallThruIndex = Index + Size;
+          branchTargetSet.insert(fallThruIndex);
         }
       }
       FuncFilter->eraseFunctionBySymbol(Symbols[si].Name,
