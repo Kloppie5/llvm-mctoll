@@ -800,16 +800,127 @@ void IREmitter::emitMachineOpcodeNode(SDNode *Node) {
         << "\n";
     assert(false && "Unsupported opcode");
   }
+  
   case ARM::BX_RET: // 718
-  case ARM::DMB:    // 773
-  case ARM::DSB:    // 774
-  case ARM::ISB:    // 793
-  case ARM::LDAEX:  // 796 v8 LL
-  case ARM::STLEX:  // 1887 v8 SC
-  case ARM::LDREX:  // 836 v6/v7 LL
-  case ARM::STREX:  // 837 v6/v7 SC
+    dbgs() << "ARM::BX_RET\n";
+    break;
+  case ARM::DMB: // 773
+    dbgs() << "ARM::DMB\n";
+    break;
+  case ARM::LDREX: // 836
+    // Load Register Exclusive; LDREX{<c>}{<q>} <Rt>, [<Rn> {, #<imm>}]
+    dbgs() << "ARM::LDREX\n";
+    break;
+  case ARM::LDREXB: { // 837
+    // Load Register Exclusive Byte; LDREXB{<c>}{<q>} <Rt>, [<Rn>]
+    // if the address has attr Shared Memory, the physical address is marked as exclusive access for the executing processor in the global monitor
+    auto OS = WithColor(dbgs(), HighlightColor::Remark);
+    OS << "ARM::LDREXB ";
+    /**
+    auto MRI = FuncInfo->MF->getRegInfo();
+
+    SDValue Rt = Node->getOperand(0); // the register to store.
+    assert(Rt.isReg() && "LDREXB operand 0 is expected to be a valid register.");
+    OS << MRI.getName(Rt.getReg());
+
+    OS << " <- [";
+
+    SDValue Rn = Node->getOperand(1); // the register on which the memory address is based.
+    assert(Rn.isReg() && "LDREXB operand 0 is expected to be a valid register.");
+    OS << MRI.getName(Rn.getReg());
+    */
+    OS << "]\n";
+  } break;
+  case ARM::STREXB: // 1912
+    // Store Register Exclusive Byte; STREXB{<c>}{<q>} <Rd>, <Rt>, [<Rn>]
+    // writes to Rd whether the store failed or not
+    dbgs() << "ARM::STREXB\n";
+    break;
+  case ARM::STRH: { // 1915
+    // Store Register Unsigned Halfword
+    EVT Ty = EVT::getEVT(Type::getInt16Ty(*DAG->getContext()));
+    // STRH <Rt>, [<Rn>, <Rm>]
+    SDValue Rt = Node->getOperand(0); // the register to store.
+    SDValue Rn = Node->getOperand(1); // the register on which the memory address is based.
+    SDValue Rm = Node->getOperand(2); // a register containing a value to be used as the offset.
+    // Print all values
+    dbgs() << "Store Register Unsigned Halfword\n";
+    dbgs() << "Rt = "; Rt.dumpr(); dbgs() << "\n";
+    dbgs() << "Rn = "; Rn.dumpr(); dbgs() << "\n";
+    dbgs() << "Rm = "; Rm.dumpr(); dbgs() << "\n";
+    // Emit the store
+    /*
+    
+    SDValue Val = N->getOperand(0);
+    SDValue Op1 = N->getOperand(1);
+    SDNode *Node = nullptr;
+
+    if (RegisterSDNode::classof(Val.getNode()))
+      Val = FuncInfo->getValFromRegMap(Val);
+
+    if (RegisterSDNode::classof(Op1.getNode()))
+      Op1 = FuncInfo->getValFromRegMap(Op1);
+
+    if (N->getNumOperands() < 5)
+      Node = CurDAG
+                 ->getNode(EXT_ARMISD::STORE, dl, InstTy, Val, Op1,
+                           getMDOperand(N))
+                 .getNode();
+    else {
+      SDValue Op2 = N->getOperand(2);
+      Op2 = FuncInfo->getValFromRegMap(Op2);
+      Node = CurDAG
+                 ->getNode(EXT_ARMISD::STORE, dl, InstTy, Val, Op1, Op2,
+                           getMDOperand(N))
+                 .getNode();
+    }
+
+    Value *Val = getIRValue(Node->getOperand(0));
+    Value *S = getIRValue(Node->getOperand(1));
+    Value *Ptr = nullptr;
+    Type *Nty = Node->getValueType(0).getTypeForEVT(*CTX);
+
+    if (Val->getType() != Nty) {
+      Val = IRB.CreateTrunc(Val, Nty);
+    }
+
+    if (S->getType()->isPointerTy()) {
+      if (S->getType() != Nty->getPointerTo()) {
+        Ptr = IRB.CreateBitCast(S, Nty->getPointerTo());
+      } else {
+        Ptr = S;
+      }
+    } else {
+      Ptr = IRB.CreateIntToPtr(S, Nty->getPointerTo());
+    }
+
+    if (DAGInfo->NPMap[Node]->HasCPSR) {
+      unsigned CondValue = DAGInfo->NPMap[Node]->Cond;
+      // Create new BB for EQ instructin exectute.
+      BasicBlock *IfBB = BasicBlock::Create(*CTX, "", BB->getParent());
+      // Create new BB to update the DAG BB.
+      BasicBlock *ElseBB = BasicBlock::Create(*CTX, "", BB->getParent());
+
+      // Emit the condition code.
+      emitCondCode(CondValue, BB, IfBB, ElseBB);
+      IRB.SetInsertPoint(IfBB);
+
+      IRB.CreateAlignedStore(Val, Ptr,
+                             MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
+
+      IRB.CreateBr(ElseBB);
+      IRB.SetInsertPoint(ElseBB);
+    } else {
+      IRB.CreateAlignedStore(Val, Ptr,
+                             MaybeAlign(Log2(DLT->getPointerPrefAlignment())));
+    }
+    */
+    assert(false && "Unsupported opcode");
+  } break;
+  case ARM::STRi12: // 1926
   case ARM::SVC:    // 1932
     break;
+  
   }
   return;
 }
@@ -1108,7 +1219,7 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::STORE: { // 554
-    Node->dumpr();
+    assert(false && "Not implemented!");
     Value *Val = getIRValue(Node->getOperand(0));
     Value *S = getIRValue(Node->getOperand(1));
     Value *Ptr = nullptr;

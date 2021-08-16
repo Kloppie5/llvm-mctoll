@@ -16,6 +16,7 @@
 #include "MCInstOrData.h"
 #include "MachineFunctionRaiser.h"
 #include "ModuleRaiser.h"
+#include "Monitor.h"
 #include "PeepholeOptimizationPass.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
@@ -805,16 +806,17 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
       Features.AddFeature(MAttrs[i]);
   }
 
-  std::unique_ptr<const MCRegisterInfo> MRI(
+  std::unique_ptr<const MCRegisterInfo> MCRI(
       TheTarget->createMCRegInfo(TripleName));
-  if (!MRI)
+  if (!MCRI)
     report_error(Obj->getFileName(),
                  "no register info for target " + TripleName);
+  Monitor::registerMCRegisterInfo(MCRI.get());
 
   MCTargetOptions MCOptions;
   // Set up disassembler.
   std::unique_ptr<const MCAsmInfo> AsmInfo(
-      TheTarget->createMCAsmInfo(*MRI, TripleName, MCOptions));
+      TheTarget->createMCAsmInfo(*MCRI, TripleName, MCOptions));
   if (!AsmInfo)
     report_error(Obj->getFileName(),
                  "no assembly info for target " + TripleName);
@@ -827,8 +829,10 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
   if (!MII)
     report_error(Obj->getFileName(),
                  "no instruction info for target " + TripleName);
+  Monitor::registerMCInstrInfo(MII.get());
+
   MCObjectFileInfo MOFI;
-  MCContext Ctx(Triple(TripleName), AsmInfo.get(), MRI.get(), STI.get());
+  MCContext Ctx(Triple(TripleName), AsmInfo.get(), MCRI.get(), STI.get());
   // FIXME: for now initialize MCObjectFileInfo with default values
   MOFI.initMCObjectFileInfo(Ctx, /*PIC=*/false);
 
@@ -843,7 +847,7 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
 
   int AsmPrinterVariant = AsmInfo->getAssemblerDialect();
   std::unique_ptr<MCInstPrinter> IP(TheTarget->createMCInstPrinter(
-      Triple(TripleName), AsmPrinterVariant, *AsmInfo, *MII, *MRI));
+      Triple(TripleName), AsmPrinterVariant, *AsmInfo, *MII, *MCRI));
   if (!IP)
     report_error(Obj->getFileName(),
                  "no instruction printer for target " + TripleName);
@@ -1266,22 +1270,7 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
         if (Size == 0)
           Size = 1;
 
-        LLVM_DEBUG(
-          auto OS = WithColor(dbgs(), HighlightColor::Remark);
-          OS << "Parsed [ ";
-              dumpBytes(Bytes.slice(Index, Size), OS);
-          OS << "] to \"";
-            OS << IP->getOpcodeName(Inst.getOpcode());
-            OS << " (" << Inst.getOpcode() << ") {";
-            for (unsigned i = 0, e = Inst.getNumOperands(); i != e; ++i) {
-              OS << " ";
-              MCOperand OP = Inst.getOperand(i);
-              if (OP.isReg()) OS << "Reg:" << MRI->getName(OP.getReg());
-              if (OP.isImm()) OS << "Imm:" << OP.getImm();
-              if (OP.isInst()) OS << "Inst:" << *OP.getInst();
-            }
-          OS << " }\"\n";
-        );
+        Monitor::event_ParsedMCInst(Bytes.slice(Index, Size), &Inst);
 
         mcInstRaiser->addMCInstOrData(Index, Inst);
 
@@ -1322,8 +1311,6 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
       FuncFilter->eraseFunctionBySymbol(Symbols[si].Name,
                                         FunctionFilter::FILTER_INCLUDE);
     }
-    LLVM_DEBUG(dbgs() << "END Disassembly of Functions in Section : "
-                      << SectionName.data() << "\n");
 
     // Record all targets of the last function parsed
     curMFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();

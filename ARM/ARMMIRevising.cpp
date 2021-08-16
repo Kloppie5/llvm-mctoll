@@ -229,7 +229,12 @@ void ARMMIRevising::relocateBranch(MachineInstr &MInst) {
   } else {
     uint64_t Offset = getMCInstIndex(MInst);
     const RelocationRef *reloc = MR->getTextRelocAtOffset(Offset, 4);
-    assert(reloc && "Failed to get TextReloc");
+    if (reloc == nullptr) {
+      // If there is no relocation for the instruction,
+      // we can't get the symbol name.
+      dbgs() << "No relocation for instruction at offset " << Offset << "\n";
+      return;
+    }
     auto ImmValOrErr = (*reloc->getSymbol()).getValue();
     assert(ImmValOrErr && "Failed to get immediate value");
     MInst.getOperand(0).setImm(*ImmValOrErr);
