@@ -7,6 +7,7 @@
 #define LLVM_MCTOLL_MONITOR_H_
 
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstPrinter.h"
@@ -28,7 +29,7 @@ class Monitor {
         static void registerMCInstrInfo ( const MCInstrInfo *MCII ) { getInstance().MCII = MCII; }
         static void registerMCRegisterInfo ( const MCRegisterInfo *MCRI ) { getInstance().MCRI = MCRI; }
 
-        static void printMCInst ( const MCInst* Inst, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
+        static void printMCInst ( const MCInst* Inst, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
             OS << getInstance().MCII->getName(Inst->getOpcode());
             OS << " (" << Inst->getOpcode() << ") {";
             for (unsigned i = 0, e = Inst->getNumOperands(); i != e; ++i) {
@@ -40,8 +41,9 @@ class Monitor {
                 else { OS << "{"; OP.print(OS, getInstance().MCRI); OS << "}"; }
             }
             OS << " }";
+            if (linebreak) OS << "\n";
         }
-        static void printMachineInstr ( const MachineInstr* MI, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
+        static void printMachineInstr ( const MachineInstr* MI, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
             const TargetSubtargetInfo& STI = MI->getMF()->getSubtarget();
             const TargetRegisterInfo* TRI = STI.getRegisterInfo();
             const TargetInstrInfo* TII = STI.getInstrInfo();
@@ -57,21 +59,42 @@ class Monitor {
                 else { OS << "{"; MO.print(OS, TRI, TIntrI); OS << "}"; }
             }
             OS << " }";
+            if (linebreak) OS << "\n";
+        }
+        static void printSDNode ( const SDNode* N, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
+            if (N->isMachineOpcode()) {
+                OS << "(" << getInstance().MCII->getName(N->getMachineOpcode()) << ")\n";
+            } else {
+                OS << "SDNode:";
+                N->dump();
+            }
+            if (linebreak) OS << "\n";
         }
 
-        static void event_ParsedMCInst ( const ArrayRef<uint8_t> Bytes, const MCInst* Inst, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
+        static void event_ParsedMCInst ( const ArrayRef<uint8_t> Bytes, const MCInst* Inst, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
             OS << "Parsed [ ";
                 dumpBytes(Bytes, OS);
             OS << " ] to [ ";
-                Monitor::printMCInst(Inst);
-            OS << " ]\n";
+                Monitor::printMCInst(Inst, false, OS);
+            OS << " ]";
+            if (linebreak) OS << "\n";
         }
-        static void event_RaisedMachineInstr ( const MCInst* Inst, const MachineInstr* MI, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
+        static void event_RaisedMachineInstr ( const MCInst* Inst, const MachineInstr* MI, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
             OS << "Raised [ ";
-            Monitor::printMCInst(Inst);
+            Monitor::printMCInst(Inst, false);
             OS << " ] to [ ";
-            Monitor::printMachineInstr(MI);
-            OS << " ]\n";
+            Monitor::printMachineInstr(MI, false);
+            OS << " ]";
+            if (linebreak) OS << "\n";
+        }
+
+        static void TODO ( const char* Message, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Warning) ) {
+            OS << "TODO: " << Message;
+            if (linebreak) OS << "\n";
+        }
+        static void NOTE ( const char* Message, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Warning) ) {
+            OS << "NOTE: " << Message;
+            if (linebreak) OS << "\n";
         }
 
     private:

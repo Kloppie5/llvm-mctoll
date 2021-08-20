@@ -13,12 +13,25 @@
 
 #include "IREmitter.h"
 #include "ARMModuleRaiser.h"
+#include "Monitor.h"
 #include "SelectionCommon.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 
 using namespace llvm;
+#define DEBUG_TYPE "mctoll"
+
+// TODO: Function should be removed.
+SDValue getMDOperand(SDNode *N) {
+  for (auto &sdv : N->ops()) {
+    if (MDNodeSDNode::classof(sdv.getNode())) {
+      return sdv.get();
+    }
+  }
+  assert(false && "Should not run at here!");
+  return SDValue();
+}
 
 // TODO: Move helper function
 string getARMISDName(ARMISD::NodeType Opcode) {
@@ -802,39 +815,56 @@ void IREmitter::emitMachineOpcodeNode(SDNode *Node) {
   }
   
   case ARM::BX_RET: // 718
-    dbgs() << "ARM::BX_RET\n";
+    Monitor::TODO("BX_RET ignored");
     break;
   case ARM::DMB: // 773
-    dbgs() << "ARM::DMB\n";
+    Monitor::TODO("DMB ignored");
     break;
   case ARM::LDREX: // 836
     // Load Register Exclusive; LDREX{<c>}{<q>} <Rt>, [<Rn> {, #<imm>}]
-    dbgs() << "ARM::LDREX\n";
+    Monitor::TODO("LDREX ignored");
     break;
   case ARM::LDREXB: { // 837
     // Load Register Exclusive Byte; LDREXB{<c>}{<q>} <Rt>, [<Rn>]
+    Monitor::TODO("LDREXB conditional execution currently ignored");
     // if the address has attr Shared Memory, the physical address is marked as exclusive access for the executing processor in the global monitor
     auto OS = WithColor(dbgs(), HighlightColor::Remark);
     OS << "ARM::LDREXB ";
-    /**
-    auto MRI = FuncInfo->MF->getRegInfo();
+    SDNode *newNode = nullptr;
+
+    EVT Ty = EVT::getEVT(Type::getInt8Ty(*DAG->getContext()));
 
     SDValue Rt = Node->getOperand(0); // the register to store.
-    assert(Rt.isReg() && "LDREXB operand 0 is expected to be a valid register.");
-    OS << MRI.getName(Rt.getReg());
-
-    OS << " <- [";
-
+    assert(Rt.getNode()->getOpcode() == ISD::Register && "LDREXB operand 0 is expected to be a valid register.");
     SDValue Rn = Node->getOperand(1); // the register on which the memory address is based.
-    assert(Rn.isReg() && "LDREXB operand 0 is expected to be a valid register.");
-    OS << MRI.getName(Rn.getReg());
-    */
+    assert(Rn.getNode()->getOpcode() == ISD::Register && "LDREXB operand 1 is expected to be a valid register.");
+
+    OS << FuncInfo->MF->getRegInfo().getTargetRegisterInfo()->getName(static_cast<RegisterSDNode*>(Rt.getNode())->getReg());
+    OS << " <- [";
+    OS << FuncInfo->MF->getRegInfo().getTargetRegisterInfo()->getName(static_cast<RegisterSDNode*>(Rn.getNode())->getReg());
     OS << "]\n";
+
+    SDValue LockAddr = FuncInfo->getValFromRegMap(Rn);
+    // NOTE: LockAddr is assumed to be the same register.
+    // Register LockAddr
+
+    SDLoc dl(Node);
+    newNode = DAG->getNode(EXT_ARMISD::LOAD, dl, Ty, Rt, getMDOperand(Node))
+               .getNode();
+    
+    unsigned Reg = static_cast<RegisterSDNode*>(Rt.getNode())->getReg();
+    FuncInfo->setValueByRegister(Reg, SDValue(Node, 0));
+    FuncInfo->NodeRegMap[newNode] = Reg;
+    
   } break;
+  case ARM::MOVPCLR: // 870
+    Monitor::TODO("MOVPCLR ignored");
+    break;
   case ARM::STREXB: // 1912
     // Store Register Exclusive Byte; STREXB{<c>}{<q>} <Rd>, <Rt>, [<Rn>]
     // writes to Rd whether the store failed or not
-    dbgs() << "ARM::STREXB\n";
+    Monitor::TODO("STREXB ignored");
+    // assert on LockAddr; ignore weird situations.
     break;
   case ARM::STRH: { // 1915
     // Store Register Unsigned Halfword
@@ -964,7 +994,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
   }
 
   case ARMISD::CMN: { // 370
-    assert(false && "ARMISD::CMN is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("ARMISD::CMN is untested");
+    );
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
     Value *Inst;
@@ -1091,8 +1123,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::BX_RET: { // 551
-    assert(false && "EXT_ARMISD::BX_RET is untested");
-
+    LLVM_DEBUG(
+      Monitor::NOTE("EXTARMISD::BX_RET is untested");
+    );
     Value *Ret = getIRValue(Node->getOperand(0));
     if (!ConstantSDNode::classof(Node->getOperand(0).getNode()))
       IRB.CreateRet(Ret);
@@ -1219,7 +1252,6 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::STORE: { // 554
-    assert(false && "Not implemented!");
     Value *Val = getIRValue(Node->getOperand(0));
     Value *S = getIRValue(Node->getOperand(1));
     Value *Ptr = nullptr;
@@ -1261,7 +1293,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::MSR: { // 555
-    assert(false && "EXT_ARMISD::MSR is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("EXT_ARMISD::MSR is untested");
+    );
 
     Value *Cond = getIRValue(Node->getOperand(0));
     // 1 1 1 1
@@ -1295,7 +1329,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::MRS: { // 556
-    assert(false && "EXT_ARMISD::MRS is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("EXT_ARMISD::MRS is untested");
+    );
 
     Value *Rn = getIRValue(Node->getOperand(0));
     // Reserved || N_Flag << 31 || Z_Flag << 30 || C_Flag << 29 || V_Flag << 28
@@ -1335,7 +1371,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = RnStore;
   } break;
   case EXT_ARMISD::RSB: { // 557
-    assert(false && "EXT_ARMISD::RSB is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("EXT_ARMISD::RSB is untested");
+    );
 
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
@@ -1371,7 +1409,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::RSC: { // 558
-    assert(false && "EXT_ARMISD::RSC is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("EXT_ARMISD::RSC is untested");
+    );
 
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
@@ -1385,7 +1425,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
   } break;
   case EXT_ARMISD::SBC: { // 559
-    assert(false && "EXT_ARMISD::SBC is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("EXT_ARMISD::SBC is untested");
+    );
 
     Value *S1 = getIRValue(Node->getOperand(0));
     Value *S2 = getIRValue(Node->getOperand(1));
@@ -1436,7 +1478,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::TEQ: { // 560
-    assert(false && "EXT_ARMISD::TEQ is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("EXT_ARMISD::TEQ is untested");
+    );
 
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
@@ -1463,7 +1507,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::TST: { // 561
-    assert(false && "EXT_ARMISD::TST is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("EXT_ARMISD::TST is untested");
+    );
 
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
@@ -1491,7 +1537,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::BIC: { // 562
-    assert(false && "EXT_ARMISD::BIC is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("EXT_ARMISD::BIC is untested");
+    );
 
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
@@ -1541,7 +1589,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     }
   } break;
   case EXT_ARMISD::MLA: { // 563
-    assert(false && "EXT_ARMISD::MLA is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("EXT_ARMISD::MLA is untested");
+    );
 
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
@@ -1554,7 +1604,9 @@ void IREmitter::emitTargetDependentNode(SDNode *Node) {
     FuncInfo->ArgValMap[FuncInfo->NodeRegMap[Node]] = Inst;
   } break;
   case EXT_ARMISD::UXTB: { // 564
-    assert(false && "EXT_ARMISD::UXTB is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("EXT_ARMISD::UXTB is untested");
+    );
 
     Value *S1 = getIRValue(Node->getOperand(1));
     Value *Rotation = getIRValue(Node->getOperand(2));
@@ -1746,7 +1798,9 @@ void IREmitter::emitTargetIndependentNode(SDNode *Node) {
     }
   } break;
   case ISD::ADDC: { // 67
-    assert(false && "ISD::ADDC is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("ISD::ADDC is untested");
+    );
 
     Value *S0 = getIRValue(Node->getOperand(0));
     Value *S1 = getIRValue(Node->getOperand(1));
@@ -2122,7 +2176,10 @@ void IREmitter::emitTargetIndependentNode(SDNode *Node) {
     }
   } break;
   case ISD::CTLZ: { // 178
-    assert(false && "ISD::CTLZ is untested");
+    LLVM_DEBUG(
+      Monitor::NOTE("ISD::CTLZ is untested");
+    );
+
     Value *S0 = getIRValue(Node->getOperand(0));
     Function *CTLZ = Intrinsic::getDeclaration(BB->getParent()->getParent(),
                                                Intrinsic::ctlz, S0->getType());
@@ -2298,3 +2355,4 @@ void IREmitter::emitTargetIndependentNode(SDNode *Node) {
     break;
   }
 }
+#undef DEBUG_TYPE

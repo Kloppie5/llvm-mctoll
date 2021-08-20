@@ -14,6 +14,7 @@
 #include "InstSelector.h"
 #include "ARM.h"
 #include "ARMSubtarget.h"
+#include "Monitor.h"
 #include "SelectionCommon.h"
 
 using namespace llvm;
@@ -500,8 +501,7 @@ void InstSelector::selectCode(SDNode *N) {
   } break;
   case ARM::BX_RET:
   case ARM::tBX_RET:
-    // assert(0 && "Branch instructions are removed in previous stage. should
-    // not get here!");
+    assert(0 && "Branch instructions are removed in previous stage. should not get here!");
     break;
   case ARM::tCMPhir:
   case ARM::CMPrr:
@@ -999,15 +999,15 @@ void InstSelector::selectCode(SDNode *N) {
     SDValue Rn = N->getOperand(1);
     SDNode *Node = nullptr;
 
-    if (RegisterSDNode::classof(N->getOperand(1).getNode()))
-      Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
+    if (RegisterSDNode::classof(Rn.getNode()))
+      Rn = FuncInfo->getValFromRegMap(Rn);
 
-    Rd = FuncInfo->getValFromRegMap(N->getOperand(0));
+    Rd = FuncInfo->getValFromRegMap(Rd);
     Node = CurDAG
                ->getNode(EXT_ARMISD::TST, dl, getDefaultEVT(), Rd, Rn,
                          getMDOperand(N))
                .getNode();
-
+    
     recordDefinition(Rd.getNode(), Node);
     replaceNode(N, Node);
   } break;
@@ -1024,10 +1024,10 @@ void InstSelector::selectCode(SDNode *N) {
     SDValue Rn = N->getOperand(1);
     SDNode *Node = nullptr;
     if (isTwoAddressMode(Rd.getNode())) {
-      if (RegisterSDNode::classof(N->getOperand(1).getNode()))
-        Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
+      if (RegisterSDNode::classof(Rn.getNode()))
+        Rn = FuncInfo->getValFromRegMap(Rn);
 
-      SDValue Rd = FuncInfo->getValFromRegMap(N->getOperand(0));
+      SDValue Rd = FuncInfo->getValFromRegMap(Rd);
       Node = CurDAG
                  ->getNode(EXT_ARMISD::BIC, dl, getDefaultEVT(), Rd, Rn,
                            getMDOperand(N))

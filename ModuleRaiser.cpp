@@ -298,3 +298,4 @@ bool ModuleRaiser::changeRaisedFunctionReturnType(Function *TargetFunc,
   }
   return Changed;
 }
+#undef DEBUG_TYPE

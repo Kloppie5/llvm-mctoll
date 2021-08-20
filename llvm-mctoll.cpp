@@ -1270,8 +1270,9 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
         if (Size == 0)
           Size = 1;
 
-        Monitor::event_ParsedMCInst(Bytes.slice(Index, Size), &Inst);
-
+        LLVM_DEBUG(
+          Monitor::event_ParsedMCInst(Bytes.slice(Index, Size), &Inst);
+        );
         mcInstRaiser->addMCInstOrData(Index, Inst);
 
         // Find branch target and record it. Call targets are not

@@ -115,7 +115,9 @@ void MCInstRaiser::buildCFG(MachineFunction &MF, const MCInstrAnalysis *MIA,
       
       MF.back().push_back(MI);
       
-      Monitor::event_RaisedMachineInstr(&Inst, MI);
+      LLVM_DEBUG(
+        Monitor::event_RaisedMachineInstr(&Inst, MI);
+      );
       // The event is raised after adding it to the MBB, because it relies on MI having a link to its MF.
       // Even though MF is provided in the constructor of MCInst, it isn't saved and instead; getMF()
       // relies on the getParent() methods.

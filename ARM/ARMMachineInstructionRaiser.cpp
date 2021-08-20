@@ -1,4 +1,4 @@
-//===-- ARMEliminatePrologEpilog.cpp ----------------------------*- C++ -*-===//
+//===-- ARMMachineInstructionRaiser.cpp -------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -20,6 +20,7 @@
 #include "ARMInstructionSplitting.h"
 #include "ARMMIRevising.h"
 #include "ARMModuleRaiser.h"
+#include "ARMPatternMatchConcurrencyPass.h"
 #include "ARMSelectionDAGISel.h"
 
 using namespace llvm;
@@ -33,7 +34,10 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   const ARMModuleRaiser *amr = dyn_cast<ARMModuleRaiser>(MR);
   assert(amr != nullptr && "The ARM module raiser is not initialized!");
   ARMModuleRaiser &rmr = const_cast<ARMModuleRaiser &>(*amr);
+  
   // TODO: Should probably be separate passes
+  ARMPatternMatchConcurrencyPass::runOnMachineFunction(MF);
+  
   ARMMIRevising mir(rmr);
   mir.init(&MF, raisedFunction);
   mir.setMCInstRaiser(mcInstRaiser);
