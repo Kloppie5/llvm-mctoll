@@ -96,6 +96,10 @@ class Monitor {
             OS << "NOTE: " << Message;
             if (linebreak) OS << "\n";
         }
+        static void ERROR ( const char* Message, bool linebreak = true, raw_ostream& OS = WithColor(errs(), HighlightColor::Error) ) {
+            OS << "ERROR: " << Message;
+            if (linebreak) OS << "\n";
+        }
 
     private:
         Monitor() {}
