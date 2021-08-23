@@ -28,11 +28,7 @@ using namespace llvm::object;
 
 char ARMMIRevising::ID = 0;
 
-ARMMIRevising::ARMMIRevising(ARMModuleRaiser &MRsr) : ARMRaiserBase(ID, MRsr) {
-  MCIR = nullptr;
-}
-
-ARMMIRevising::~ARMMIRevising() {}
+ARMMIRevising::ARMMIRevising(ModuleRaiser &MR) : ARMRaiserBase(ID, MRsr) {}
 
 void ARMMIRevising::init(MachineFunction *mf, Function *rf) {
   ARMRaiserBase::init(mf, rf);
@@ -232,7 +228,7 @@ void ARMMIRevising::relocateBranch(MachineInstr &MInst) {
     if (reloc == nullptr) {
       // If there is no relocation for the instruction,
       // we can't get the symbol name.
-      dbgs() << "No relocation for instruction at offset " << Offset << "\n";
+      LLVM_DEBUG(dbgs() << "No relocation for instruction at offset " << Offset << "\n");
       return;
     }
     auto ImmValOrErr = (*reloc->getSymbol()).getValue();
@@ -566,19 +562,13 @@ bool ARMMIRevising::reviseMI(MachineInstr &MInst) {
 }
 
 bool ARMMIRevising::revise() {
-  bool rtn = false;
+  bool changed = false;
   LLVM_DEBUG(dbgs() << "ARMMIRevising start.\n");
 
   vector<MachineInstr *> RMVec;
-  for (MachineFunction::iterator mbbi = MF->begin(), mbbe = MF->end();
-       mbbi != mbbe; ++mbbi) {
-    for (MachineBasicBlock::iterator mii = mbbi->begin(), mie = mbbi->end();
-         mii != mie; ++mii) {
-      if (removeNeedlessInst(&*mii)) {
-        RMVec.push_back(&*mii);
-        rtn = true;
-      } else
-        rtn = reviseMI(*mii);
+  for (auto mbbi = MF->begin(), mbbe = MF->end(); mbbi != mbbe; ++mbbi) {
+    for (auto mii = mbbi->begin(), mie = mbbi->end(); mii != mie; ++mii) {
+      changed = reviseMI(*mii);
     }
   }
 
@@ -590,7 +580,7 @@ bool ARMMIRevising::revise() {
   LLVM_DEBUG(getCRF()->dump());
   LLVM_DEBUG(dbgs() << "ARMMIRevising end.\n");
 
-  return rtn;
+  return changed;
 }
 
 bool ARMMIRevising::runOnMachineFunction(MachineFunction &mf) {

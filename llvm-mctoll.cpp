@@ -1033,23 +1033,13 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
     uint64_t Size;
     uint64_t Index;
 
-    FunctionFilter *FuncFilter = moduleRaiser->getFunctionFilter();
-    if (cl::getRegisteredOptions()["filter-functions-file"]
-            ->getNumOccurrences() > 0) {
-      if (!FuncFilter->readFilterFunctionConfigFile(
-              FilterFunctionSet.getValue())) {
-        dbgs() << "Unable to read function filter configuration file "
-               << FilterFunctionSet.getValue() << ". Ignoring\n";
-      }
-    }
-
     // Build a map of relocations (if they exist in the binary) of text
     // section whose instructions are being raised.
     moduleRaiser->collectTextSectionRelocs(Section);
 
     // Set used to record all branch targets of a function.
     std::set<uint64_t> branchTargetSet;
-    MachineFunctionRaiser *curMFRaiser = nullptr;
+    MachineFunctionRaiser *MFRaiser = nullptr;
 
     // Disassemble symbol by symbol.
     LLVM_DEBUG(dbgs() << "BEGIN Disassembly of Functions in Section : "
@@ -1100,73 +1090,40 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
       if (isAFunctionSymbol(Obj, Symbols[si])) {
         auto &SymStr = Symbols[si].Name;
 
-        if ((FilterFunctionSet.getNumOccurrences() != 0)) {
-          // Check the symbol name whether it should be excluded or not.
-          if (!FuncFilter->isFilterSetEmpty(FunctionFilter::FILTER_EXCLUDE)) {
-            FunctionFilter::FuncInfo *FI = FuncFilter->findFuncInfoBySymbol(
-                SymStr, FunctionFilter::FILTER_EXCLUDE);
-            if (FI != nullptr) {
-              // Record the function start index.
-              FI->StartIdx = Start;
-              continue;
-            }
-          }
-
-          // Check the symbol name whether it should be included or not.
-          if (FuncFilter->findFuncInfoBySymbol(
-                  SymStr, FunctionFilter::FILTER_INCLUDE) == nullptr)
-            continue;
-        }
-
         // If Symbol is in the ELFCRTSymbol list return this is a symbol of a
         // function we are not interested in disassembling and raising.
         if (ELFCRTSymbols.find(SymStr) != ELFCRTSymbols.end())
           continue;
 
-        // Note that since LLVM infrastructure was built to be used to build a
-        // conventional compiler pipeline, MachineFunction is built well after
-        // Function object was created and populated fully. Hence, creation of
-        // a Function object is necessary to build MachineFunction.
-        // However, in a raiser, we are conceptually walking the traditional
-        // compiler pipeline backwards. So we build MachineFunction from
-        // the binary before building Function object. Given the dependency,
-        // build a place holder Function object to allow for building the
-        // MachineFunction object.
-        // This Function object is NOT populated when raising MachineFunction
-        // abstraction of the binary function. Instead, a new Function is
-        // created using the LLVMContext and name of this Function object.
-        FunctionType *FTy = FunctionType::get(Type::getVoidTy(llvmCtx), false);
+        // New function symbol encountered. Record all targets collected to
+        // current MachineFunctionRaiser before we start parsing the new
+        // function bytes.
+        MFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
+        for (auto target : branchTargetSet) {
+          assert(MFRaiser != nullptr &&
+                 "Encountered unintialized MachineFunction raiser object");
+          MFRaiser->MCIR->addTarget(target);
+        }
+
+        // Clear the set used to record all branch targets of this function.
+        branchTargetSet.clear();
+
         StringRef FunctionName(Symbols[si].Name);
         // Strip leading underscore if the binary is MachO
         if (Obj->isMachO()) {
           FunctionName.consume_front("_");
         }
-        Function *Func = Function::Create(FTy, GlobalValue::ExternalLinkage,
-                                          FunctionName, &module);
 
-        // New function symbol encountered. Record all targets collected to
-        // current MachineFunctionRaiser before we start parsing the new
-        // function bytes.
-        curMFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
-        for (auto target : branchTargetSet) {
-          assert(curMFRaiser != nullptr &&
-                 "Encountered unintialized MachineFunction raiser object");
-          curMFRaiser->getMCInstRaiser()->addTarget(target);
-        }
-
-        // Clear the set used to record all branch targets of this function.
-        branchTargetSet.clear();
         // Create a new MachineFunction raiser
-        curMFRaiser = moduleRaiser->CreateAndAddMachineFunctionRaiser(
-            Func, moduleRaiser, Start, End);
+        MFRaiser = moduleRaiser->NewMachineFunctionRaiser(FunctionName, new MCInstRaiser(Start, End));
         LLVM_DEBUG(dbgs() << "\nFunction " << Symbols[si].Name << ":\n");
       } else {
         // Continue using to the most recent MachineFunctionRaiser
         // Get current MachineFunctionRaiser
-        curMFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
+        MFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
         // assert(curMFRaiser != nullptr && "Current Machine Function Raiser not
         // initialized");
-        if (curMFRaiser == nullptr) {
+        if (MFRaiser == nullptr) {
           // At this point in the instruction stream, we do not have a function
           // symbol to which the bytes being parsed can be made part of. So skip
           // parsing the bytes of this symbol.
@@ -1177,15 +1134,11 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
         // current symbol. This represents a situation where we have discovered
         // bytes (most likely data bytes) that belong to the most recent
         // function being parsed.
-        MCInstRaiser *mcInstRaiser = curMFRaiser->getMCInstRaiser();
-        if (mcInstRaiser->getFuncEnd() < End) {
-          assert(mcInstRaiser->adjustFuncEnd(End) &&
+        if (MFRaiser->MCIR->getFuncEnd() < End) {
+          assert(MFRaiser->MCIR->adjustFuncEnd(End) &&
                  "Unable to adjust function end value");
         }
       }
-
-      // Get the associated MCInstRaiser
-      MCInstRaiser *mcInstRaiser = curMFRaiser->getMCInstRaiser();
 
       // Start new basic block at the symbol.
       branchTargetSet.insert(Start);
@@ -1225,7 +1178,7 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
                       Bytes.data() + Index);
                   Data = *Word;
                 }
-                mcInstRaiser->addMCInstOrData(Index, Data);
+                MFRaiser->MCIR->addMCInstOrData(Index, Data);
               } else if (Index + 2 <= End) {
                 Stride = 2;
                 uint16_t Data = 0;
@@ -1240,10 +1193,10 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
                                                                   Index);
                   Data = *Short;
                 }
-                mcInstRaiser->addMCInstOrData(Index, Data);
+                MFRaiser->MCIR->addMCInstOrData(Index, Data);
               } else {
                 Stride = 1;
-                mcInstRaiser->addMCInstOrData(Index, Bytes.slice(Index, 1)[0]);
+                MFRaiser->MCIR->addMCInstOrData(Index, Bytes.slice(Index, 1)[0]);
               }
               Index += Stride;
 
@@ -1273,7 +1226,7 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
         LLVM_DEBUG(
           Monitor::event_ParsedMCInst(Bytes.slice(Index, Size), &Inst);
         );
-        mcInstRaiser->addMCInstOrData(Index, Inst);
+        MFRaiser->MCIR->addMCInstOrData(Index, Inst);
 
         // Find branch target and record it. Call targets are not
         // recorded as they are not needed to build per-function CFG.
@@ -1309,22 +1262,14 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
           branchTargetSet.insert(fallThruIndex);
         }
       }
-      FuncFilter->eraseFunctionBySymbol(Symbols[si].Name,
-                                        FunctionFilter::FILTER_INCLUDE);
     }
 
     // Record all targets of the last function parsed
-    curMFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
+    MFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
     for (auto target : branchTargetSet)
-      curMFRaiser->getMCInstRaiser()->addTarget(target);
+      MFRaiser->MCIR->addTarget(target);
 
     moduleRaiser->runMachineFunctionPasses();
-
-    if (!FuncFilter->isFilterSetEmpty(FunctionFilter::FILTER_INCLUDE)) {
-      errs() << "***** WARNING: The following include filter symbol(s) are not "
-                "found :\n";
-      FuncFilter->dump(FunctionFilter::FILTER_INCLUDE);
-    }
   }
 
   // Add the pass manager
@@ -1444,9 +1389,9 @@ int main(int argc, char **argv) {
     InputFilenames.push_back("a.out");
 
   // Read declarations in user-specified include files
-  std::set<string> InclFNameSet(IncludeFileNames.begin(),
+  std::set<std::string> InclFNameSet(IncludeFileNames.begin(),
                                 IncludeFileNames.end());
-  std::vector<string> InclFNames(InclFNameSet.begin(), InclFNameSet.end());
+  std::vector<std::string> InclFNames(InclFNameSet.begin(), InclFNameSet.end());
 
   if (!InclFNames.empty()) {
     if (!ExternalFunctions::getUserSpecifiedFuncPrototypes(InclFNames,

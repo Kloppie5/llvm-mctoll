@@ -10,7 +10,7 @@ if(NOT LLVM_MCTOLL_BUILT_STANDALONE)
   set(LLVM_MCTOLL_DEPS intrinsics_gen ARMCommonTableGen)
 endif()
 
-add_llvm_library(ARMRaiser
+add_llvm_library(ARMRaiser STATIC
   ARMModuleRaiser.cpp
   ARMFunctionPrototype.cpp
   ARMMIRevising.cpp
@@ -25,7 +25,7 @@ add_llvm_library(ARMRaiser
   DAG/InstSelector.cpp
   DAG/IREmitter.cpp
   ARMSelectionDAGISel.cpp
-  ARMMachineInstructionRaiser.cpp
+  ARMMachineFunctionRaiser.cpp
 
   DEPENDS
     ${LLVM_MCTOLL_DEPS}

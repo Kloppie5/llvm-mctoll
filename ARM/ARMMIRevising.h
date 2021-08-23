@@ -19,17 +19,16 @@
 #include "llvm/CodeGen/MachineInstr.h"
 
 using namespace llvm;
-using namespace object;
 
 /// This class is use to revise information of each MachineInstr. Something
 /// like size of operands, immediate data value and so on. Currently, the
 /// generation of global objects is included at here.
-class ARMMIRevising : public ARMRaiserBase {
+class ARMMIRevising : public RaiserPass {
 
 public:
-  static char ID;
+  static string Name = "ARMMIRevising";
 
-  ARMMIRevising(ARMModuleRaiser &MRsr);
+  ARMMIRevising(ModuleRaiser &MR) : RaiserPass(MR, Name) {}
   ~ARMMIRevising() override;
   void init(MachineFunction *mf = nullptr, Function *rf = nullptr) override;
   bool revise();

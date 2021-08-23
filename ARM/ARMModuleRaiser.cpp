@@ -16,9 +16,22 @@
 
 using namespace llvm;
 
+class ARMMAchineFunctionRaiser;
+
 namespace RaiserContext {
 extern SmallVector<ModuleRaiser *, 4> ModuleRaiserRegistry;
 }
+
+  // Create a new MachineFunctionRaiser object and add it to the list of
+  // MachineFunction raiser objects of this module.
+  MachineFunctionRaiser* ARMModuleRaiser::NewMachineFunctionRaiser(StringRef FunctionName, MCInstRaiser *MCIR) {
+    FunctionType *FTy = FunctionType::get(Type::getVoidTy(M->getContext()), false);
+    Function *Func = Function::Create(FTy, GlobalValue::ExternalLinkage, FunctionName, M);
+    MachineFunction &MF = getMachineModuleInfo()->getOrCreateMachineFunction(*Func);
+    MachineFunctionRaiser* mfRaiser = new ARMMachineFunctionRaiser(MF, MCIR);
+    mfRaiserVector.push_back(mfRaiser);
+    return mfRaiser;
+  }
 
 bool ARMModuleRaiser::collectDynamicRelocations() {
   if (!Obj->isELF()) {
