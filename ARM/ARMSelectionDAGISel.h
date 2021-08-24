@@ -15,13 +15,7 @@
 #define LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMSELECTIONDAGISEL_H
 
 #include "RaiserPass.h"
-#include "DAGBuilder.h"
-#include "DAGRaisingInfo.h"
-#include "FunctionRaisingInfo.h"
-#include "IREmitter.h"
-#include "InstSelector.h"
 #include "ModuleRaiser.h"
-#include "llvm/Analysis/OptimizationRemarkEmitter.h"
 
 /// This is responsible for constructing DAG, and does instruction selection on
 /// the DAG, eventually emits SDNodes of the DAG to LLVM IRs.
@@ -31,21 +25,6 @@ public:
   bool run (MachineFunction *MF, Function *F) override;
 
 private:
-  void initEntryBasicBlock(Function *F);
-  void selectBasicBlock();
-  void doInstructionSelection();
-  void emitDAG();
-
-  std::unique_ptr<OptimizationRemarkEmitter> ORE;
-
-  FunctionRaisingInfo *FuncInfo;
-  DAGBuilder *SDB;
-  InstSelector *SLT;
-
-  SelectionDAG *CurDAG;
-  DAGRaisingInfo *DAGInfo;
-  MachineBasicBlock *MBB;
-  BasicBlock *BB;
   std::vector<JumpTableInfo> jtList;
 };
 
