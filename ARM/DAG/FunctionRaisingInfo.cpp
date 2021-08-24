@@ -53,6 +53,7 @@ void FunctionRaisingInfo::clear() {
   ValueMap.clear();
   VisitedBBs.clear();
   RegValMap.clear();
+  RegValueMap.clear();
   ArgValMap.clear();
   NodeRegMap.clear();
   AllocaMap.clear();

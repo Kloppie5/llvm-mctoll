@@ -32,6 +32,8 @@ public:
   /// The map of physical register with related IR Value. It is used to convert
   /// physical registers to SSA form IR Values.
   DenseMap<unsigned, SDNode *> RegValMap;
+  /// The actual map of physical registers to IR Values.
+  DenseMap<unsigned, Value *> RegValueMap;
   /// Set the Val for Register mapping.
   DenseMap<unsigned, Value *> ArgValMap;
   /// Set register for SDNode mapping.
