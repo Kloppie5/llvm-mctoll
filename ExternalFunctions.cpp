@@ -184,10 +184,9 @@ public:
 
 // Construct and return a Function* corresponding to a known external function
 Function *ExternalFunctions::Create(StringRef &CFuncName, ModuleRaiser &MR) {
-  Module *M = MR.getModule();
-  assert(M != nullptr && "Uninitialized ModuleRaiser!");
+  assert(MR.M != nullptr && "Uninitialized ModuleRaiser!");
 
-  Function *Func = M->getFunction(CFuncName);
+  Function *Func = MR.M->getFunction(CFuncName);
   if (Func != nullptr)
     return Func;
 
@@ -211,7 +210,7 @@ Function *ExternalFunctions::Create(StringRef &CFuncName, ModuleRaiser &MR) {
   ArrayRef<Type *> Args(ArgVec);
   if (llvm::FunctionType *FuncType =
           FunctionType::get(RetType, Args, retAndArgs.isVariadic)) {
-    FunctionCallee FunCallee = M->getOrInsertFunction(CFuncName, FuncType);
+    FunctionCallee FunCallee = MR.M->getOrInsertFunction(CFuncName, FuncType);
     assert(isa<Function>(FunCallee.getCallee()) && "Expect Function");
     Func = reinterpret_cast<Function *>(FunCallee.getCallee());
     Func->setCallingConv(CallingConv::C);

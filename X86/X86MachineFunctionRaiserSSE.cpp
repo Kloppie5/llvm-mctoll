@@ -1,4 +1,4 @@
-//===-- X86MachineInstructionRaiserSSE.cpp -----------------------*- C++-*-===//
+//===-- X86MachineFunctionRaiserSSE.cpp -----------------------*- C++-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,12 +7,12 @@
 //===----------------------------------------------------------------------===//
 //
 // This file contains implementaion of functions to raise SSE2 instructions
-// declared in X86MachineInstructionRaiser class for use by llvm-mctoll.
+// declared in X86MachineFunctionRaiser class for use by llvm-mctoll.
 //
 //===----------------------------------------------------------------------===//
 
 #include "ExternalFunctions.h"
-#include "X86MachineInstructionRaiser.h"
+#include "X86MachineFunctionRaiser.h"
 #include "X86RaisedValueTracker.h"
 #include "X86RegisterUtils.h"
 #include "llvm-mctoll.h"
@@ -27,7 +27,7 @@ using namespace llvm;
 using namespace mctoll;
 using namespace X86RegisterUtils;
 
-bool X86MachineInstructionRaiser::raiseSSECompareMachineInstr(
+bool X86MachineFunctionRaiser::raiseSSECompareMachineInstr(
     const MachineInstr &MI) {
   const TargetRegisterInfo *TRI = MF.getRegInfo().getTargetRegisterInfo();
   // Ensure this is an SSE2 compare instruction
@@ -81,7 +81,7 @@ bool X86MachineInstructionRaiser::raiseSSECompareMachineInstr(
   return raiseSSECompareMachineInstr(MI, CmpOpVal1, CmpOpVal2, false);
 }
 
-bool X86MachineInstructionRaiser::raiseSSECompareFromMemMachineInstr(
+bool X86MachineFunctionRaiser::raiseSSECompareFromMemMachineInstr(
     const MachineInstr &MI, Value *MemRefValue) {
   LLVMContext &Ctx(MF.getFunction().getContext());
   // Ensure this is an SSE2 compare instruction
@@ -133,7 +133,7 @@ bool X86MachineInstructionRaiser::raiseSSECompareFromMemMachineInstr(
   return raiseSSECompareMachineInstr(MI, CmpOpVal1, CmpOpVal2, true);
 }
 
-bool X86MachineInstructionRaiser::raiseSSECompareMachineInstr(
+bool X86MachineFunctionRaiser::raiseSSECompareMachineInstr(
     const MachineInstr &MI, Value *CmpOpVal1, Value *CmpOpVal2,
     bool IsFromMem) {
   BasicBlock *RaisedBB = getRaisedBasicBlock(MI.getParent());
@@ -256,7 +256,7 @@ bool X86MachineInstructionRaiser::raiseSSECompareMachineInstr(
   return true;
 }
 
-bool X86MachineInstructionRaiser::raiseSSEConvertPrecisionMachineInstr(
+bool X86MachineFunctionRaiser::raiseSSEConvertPrecisionMachineInstr(
     const MachineInstr &MI) {
   int MBBNo = MI.getParent()->getNumber();
   MCInstrDesc MCIDesc = MI.getDesc();
@@ -335,7 +335,7 @@ bool X86MachineInstructionRaiser::raiseSSEConvertPrecisionMachineInstr(
   return true;
 }
 
-bool X86MachineInstructionRaiser::raiseSSEConvertPrecisionFromMemMachineInstr(
+bool X86MachineFunctionRaiser::raiseSSEConvertPrecisionFromMemMachineInstr(
     const MachineInstr &MI, Value *MemRefValue) {
   LLVMContext &Ctx(MF.getFunction().getContext());
   BasicBlock *RaisedBB = getRaisedBasicBlock(MI.getParent());
@@ -436,7 +436,7 @@ bool X86MachineInstructionRaiser::raiseSSEConvertPrecisionFromMemMachineInstr(
   return true;
 }
 
-bool X86MachineInstructionRaiser::raiseSSEMoveRegToRegMachineInstr(
+bool X86MachineFunctionRaiser::raiseSSEMoveRegToRegMachineInstr(
     const MachineInstr &MI) {
   int MBBNo = MI.getParent()->getNumber();
   LLVMContext &Ctx(MF.getFunction().getContext());

@@ -282,7 +282,7 @@ bool ModuleRaiser::changeRaisedFunctionReturnType(Function *TargetFunc,
     TargetFunc->getParent()->getFunctionList().remove(
         TargetFunc->getIterator());
     // Update raised function
-    TargetFuncMFRaiser->setRaisedFunction(NewF);
+    TargetFuncMFRaiser->F = NewF;
     Changed = true;
   }
   return Changed;

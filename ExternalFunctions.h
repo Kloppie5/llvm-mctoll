@@ -34,7 +34,7 @@ public:
   // Table of user specified function prototypes
   static std::map<std::string, ExternalFunctions::RetAndArgs>
       UserSpecifiedFunctions;
-  static bool getUserSpecifiedFuncPrototypes(std::vector<string> &FileNames,
+  static bool getUserSpecifiedFuncPrototypes(std::vector<std::string> &FileNames,
                                              std::string &CompDBDir);
 };
 

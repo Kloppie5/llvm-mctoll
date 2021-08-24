@@ -9,6 +9,8 @@
 #ifndef LLVM_TOOLS_LLVM_MCTOLL_MODULERAISER_H
 #define LLVM_TOOLS_LLVM_MCTOLL_MODULERAISER_H
 
+#include "FunctionFilter.h"
+#include "MCInstRaiser.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/MC/MCDisassembler/MCDisassembler.h"
@@ -41,11 +43,12 @@ struct JumpTableInfo {
 class ModuleRaiser {
 public:
   Module *M;
+  FunctionFilter *FFT;
 
   ModuleRaiser()
       : M(nullptr), TM(nullptr), MMI(nullptr), MIA(nullptr), MII(nullptr),
         Obj(nullptr), DisAsm(nullptr), TextSectionIndex(-1),
-        Arch(Triple::ArchType::UnknownArch), InfoSet(false) {}
+        Arch(Triple::ArchType::UnknownArch), FFT(nullptr), InfoSet(false) {}
 
   static void InitializeAllModuleRaisers();
 
@@ -62,6 +65,7 @@ public:
     this->MII = MII;
     this->Obj = Obj;
     this->DisAsm = DisAsm;
+    this->FFT = new FunctionFilter(*M);
     InfoSet = true;
   }
 
@@ -82,6 +86,9 @@ public:
   bool collectTextSectionRelocs(const SectionRef &);
   virtual bool collectDynamicRelocations() = 0;
 
+  /// Get the data type corresponding to type string.
+  Type *getPrimitiveDataType(const StringRef &TypeStr);
+
   const TargetMachine *getTargetMachine() const { return TM; }
   MachineModuleInfo *getMachineModuleInfo() const { return MMI; }
   const MCInstrAnalysis *getMCInstrAnalysis() const { return MIA; }
@@ -89,6 +96,8 @@ public:
   const ObjectFile *getObjectFile() const { return Obj; }
   const MCDisassembler *getMCDisassembler() const { return DisAsm; }
   Triple::ArchType getArchType() { return Arch; }
+  FunctionFilter *getFunctionFilter() const { return FFT; }
+
 
   bool runMachineFunctionPasses();
 
@@ -111,9 +120,6 @@ public:
   int64_t getTextSectionAddress() const;
 
   bool changeRaisedFunctionReturnType(Function *, Type *);
-
-  // Get the current architecture type.
-  Triple::ArchType getArch() const { return Arch; }
 
 protected:
   // A sequential list of MachineFunctionRaiser objects created

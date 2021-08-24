@@ -9,7 +9,6 @@
 #ifndef LLVM_MCTOLL_ARM_ARMPATTERNMATCHCONCURRENCYPASS_H
 #define LLVM_MCTOLL_ARM_ARMPATTERNMATCHCONCURRENCYPASS_H
 
-#include "ARMRaiserBase.h"
 #include "Monitor.h"
 
 using namespace llvm;

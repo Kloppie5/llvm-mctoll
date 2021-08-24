@@ -7,14 +7,14 @@
 //===----------------------------------------------------------------------===//
 //
 // This file contains the implementation of function prototype discovery APIs of
-// X86MachineInstructionRaiser class for use by llvm-mctoll.
+// X86MachineFunctionRaiser class for use by llvm-mctoll.
 //
 //===----------------------------------------------------------------------===//
 
 #include "ExternalFunctions.h"
 #include "MachineFunctionRaiser.h"
 #include "X86InstrBuilder.h"
-#include "X86MachineInstructionRaiser.h"
+#include "X86MachineFunctionRaiser.h"
 #include "X86ModuleRaiser.h"
 #include "X86RaisedValueTracker.h"
 #include "X86RegisterUtils.h"
@@ -57,7 +57,7 @@ static bool hasExactImplicitDefOfPhysReg(const MachineInstr &I, unsigned Reg,
 // Return argument number associated with physical
 // register PReg according to C calling convention.
 
-int X86MachineInstructionRaiser::getArgumentNumber(unsigned PReg) {
+int X86MachineFunctionRaiser::getArgumentNumber(unsigned PReg) {
   int pos = -1;
   if (is8BitPhysReg(PReg)) {
     int diff = std::distance(
@@ -101,7 +101,7 @@ int X86MachineInstructionRaiser::getArgumentNumber(unsigned PReg) {
 // Add Reg to LiveInSet. This function adds the actual register Reg - not its
 // 64-bit super register variant because we'll need the actual register to
 // determine the argument type.
-void X86MachineInstructionRaiser::addRegisterToFunctionLiveInSet(
+void X86MachineFunctionRaiser::addRegisterToFunctionLiveInSet(
     MCPhysRegSet &LiveInSet, unsigned Reg) {
 
   // Nothing to do if Reg is already in the set.
@@ -144,7 +144,7 @@ void X86MachineInstructionRaiser::addRegisterToFunctionLiveInSet(
   // super register.
 }
 
-Type *X86MachineInstructionRaiser::getFunctionReturnType() {
+Type *X86MachineFunctionRaiser::getFunctionReturnType() {
   Type *returnType = nullptr;
 
   assert(x86TargetInfo.is64Bit() && "Only x86_64 binaries supported for now");
@@ -196,12 +196,12 @@ Type *X86MachineInstructionRaiser::getFunctionReturnType() {
 }
 
 // Construct prototype of the Function for the MachineFunction being raised.
-FunctionType *X86MachineInstructionRaiser::getRaisedFunctionPrototype() {
+FunctionType *X86MachineFunctionRaiser::getRaisedFunctionPrototype() {
   // Raise the jumptable
   raiseMachineJumpTable();
 
-  if (raisedFunction != nullptr)
-    return raisedFunction->getFunctionType();
+  if (F != nullptr)
+    return F->getFunctionType();
 
   // Cleanup NOOP instructions from all MachineBasicBlocks
   deleteNOOPInstrMF();
@@ -331,7 +331,6 @@ FunctionType *X86MachineInstructionRaiser::getRaisedFunctionPrototype() {
               const MachineOperand &MO = MI.getOperand(0);
               assert(MO.isImm() && "Expected immediate operand not found");
               int64_t BranchOffset = MO.getImm();
-              MCInstRaiser *MCIR = getMCInstRaiser();
               assert(MCIR != nullptr && "MCInstRaiser not initialized");
 
               // Get the (MCInst) offset of the instruction in the binary
@@ -490,46 +489,43 @@ FunctionType *X86MachineInstructionRaiser::getRaisedFunctionPrototype() {
 
   // 1. Get the current function name
   StringRef functionName = MF.getFunction().getName();
-  Module *module = MR->getModule();
 
   // 2. Get the corresponding Function* registered in module
-  Function *tempFunctionPtr = module->getFunction(functionName);
+  Function *tempFunctionPtr = MR.M->getFunction(functionName);
   assert(tempFunctionPtr != nullptr && "Function not found in module list");
 
   // 4. Delete the tempFunc from module list to allow for the creation of the
   //    real function to add the correct one to FunctionList of the module.
-  module->getFunctionList().remove(tempFunctionPtr);
+  MR.M->getFunctionList().remove(tempFunctionPtr);
 
   // 3. Create a function type using the discovered arguments and return value.
   FunctionType *FT =
       FunctionType::get(returnType, argTypeVector, false /* isVarArg*/);
 
   // 4. Create the real Function now that we have discovered the arguments.
-  raisedFunction =
-      Function::Create(FT, GlobalValue::ExternalLinkage, functionName, module);
+  F = Function::Create(FT, GlobalValue::ExternalLinkage, functionName, MR.M);
 
   // Set global linkage
-  raisedFunction->setLinkage(GlobalValue::ExternalLinkage);
+  F->setLinkage(GlobalValue::ExternalLinkage);
   // Set C calling convention
-  raisedFunction->setCallingConv(CallingConv::C);
+  F->setCallingConv(CallingConv::C);
   // Set the function to be in the same linkage unit
-  raisedFunction->setDSOLocal(true);
+  F->setDSOLocal(true);
   // TODO : Set other function attributes as needed.
   // Add argument names to the function.
   // Note: Call to arg_begin() calls Function::BuildLazyArguments()
   // to build the arguments.
-  Function::arg_iterator ArgIt = raisedFunction->arg_begin();
-  unsigned numFuncArgs = raisedFunction->arg_size();
+  Function::arg_iterator ArgIt = F->arg_begin();
+  unsigned numFuncArgs = F->arg_size();
   StringRef prefix("arg");
   // Set the name.
   for (unsigned i = 0; i < numFuncArgs; ++i, ++ArgIt)
     ArgIt->setName(prefix + std::to_string(i + 1));
 
   // Insert the map of raised function to tempFunctionPointer.
-  const_cast<ModuleRaiser *>(MR)->insertPlaceholderRaisedFunctionMap(
-      raisedFunction, tempFunctionPtr);
+  MR.insertPlaceholderRaisedFunctionMap(F, tempFunctionPtr);
 
-  return raisedFunction->getFunctionType();
+  return F->getFunctionType();
 }
 
 // Discover and return the type of return register (viz., RAX or its
@@ -537,7 +533,7 @@ FunctionType *X86MachineInstructionRaiser::getRaisedFunctionPrototype() {
 // after the last call instruction or that found on a reverse traversal without
 // encountering any call instruction, are considered to be indicative of return
 // value set up.
-Type *X86MachineInstructionRaiser::getReachingReturnType(
+Type *X86MachineFunctionRaiser::getReachingReturnType(
     const MachineBasicBlock &MBB) {
   bool HasCall = false;
   // Find return type in MBB
@@ -601,7 +597,7 @@ Type *X86MachineInstructionRaiser::getReachingReturnType(
 // last call instruction, if one exists, in the block are considered to be
 // indicative of return value set up.
 Type *
-X86MachineInstructionRaiser::getReturnTypeFromMBB(const MachineBasicBlock &MBB,
+X86MachineFunctionRaiser::getReturnTypeFromMBB(const MachineBasicBlock &MBB,
                                                   bool &HasCall) {
   Type *ReturnType = nullptr;
   uint8_t BitPrecision = 0;
@@ -702,7 +698,7 @@ X86MachineInstructionRaiser::getReturnTypeFromMBB(const MachineBasicBlock &MBB,
 // Construct argument type vector from the physical register vector.
 // Requirements : PhysRegs is a set of registers each with no super or
 // sub-registers.
-bool X86MachineInstructionRaiser::buildFuncArgTypeVector(
+bool X86MachineFunctionRaiser::buildFuncArgTypeVector(
     const std::set<MCPhysReg> &PhysRegs, std::vector<Type *> &ArgTyVec) {
   // A map of argument number and type as discovered
   std::map<unsigned int, Type *> argNumTypeMap;
@@ -780,7 +776,7 @@ bool X86MachineInstructionRaiser::buildFuncArgTypeVector(
 // If MI is a branch instruction return the MBB number corresponding to its
 // target, if known. Return -1 in all other cases.
 int64_t
-X86MachineInstructionRaiser::getBranchTargetMBBNumber(const MachineInstr &MI) {
+X86MachineFunctionRaiser::getBranchTargetMBBNumber(const MachineInstr &MI) {
   int64_t TargetMBBNo = -1;
 
   if (!MI.isBranch())
@@ -794,7 +790,6 @@ X86MachineInstructionRaiser::getBranchTargetMBBNumber(const MachineInstr &MI) {
       const MachineOperand &MO = MI.getOperand(0);
       assert(MO.isImm() && "Expected immediate operand not found");
       int64_t BranchOffset = MO.getImm();
-      MCInstRaiser *MCIR = getMCInstRaiser();
       // Get MCInst offset - the offset of machine instruction in the binary
       assert(MCIR != nullptr && "MCInstRaiser not initialized");
 
@@ -811,7 +806,7 @@ X86MachineInstructionRaiser::getBranchTargetMBBNumber(const MachineInstr &MI) {
 // If MI is a call or tail call (i.e., branch to call target) return Function *
 // corresponding to the callee. Return nullptr in all other cases.
 Function *
-X86MachineInstructionRaiser::getCalledFunction(const MachineInstr &MI) {
+X86MachineFunctionRaiser::getCalledFunction(const MachineInstr &MI) {
   Function *CalledFunc = nullptr;
   unsigned int Opcode = MI.getOpcode();
 
@@ -829,21 +824,20 @@ X86MachineInstructionRaiser::getCalledFunction(const MachineInstr &MI) {
     int64_t RelCallTargetOffset = MO.getImm();
 
     // Compute the MCInst index of the call target
-    MCInstRaiser *MCIR = getMCInstRaiser();
     assert(MCIR != nullptr && "MCInstRaiser not initialized");
     // Get MCInst offset of the corresponding call instruction in the binary.
     uint64_t MCInstOffset = MCIR->getMCInstIndex(MI);
     uint64_t MCInstSize = MCIR->getMCInstSize(MCInstOffset);
     // First check if PC-relative call target embedded in the call
     // instruction can be used to get called function.
-    int64_t CallTargetIndex = MCInstOffset + MR->getTextSectionAddress() +
+    int64_t CallTargetIndex = MCInstOffset + MR.getTextSectionAddress() +
                               MCInstSize + RelCallTargetOffset;
     // Get the function at index CalltargetIndex
-    CalledFunc = MR->getRaisedFunctionAt(CallTargetIndex);
+    CalledFunc = MR.getRaisedFunctionAt(CallTargetIndex);
 
     // Search the called function from the excluded set of function filter.
     if (CalledFunc == nullptr) {
-      auto Filter = MR->getFunctionFilter();
+      auto Filter = MR.getFunctionFilter();
       CalledFunc = Filter->findFunctionByIndex(
           MCInstOffset + RelCallTargetOffset + MCInstSize,
           FunctionFilter::FILTER_EXCLUDE);
@@ -853,7 +847,7 @@ X86MachineInstructionRaiser::getCalledFunction(const MachineInstr &MI) {
     // call target function.
     if (CalledFunc == nullptr)
       CalledFunc =
-          MR->getCalledFunctionUsingTextReloc(MCInstOffset, MCInstSize);
+          MR.getCalledFunctionUsingTextReloc(MCInstOffset, MCInstSize);
 
     // Look up the PLT to find called function
     if (CalledFunc == nullptr)

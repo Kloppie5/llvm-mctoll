@@ -9,12 +9,9 @@
 #ifndef LLVM_MCTOLL_MACHINEFUNCTIONRAISER_H
 #define LLVM_MCTOLL_MACHINEFUNCTIONRAISER_H
 
-#include "MCInstRaiser.h"
 
-#include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineModuleInfo.h"
-#include "llvm/MC/MCInstrAnalysis.h"
-#include "llvm/MC/MCInstrInfo.h"
+#include "MCInstRaiser.h"
+#include "ModuleRaiser.h"
 
 using namespace llvm;
 
@@ -39,8 +36,10 @@ typedef struct ControlTransferInfo_t {
 
 class MachineFunctionRaiser {
   public:
-    MCInstRaiser *MCIR;
+    ModuleRaiser &MR;
     MachineFunction &MF;
+    MCInstRaiser *MCIR;
+
     Function *F;
     std::vector<BasicBlock *> BasicBlocks;
 
@@ -48,7 +47,7 @@ class MachineFunctionRaiser {
     // (i.e., Call and Terminator) instructions.
     std::vector<ControlTransferInfo *> CTInfo;
 
-    MachineFunctionRaiser(MachineFunction &MF, MCInstRaiser *MCIR) : MF(MF), MCIR(MCIR) {}
+    MachineFunctionRaiser(ModuleRaiser &MR, MachineFunction &MF, MCInstRaiser *MCIR) : MR(MR), MF(MF), MCIR(MCIR) {}
     virtual FunctionType *getRaisedFunctionPrototype() = 0;
 
     bool raise();

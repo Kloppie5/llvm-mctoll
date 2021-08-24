@@ -16,8 +16,6 @@
 
 using namespace llvm;
 
-class ARMMAchineFunctionRaiser;
-
 namespace RaiserContext {
 extern SmallVector<ModuleRaiser *, 4> ModuleRaiserRegistry;
 }

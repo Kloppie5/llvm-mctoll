@@ -291,19 +291,19 @@ void llvm::error(Error E) {
   exit(1);
 }
 
-LLVM_ATTRIBUTE_NORETURN void llvm::error(Twine Message) {
+[[noreturn]] void llvm::error(Twine Message) {
   errs() << ToolName << ": " << Message << ".\n";
   errs().flush();
   exit(1);
 }
 
-LLVM_ATTRIBUTE_NORETURN void llvm::report_error(StringRef File, Twine Message) {
+[[noreturn]] void llvm::report_error(StringRef File, Twine Message) {
   WithColor::error(errs(), ToolName)
       << "'" << File << "': " << Message << ".\n";
   exit(1);
 }
 
-LLVM_ATTRIBUTE_NORETURN void llvm::report_error(Error E, StringRef File) {
+[[noreturn]] void llvm::report_error(Error E, StringRef File) {
   assert(E);
   std::string Buf;
   raw_string_ostream OS(Buf);
@@ -313,7 +313,7 @@ LLVM_ATTRIBUTE_NORETURN void llvm::report_error(Error E, StringRef File) {
   exit(1);
 }
 
-LLVM_ATTRIBUTE_NORETURN void llvm::report_error(Error E, StringRef ArchiveName,
+[[noreturn]] void llvm::report_error(Error E, StringRef ArchiveName,
                                                 StringRef FileName,
                                                 StringRef ArchitectureName) {
   assert(E);
@@ -332,7 +332,7 @@ LLVM_ATTRIBUTE_NORETURN void llvm::report_error(Error E, StringRef ArchiveName,
   exit(1);
 }
 
-LLVM_ATTRIBUTE_NORETURN void llvm::report_error(Error E, StringRef ArchiveName,
+[[noreturn]] void llvm::report_error(Error E, StringRef ArchiveName,
                                                 const object::Archive::Child &C,
                                                 StringRef ArchitectureName) {
   Expected<StringRef> NameOrErr = C.getName();
@@ -1033,6 +1033,16 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
     uint64_t Size;
     uint64_t Index;
 
+    FunctionFilter *FuncFilter = moduleRaiser->getFunctionFilter();
+    if (cl::getRegisteredOptions()["filter-functions-file"]
+            ->getNumOccurrences() > 0) {
+      if (!FuncFilter->readFilterFunctionConfigFile(
+              FilterFunctionSet.getValue())) {
+        dbgs() << "Unable to read function filter configuration file "
+               << FilterFunctionSet.getValue() << ". Ignoring\n";
+      }
+    }
+
     // Build a map of relocations (if they exist in the binary) of text
     // section whose instructions are being raised.
     moduleRaiser->collectTextSectionRelocs(Section);
@@ -1089,6 +1099,24 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
 
       if (isAFunctionSymbol(Obj, Symbols[si])) {
         auto &SymStr = Symbols[si].Name;
+
+        if ((FilterFunctionSet.getNumOccurrences() != 0)) {
+          // Check the symbol name whether it should be excluded or not.
+          if (!FuncFilter->isFilterSetEmpty(FunctionFilter::FILTER_EXCLUDE)) {
+            FunctionFilter::FuncInfo *FI = FuncFilter->findFuncInfoBySymbol(
+                SymStr, FunctionFilter::FILTER_EXCLUDE);
+            if (FI != nullptr) {
+              // Record the function start index.
+              FI->StartIdx = Start;
+              continue;
+            }
+          }
+
+          // Check the symbol name whether it should be included or not.
+          if (FuncFilter->findFuncInfoBySymbol(
+                  SymStr, FunctionFilter::FILTER_INCLUDE) == nullptr)
+            continue;
+        }
 
         // If Symbol is in the ELFCRTSymbol list return this is a symbol of a
         // function we are not interested in disassembling and raising.
@@ -1262,6 +1290,8 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
           branchTargetSet.insert(fallThruIndex);
         }
       }
+      FuncFilter->eraseFunctionBySymbol(Symbols[si].Name,
+                                        FunctionFilter::FILTER_INCLUDE);
     }
 
     // Record all targets of the last function parsed
@@ -1270,6 +1300,12 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
       MFRaiser->MCIR->addTarget(target);
 
     moduleRaiser->runMachineFunctionPasses();
+
+    if (!FuncFilter->isFilterSetEmpty(FunctionFilter::FILTER_INCLUDE)) {
+      errs() << "***** WARNING: The following include filter symbol(s) are not "
+                "found :\n";
+      FuncFilter->dump(FunctionFilter::FILTER_INCLUDE);
+    }
   }
 
   // Add the pass manager

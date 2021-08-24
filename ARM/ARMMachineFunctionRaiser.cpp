@@ -16,6 +16,9 @@ using namespace llvm;
 
 class ARMMachineFunctionRaiser : MachineFunctionRaiser {
 public:
+  ARMMachineFunctionRaiser(ModuleRaiser &MR, MachineFunction &MF, MCInstRaiser *MCIR)
+  : MachineFunctionRaiser(MR, MF, MCIR) {}
+
   bool raise( ) {
     Monitor::NOTE("ARMMachineFunctionRaiser::run");
     /**

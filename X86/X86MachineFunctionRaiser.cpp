@@ -1,4 +1,4 @@
-//===-- X86MachineInstructionRaiser.cpp -------------------------*- C++ -*-===//
+//===-- X86MachineFunctionRaiser.cpp -------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,12 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file contains the implementation of X86MachineInstructionRaiser class
+// This file contains the implementation of X86MachineFunctionRaiser class
 // for use by llvm-mctoll.
 //
 //===----------------------------------------------------------------------===//
 
-#include "X86MachineInstructionRaiser.h"
+#include "X86MachineFunctionRaiser.h"
 #include "ExternalFunctions.h"
 #include "MachineFunctionRaiser.h"
 #include "X86InstrBuilder.h"
@@ -48,10 +48,8 @@ using namespace X86RegisterUtils;
 
 // Constructor
 
-X86MachineInstructionRaiser::X86MachineInstructionRaiser(MachineFunction &MF,
-                                                         const ModuleRaiser *MR,
-                                                         MCInstRaiser *MIR)
-    : MachineInstructionRaiser(MF, MR, MIR), machineRegInfo(MF.getRegInfo()),
+X86MachineFunctionRaiser::X86MachineFunctionRaiser(ModuleRaiser &MR, MachineFunction &MF, MCInstRaiser *MIR)
+    : MachineFunctionRaiser(MR, MF, MIR), machineRegInfo(MF.getRegInfo()),
       x86TargetInfo(MF.getSubtarget<X86Subtarget>()) {
   x86InstrInfo = x86TargetInfo.getInstrInfo();
   x86RegisterInfo = x86TargetInfo.getRegisterInfo();
@@ -63,7 +61,7 @@ X86MachineInstructionRaiser::X86MachineInstructionRaiser(MachineFunction &MF,
   raisedValues = nullptr;
 }
 
-bool X86MachineInstructionRaiser::raisePushInstruction(const MachineInstr &MI) {
+bool X86MachineFunctionRaiser::raisePushInstruction(const MachineInstr &MI) {
   const MCInstrDesc &MCIDesc = MI.getDesc();
   uint64_t MCIDTSFlags = MCIDesc.TSFlags;
 
@@ -114,7 +112,7 @@ bool X86MachineInstructionRaiser::raisePushInstruction(const MachineInstr &MI) {
   return true;
 }
 
-bool X86MachineInstructionRaiser::raisePopInstruction(const MachineInstr &mi) {
+bool X86MachineFunctionRaiser::raisePopInstruction(const MachineInstr &mi) {
   // TODO : Need to handle pop instructions other than those that restore bp
   // from stack.
   const MCInstrDesc &MCIDesc = mi.getDesc();
@@ -141,7 +139,7 @@ bool X86MachineInstructionRaiser::raisePopInstruction(const MachineInstr &mi) {
   return false;
 }
 
-bool X86MachineInstructionRaiser::raiseConvertBWWDDQMachineInstr(
+bool X86MachineFunctionRaiser::raiseConvertBWWDDQMachineInstr(
     const MachineInstr &MI) {
   const MCInstrDesc &MIDesc = MI.getDesc();
   unsigned int Opcode = MI.getOpcode();
@@ -192,7 +190,7 @@ bool X86MachineInstructionRaiser::raiseConvertBWWDDQMachineInstr(
   return true;
 }
 
-bool X86MachineInstructionRaiser::raiseConvertWDDQQOMachineInstr(
+bool X86MachineFunctionRaiser::raiseConvertWDDQQOMachineInstr(
     const MachineInstr &MI) {
   const MCInstrDesc &MIDesc = MI.getDesc();
   unsigned int Opcode = MI.getOpcode();
@@ -269,7 +267,7 @@ bool X86MachineInstructionRaiser::raiseConvertWDDQQOMachineInstr(
   return true;
 }
 
-bool X86MachineInstructionRaiser::raiseMoveImmToRegMachineInstr(
+bool X86MachineFunctionRaiser::raiseMoveImmToRegMachineInstr(
     const MachineInstr &MI) {
   unsigned int Opcode = MI.getOpcode();
   bool success = false;
@@ -316,7 +314,7 @@ bool X86MachineInstructionRaiser::raiseMoveImmToRegMachineInstr(
   return success;
 }
 
-bool X86MachineInstructionRaiser::raiseMoveRegToRegMachineInstr(
+bool X86MachineFunctionRaiser::raiseMoveRegToRegMachineInstr(
     const MachineInstr &MI) {
   unsigned int Opcode = MI.getOpcode();
   int MBBNo = MI.getParent()->getNumber();
@@ -662,7 +660,7 @@ bool X86MachineInstructionRaiser::raiseMoveRegToRegMachineInstr(
   return Success;
 }
 
-bool X86MachineInstructionRaiser::raiseLEAMachineInstr(const MachineInstr &MI) {
+bool X86MachineFunctionRaiser::raiseLEAMachineInstr(const MachineInstr &MI) {
   unsigned int Opcode = MI.getOpcode();
 
   assert(MI.getNumExplicitOperands() == 6 &&
@@ -770,7 +768,7 @@ bool X86MachineInstructionRaiser::raiseLEAMachineInstr(const MachineInstr &MI) {
   return true;
 }
 
-bool X86MachineInstructionRaiser::raiseBinaryOpRegToRegMachineInstr(
+bool X86MachineFunctionRaiser::raiseBinaryOpRegToRegMachineInstr(
     const MachineInstr &MI) {
 
   auto MCID = MI.getDesc();
@@ -1252,9 +1250,8 @@ bool X86MachineInstructionRaiser::raiseBinaryOpRegToRegMachineInstr(
     dstReg = DestOp.getReg();
     Value *SrcValue = ExplicitSrcValues.at(0);
 
-    Module *M = MR->getModule();
     Function *IntrinsicFunc =
-        Intrinsic::getDeclaration(M, Intrinsic::ctpop, SrcValue->getType());
+        Intrinsic::getDeclaration(MR.M, Intrinsic::ctpop, SrcValue->getType());
     Value *IntrinsicCallArgs[] = {SrcValue};
     Instruction *BinOpInst =
         CallInst::Create(IntrinsicFunc, ArrayRef<Value *>(IntrinsicCallArgs));
@@ -1429,7 +1426,7 @@ bool X86MachineInstructionRaiser::raiseBinaryOpRegToRegMachineInstr(
   return Success;
 }
 
-bool X86MachineInstructionRaiser::raiseBinaryOpMemToRegInstr(
+bool X86MachineFunctionRaiser::raiseBinaryOpMemToRegInstr(
     const MachineInstr &MI, Value *MemRefValue) {
   unsigned int Opcode = MI.getOpcode();
   const MCInstrDesc &MIDesc = MI.getDesc();
@@ -1584,7 +1581,7 @@ bool X86MachineInstructionRaiser::raiseBinaryOpMemToRegInstr(
   return true;
 }
 
-bool X86MachineInstructionRaiser::raiseLoadIntToFloatRegInstr(
+bool X86MachineFunctionRaiser::raiseLoadIntToFloatRegInstr(
     const MachineInstr &MI, Value *MemRefValue) {
 
   const unsigned int Opcode = MI.getOpcode();
@@ -1698,7 +1695,7 @@ bool X86MachineInstructionRaiser::raiseLoadIntToFloatRegInstr(
   return true;
 }
 
-bool X86MachineInstructionRaiser::raiseStoreIntToFloatRegInstr(
+bool X86MachineFunctionRaiser::raiseStoreIntToFloatRegInstr(
     const MachineInstr &MI, Value *MemRefValue) {
 
   const unsigned int Opcode = MI.getOpcode();
@@ -1806,7 +1803,7 @@ bool X86MachineInstructionRaiser::raiseStoreIntToFloatRegInstr(
   return true;
 }
 
-bool X86MachineInstructionRaiser::raiseMoveFromMemInstr(const MachineInstr &MI,
+bool X86MachineFunctionRaiser::raiseMoveFromMemInstr(const MachineInstr &MI,
                                                         Value *MemRefValue) {
   const unsigned int Opcode = MI.getOpcode();
   const MCInstrDesc &MIDesc = MI.getDesc();
@@ -1972,7 +1969,7 @@ bool X86MachineInstructionRaiser::raiseMoveFromMemInstr(const MachineInstr &MI,
   return true;
 }
 
-bool X86MachineInstructionRaiser::raiseMoveToMemInstr(const MachineInstr &MI,
+bool X86MachineFunctionRaiser::raiseMoveToMemInstr(const MachineInstr &MI,
                                                       Value *MemRefVal) {
   unsigned int SrcOpIndex = getMemoryRefOpIndex(MI) + X86::AddrNumOperands;
 
@@ -2052,7 +2049,7 @@ bool X86MachineInstructionRaiser::raiseMoveToMemInstr(const MachineInstr &MI,
   if (!isMovInst) {
     // Load the value from memory location
     auto align =
-        MemRefVal->getPointerAlignment(MR->getModule()->getDataLayout());
+        MemRefVal->getPointerAlignment(MR.M->getDataLayout());
     LdInst = new LoadInst(MemRefVal->getType()->getPointerElementType(),
                           MemRefVal, "", false, align, RaisedBB);
   }
@@ -2191,7 +2188,7 @@ bool X86MachineInstructionRaiser::raiseMoveToMemInstr(const MachineInstr &MI,
 }
 
 // load from memory, apply operation, store back to the same memory
-bool X86MachineInstructionRaiser::raiseInplaceMemOpInstr(const MachineInstr &MI,
+bool X86MachineFunctionRaiser::raiseInplaceMemOpInstr(const MachineInstr &MI,
                                                          Value *MemRefVal) {
   // Get the BasicBlock corresponding to MachineBasicBlock of MI.
   // Raised instruction is added to this BasicBlock.
@@ -2252,7 +2249,7 @@ bool X86MachineInstructionRaiser::raiseInplaceMemOpInstr(const MachineInstr &MI,
 }
 
 // Raise idiv instruction with source operand with value srcValue.
-bool X86MachineInstructionRaiser::raiseDivideInstr(const MachineInstr &MI,
+bool X86MachineFunctionRaiser::raiseDivideInstr(const MachineInstr &MI,
                                                    Value *SrcValue) {
   const MCInstrDesc &MIDesc = MI.getDesc();
   LLVMContext &Ctx(MF.getFunction().getContext());
@@ -2404,7 +2401,7 @@ bool X86MachineInstructionRaiser::raiseDivideInstr(const MachineInstr &MI,
 // the non-null memory reference value representing the memory reference the
 // instruction uses.
 
-bool X86MachineInstructionRaiser::raiseCompareMachineInstr(
+bool X86MachineFunctionRaiser::raiseCompareMachineInstr(
     const MachineInstr &MI, bool isMemCompare, Value *MemRefValue) {
   // Ensure this is a compare instruction
   assert(MI.isCompare() && "Compare instruction expected");
@@ -2462,7 +2459,7 @@ bool X86MachineInstructionRaiser::raiseCompareMachineInstr(
     }
     // Load the value from memory location
     auto align =
-        MemRefValue->getPointerAlignment(MR->getModule()->getDataLayout());
+        MemRefValue->getPointerAlignment(MR.M->getDataLayout());
     LoadInst *loadInst =
         new LoadInst(MemRefValue->getType()->getPointerElementType(),
                      MemRefValue, "", false, align, RaisedBB);
@@ -2654,7 +2651,7 @@ bool X86MachineInstructionRaiser::raiseCompareMachineInstr(
 // Raise a load/store instruction.
 // Current implementation only raises instructions that load and store to
 // stack.
-bool X86MachineInstructionRaiser::raiseMemRefMachineInstr(
+bool X86MachineFunctionRaiser::raiseMemRefMachineInstr(
     const MachineInstr &MI) {
 
   // Handle the push instruction that is marked as a memory store
@@ -2707,7 +2704,7 @@ bool X86MachineInstructionRaiser::raiseMemRefMachineInstr(
   return false;
 }
 
-bool X86MachineInstructionRaiser::raiseSetCCMachineInstr(
+bool X86MachineFunctionRaiser::raiseSetCCMachineInstr(
     const MachineInstr &MI) {
   const MCInstrDesc &MIDesc = MI.getDesc();
   int MBBNo = MI.getParent()->getNumber();
@@ -2891,7 +2888,7 @@ bool X86MachineInstructionRaiser::raiseSetCCMachineInstr(
 // TODO: The current implementation handles only instructions with first operand
 // as register operand. Need to expand to add support for instructions with
 // first operand as memory operand.
-bool X86MachineInstructionRaiser::raiseBinaryOpMRIOrMRCEncodedMachineInstr(
+bool X86MachineFunctionRaiser::raiseBinaryOpMRIOrMRCEncodedMachineInstr(
     const MachineInstr &MI) {
   bool success = true;
   unsigned int DstIndex = 0, SrcOp1Index = 1, SrcOp2Index = 2, SrcOp3Index = 3;
@@ -3008,9 +3005,8 @@ bool X86MachineInstructionRaiser::raiseBinaryOpMRIOrMRCEncodedMachineInstr(
     llvm_unreachable("Unhandled MCR/MCI encoded instruction");
   assert((IntrinsicKind != Intrinsic::not_intrinsic) &&
          "Failed to set appropriate intrinsic kind");
-  Module *M = MR->getModule();
   Function *IntrinsicFunc =
-      Intrinsic::getDeclaration(M, IntrinsicKind, SrcOp1Value->getType());
+      Intrinsic::getDeclaration(MR.M, IntrinsicKind, SrcOp1Value->getType());
   Value *IntrinsicCallArgs[] = {SrcOp1Value, SrcOp2Value, CountValue};
   BinOpInstr =
       CallInst::Create(IntrinsicFunc, ArrayRef<Value *>(IntrinsicCallArgs));
@@ -3030,7 +3026,7 @@ bool X86MachineInstructionRaiser::raiseBinaryOpMRIOrMRCEncodedMachineInstr(
 }
 
 // Raise a binary operation instruction with operand encoding I or RI
-bool X86MachineInstructionRaiser::raiseBinaryOpImmToRegMachineInstr(
+bool X86MachineFunctionRaiser::raiseBinaryOpImmToRegMachineInstr(
     const MachineInstr &MI) {
   unsigned int DstIndex = 0, SrcOp1Index = 1, SrcOp2Index = 2;
   const MCInstrDesc &MIDesc = MI.getDesc();
@@ -3316,9 +3312,8 @@ bool X86MachineInstructionRaiser::raiseBinaryOpImmToRegMachineInstr(
     case X86::ROL64ri: {
       // Generate the call to instrinsic
       auto IntrinsicKind = Intrinsic::fshl;
-      Module *M = MR->getModule();
       Function *IntrinsicFunc =
-          Intrinsic::getDeclaration(M, IntrinsicKind, SrcOp1Value->getType());
+          Intrinsic::getDeclaration(MR.M, IntrinsicKind, SrcOp1Value->getType());
       Value *IntrinsicCallArgs[] = {SrcOp1Value, SrcOp1Value, SrcOp2Value};
       BinOpInstr =
           CallInst::Create(IntrinsicFunc, ArrayRef<Value *>(IntrinsicCallArgs));
@@ -3339,9 +3334,8 @@ bool X86MachineInstructionRaiser::raiseBinaryOpImmToRegMachineInstr(
     case X86::ROR64ri: {
       // Generate the call to instrinsic
       auto IntrinsicKind = Intrinsic::fshr;
-      Module *M = MR->getModule();
       Function *IntrinsicFunc =
-          Intrinsic::getDeclaration(M, IntrinsicKind, SrcOp1Value->getType());
+          Intrinsic::getDeclaration(MR.M, IntrinsicKind, SrcOp1Value->getType());
       Value *IntrinsicCallArgs[] = {SrcOp1Value, SrcOp1Value, SrcOp2Value};
       BinOpInstr =
           CallInst::Create(IntrinsicFunc, ArrayRef<Value *>(IntrinsicCallArgs));
@@ -3484,7 +3478,7 @@ bool X86MachineInstructionRaiser::raiseBinaryOpImmToRegMachineInstr(
 }
 
 // Raise indirect branch instruction.
-bool X86MachineInstructionRaiser::raiseIndirectBranchMachineInstr(
+bool X86MachineFunctionRaiser::raiseIndirectBranchMachineInstr(
     ControlTransferInfo *CTRec) {
   const MachineInstr *MI = CTRec->CandidateMachineInstr;
   BasicBlock *CandBB = CTRec->CandidateBlock;
@@ -3539,7 +3533,7 @@ bool X86MachineInstructionRaiser::raiseIndirectBranchMachineInstr(
 }
 
 // Raise direct branch instruction.
-bool X86MachineInstructionRaiser::raiseDirectBranchMachineInstr(
+bool X86MachineFunctionRaiser::raiseDirectBranchMachineInstr(
     ControlTransferInfo *CTRec) {
   const MachineInstr *MI = CTRec->CandidateMachineInstr;
   BasicBlock *CandBB = CTRec->CandidateBlock;
@@ -3554,7 +3548,6 @@ bool X86MachineInstructionRaiser::raiseDirectBranchMachineInstr(
   const MachineOperand &MO = MI->getOperand(0);
   assert(MO.isImm() && "Expected immediate operand not found");
   int64_t BranchOffset = MO.getImm();
-  MCInstRaiser *MCIR = getMCInstRaiser();
   // Get MCInst offset - the offset of machine instruction in the binary
   uint64_t MCInstOffset = MCIR->getMCInstIndex(*MI);
 
@@ -3851,7 +3844,7 @@ bool X86MachineInstructionRaiser::raiseDirectBranchMachineInstr(
 }
 
 // Raise a generic instruction. This is the catch all MachineInstr raiser
-bool X86MachineInstructionRaiser::raiseGenericMachineInstr(
+bool X86MachineFunctionRaiser::raiseGenericMachineInstr(
     const MachineInstr &MI) {
   unsigned int Opcode = MI.getOpcode();
   bool success = false;
@@ -3919,9 +3912,9 @@ bool X86MachineInstructionRaiser::raiseGenericMachineInstr(
 }
 
 // Raise a return instruction.
-bool X86MachineInstructionRaiser::raiseReturnMachineInstr(
+bool X86MachineFunctionRaiser::raiseReturnMachineInstr(
     const MachineInstr &MI) {
-  Type *RetType = raisedFunction->getReturnType();
+  Type *RetType = F->getReturnType();
   Value *RetValue = nullptr;
 
   // Get the BasicBlock corresponding to MachineBasicBlock of MI.
@@ -3982,21 +3975,20 @@ bool X86MachineInstructionRaiser::raiseReturnMachineInstr(
   // Make sure that the return type of raisedFunction is void. Else change it to
   // void type as reaching definition computation is more accurate than that
   // deduced earlier just looking at the per-basic block definitions.
-  Type *RaisedFuncReturnTy = raisedFunction->getReturnType();
+  Type *RaisedFuncReturnTy = F->getReturnType();
   if (RetValue == nullptr) {
     if (!RaisedFuncReturnTy->isVoidTy()) {
-      ModuleRaiser *NonConstMR = const_cast<ModuleRaiser *>(MR);
-      NonConstMR->changeRaisedFunctionReturnType(
-          raisedFunction, Type::getVoidTy(MF.getFunction().getContext()));
+      MR.changeRaisedFunctionReturnType(
+          F, Type::getVoidTy(MF.getFunction().getContext()));
     }
   }
 
   return true;
 }
 
-bool X86MachineInstructionRaiser::raiseBranchMachineInstrs() {
+bool X86MachineFunctionRaiser::raiseBranchMachineInstrs() {
   LLVM_DEBUG(outs() << "CFG : Before Raising Terminator Instructions\n");
-  LLVM_DEBUG(raisedFunction->dump());
+  LLVM_DEBUG(F->dump());
 
   // Raise branch instructions with control transfer records
   bool success = true;
@@ -4065,13 +4057,13 @@ bool X86MachineInstructionRaiser::raiseBranchMachineInstrs() {
     }
   }
   LLVM_DEBUG(outs() << "CFG : After Raising Terminator Instructions\n");
-  LLVM_DEBUG(raisedFunction->dump());
+  LLVM_DEBUG(F->dump());
 
   return true;
 }
 
 // Raise FPU instructions
-bool X86MachineInstructionRaiser::raiseFPURegisterOpInstr(
+bool X86MachineFunctionRaiser::raiseFPURegisterOpInstr(
     const MachineInstr &MI) {
 
   // Get the BasicBlock corresponding to MachineBasicBlock of MI.
@@ -4131,7 +4123,7 @@ bool X86MachineInstructionRaiser::raiseFPURegisterOpInstr(
 }
 
 // Raise Call instruction
-bool X86MachineInstructionRaiser::raiseCallMachineInstr(
+bool X86MachineFunctionRaiser::raiseCallMachineInstr(
     const MachineInstr &MI) {
   unsigned int Opcode = MI.getOpcode();
 
@@ -4398,8 +4390,7 @@ bool X86MachineInstructionRaiser::raiseCallMachineInstr(
         RetInstr = ReturnInst::Create(Ctx);
       else {
         RetInstr = ReturnInst::Create(Ctx, callInst);
-        ModuleRaiser *NonConstMR = const_cast<ModuleRaiser *>(MR);
-        NonConstMR->changeRaisedFunctionReturnType(raisedFunction,
+        MR.changeRaisedFunctionReturnType(F,
                                                    callInst->getType());
       }
       RaisedBB->getInstList().push_back(RetInstr);
@@ -4546,7 +4537,7 @@ bool X86MachineInstructionRaiser::raiseCallMachineInstr(
 // a MachineInstruction.
 // Returns true upon success.
 
-bool X86MachineInstructionRaiser::raiseMachineInstr(MachineInstr &MI) {
+bool X86MachineFunctionRaiser::raiseMachineInstr(MachineInstr &MI) {
   const MCInstrDesc &MIDesc = MI.getDesc();
 
   if (MIDesc.mayLoad() || MIDesc.mayStore()) {
@@ -4561,9 +4552,8 @@ bool X86MachineInstructionRaiser::raiseMachineInstr(MachineInstr &MI) {
 
 // Raise MachineInstr in MachineFunction to MachineInstruction
 
-bool X86MachineInstructionRaiser::raiseMachineFunction() {
-  Function *CurFunction = getRaisedFunction();
-  LLVMContext &Ctx(CurFunction->getContext());
+bool X86MachineFunctionRaiser::raiseMachineFunction() {
+  LLVMContext &Ctx(F->getContext());
 
   // Initialize the raised value tracking mechanism.
   raisedValues = new X86RaisedValueTracker(this);
@@ -4579,7 +4569,7 @@ bool X86MachineInstructionRaiser::raiseMachineFunction() {
 
   // Set values of some registers that appear to be used in main function to
   // 0.
-  if (CurFunction->getName().equals("main")) {
+  if (F->getName().equals("main")) {
     raisedValues->setPhysRegSSAValue(X86::RCX, 0, Zero64BitValue);
   }
 
@@ -4604,7 +4594,7 @@ bool X86MachineInstructionRaiser::raiseMachineFunction() {
     std::string BBName = MBBNo == 0 ? "entry" : "bb." + std::to_string(MBBNo);
     // Create a BasicBlock instance corresponding to MBB being looked at.
     // The raised form of MachineInstr of MBB will be added to curBlock.
-    BasicBlock *CurIBB = BasicBlock::Create(Ctx, BBName, CurFunction);
+    BasicBlock *CurIBB = BasicBlock::Create(Ctx, BBName, F);
     // Record the mapping of the number of MBB to corresponding BasicBlock.
     // This information is used to raise branch instructions, if any, of the
     // MBB in a later walk of MachineBasicBlocks of MF.
@@ -4639,12 +4629,12 @@ bool X86MachineInstructionRaiser::raiseMachineFunction() {
          handleUnpromotedReachingDefs();
 }
 
-bool X86MachineInstructionRaiser::raise() {
+bool X86MachineFunctionRaiser::raise() {
   bool Success = raiseMachineFunction();
   if (Success) {
     // Delete empty basic blocks with no predecessors
     SmallVector<BasicBlock *, 4> UnConnectedBEmptyBs;
-    for (BasicBlock &BB : *raisedFunction) {
+    for (BasicBlock &BB : *F) {
       if (BB.hasNPredecessors(0) && BB.size() == 0)
         UnConnectedBEmptyBs.push_back(&BB);
     }
@@ -4654,26 +4644,9 @@ bool X86MachineInstructionRaiser::raise() {
     // Unify all exit nodes of the raised function
     legacy::PassManager PM;
     PM.add(createUnifyFunctionExitNodesPass());
-    PM.run(*(raisedFunction->getParent()));
+    PM.run(*(F->getParent()));
   }
   return Success;
-}
-
-// NOTE : The following X86ModuleRaiser class function is defined here as
-// they reference MachineFunctionRaiser class that has a forward declaration
-// in ModuleRaiser.h.
-
-// Create a new MachineFunctionRaiser object and add it to the list of
-// MachineFunction raiser objects of this module.
-MachineFunctionRaiser *X86ModuleRaiser::CreateAndAddMachineFunctionRaiser(
-    Function *F, const ModuleRaiser *MR, uint64_t Start, uint64_t End) {
-  MachineFunctionRaiser *MFR = new MachineFunctionRaiser(
-      *M, MR->getMachineModuleInfo()->getOrCreateMachineFunction(*F), MR, Start,
-      End);
-  MFR->setMachineInstrRaiser(new X86MachineInstructionRaiser(
-      MFR->getMachineFunction(), MR, MFR->getMCInstRaiser()));
-  mfRaiserVector.push_back(MFR);
-  return MFR;
 }
 
 #undef DEBUG_TYPE

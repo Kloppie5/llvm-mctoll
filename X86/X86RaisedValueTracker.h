@@ -14,7 +14,7 @@
 #ifndef LLVM_TOOLS_LLVM_MCTOLL_X86_X86RAISEDVALUETRACKER_H
 #define LLVM_TOOLS_LLVM_MCTOLL_X86_X86RAISEDVALUETRACKER_H
 
-#include "X86MachineInstructionRaiser.h"
+#include "X86MachineFunctionRaiser.h"
 
 // This class encapsulates all the necessary bookkeeping and look up of SSA
 // values constructed while a MachineFunction is raised.
@@ -46,7 +46,7 @@ using PhysRegMBBValueDefMap = std::map<unsigned int, MBBNoToValueMap>;
 class X86RaisedValueTracker {
 public:
   X86RaisedValueTracker() = delete;
-  X86RaisedValueTracker(X86MachineInstructionRaiser *);
+  X86RaisedValueTracker(X86MachineFunctionRaiser *);
   bool setPhysRegSSAValue(unsigned int PhysReg, int MBBNo, Value *Val);
   bool testAndSetEflagSSAValue(unsigned Flag, const MachineInstr &MI, Value *);
   bool setEflagBoolean(unsigned FlagBit, int MBBNo, bool Set);
@@ -86,7 +86,7 @@ public:
   enum { INVALID_MBB = -1 };
 
 private:
-  X86MachineInstructionRaiser *x86MIRaiser;
+  X86MachineFunctionRaiser *MFR;
   // Map of physical registers -> MBBNoToValueMap, representing per-block
   // register definitions.
   PhysRegMBBValueDefMap physRegDefsInMBB;
