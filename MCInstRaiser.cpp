@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCInstRaiser.h"
+#include "Monitor.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Support/CommandLine.h"
@@ -108,8 +109,12 @@ void MCInstRaiser::buildCFG(MachineFunction &MF, const MCInstrAnalysis *MIA,
     }
     if (mcInstorData.isMCInst()) {
       // Add raised MachineInstr to current MBB.
-      MF.back().push_back(
-          RaiseMCInst(*MII, MF, mcInstorData.getMCInst(), mcInstIndex));
+      MCInst Inst = mcInstorData.getMCInst();
+      MachineInstr* MI = RaiseMCInst(*MII, MF, Inst, mcInstIndex);
+      
+      MF.back().push_back(MI);
+      
+      Monitor::event_RaisedMachineInstr(&Inst, MI);
     }
   }
 

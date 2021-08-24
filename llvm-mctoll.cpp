@@ -16,6 +16,7 @@
 #include "MCInstOrData.h"
 #include "MachineFunctionRaiser.h"
 #include "ModuleRaiser.h"
+#include "Monitor.h"
 #include "PeepholeOptimizationPass.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
@@ -841,16 +842,17 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
       Features.AddFeature(MAttrs[i]);
   }
 
-  std::unique_ptr<const MCRegisterInfo> MRI(
+  std::unique_ptr<const MCRegisterInfo> MCRI(
       TheTarget->createMCRegInfo(TripleName));
-  if (!MRI)
+  if (!MCRI)
     report_error(Obj->getFileName(),
                  "no register info for target " + TripleName);
+  Monitor::registerMCRegisterInfo(MCRI.get());
 
   MCTargetOptions MCOptions;
   // Set up disassembler.
   std::unique_ptr<const MCAsmInfo> AsmInfo(
-      TheTarget->createMCAsmInfo(*MRI, TripleName, MCOptions));
+      TheTarget->createMCAsmInfo(*MCRI, TripleName, MCOptions));
   if (!AsmInfo)
     report_error(Obj->getFileName(),
                  "no assembly info for target " + TripleName);
@@ -859,12 +861,14 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
   if (!STI)
     report_error(Obj->getFileName(),
                  "no subtarget info for target " + TripleName);
-  std::unique_ptr<const MCInstrInfo> MII(TheTarget->createMCInstrInfo());
-  if (!MII)
+  std::unique_ptr<const MCInstrInfo> MCII(TheTarget->createMCInstrInfo());
+  if (!MCII)
     report_error(Obj->getFileName(),
                  "no instruction info for target " + TripleName);
+  Monitor::registerMCInstrInfo(MCII.get());
+
   MCObjectFileInfo MOFI;
-  MCContext Ctx(Triple(TripleName), AsmInfo.get(), MRI.get(), STI.get());
+  MCContext Ctx(Triple(TripleName), AsmInfo.get(), MCRI.get(), STI.get());
   // FIXME: for now initialize MCObjectFileInfo with default values
   MOFI.initMCObjectFileInfo(Ctx, /*PIC=*/false);
 
@@ -875,11 +879,11 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
                  "no disassembler for target " + TripleName);
 
   std::unique_ptr<const MCInstrAnalysis> MIA(
-      TheTarget->createMCInstrAnalysis(MII.get()));
+      TheTarget->createMCInstrAnalysis(MCII.get()));
 
   int AsmPrinterVariant = AsmInfo->getAssemblerDialect();
   std::unique_ptr<MCInstPrinter> IP(TheTarget->createMCInstPrinter(
-      Triple(TripleName), AsmPrinterVariant, *AsmInfo, *MII, *MRI));
+      Triple(TripleName), AsmPrinterVariant, *AsmInfo, *MCII, *MCRI));
   if (!IP)
     report_error(Obj->getFileName(),
                  "no instruction printer for target " + TripleName);
@@ -909,7 +913,7 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
   // Set data of module raiser
   moduleRaiser->setModuleRaiserInfo(&module, Target.get(),
                                     &machineModuleInfo->getMMI(), MIA.get(),
-                                    MII.get(), Obj, DisAsm.get());
+                                    MCII.get(), Obj, DisAsm.get());
 
   // Collect dynamic relocations.
   moduleRaiser->collectDynamicRelocations();
@@ -1363,45 +1367,42 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
           errs() << "\n";
         }
 
-        // Add MCInst to the list if all instructions were decoded
-        // successfully till now. Else, do not bother adding since no attempt
-        // will be made to raise this function.
-        if (Disassembled) {
-          mcInstRaiser->addMCInstOrData(Index, Inst);
+        Monitor::event_ParsedMCInst(Bytes.slice(Index, Size), &Inst);
 
-          // Find branch target and record it. Call targets are not
-          // recorded as they are not needed to build per-function CFG.
-          if (MIA && MIA->isBranch(Inst)) {
-            uint64_t Target;
-            if (MIA->evaluateBranch(Inst, Index, Size, Target)) {
-              // In a relocatable object, the target's section must reside in
-              // the same section as the call instruction or it is accessed
-              // through a relocation.
-              //
-              // In a non-relocatable object, the target may be in any
-              // section.
-              //
-              // N.B. We don't walk the relocations in the relocatable case
-              // yet.
-              if (!Obj->isRelocatableObject()) {
-                auto SectionAddress = std::upper_bound(
-                    SectionAddresses.begin(), SectionAddresses.end(), Target,
-                    [](uint64_t LHS,
-                       const std::pair<uint64_t, SectionRef> &RHS) {
-                      return LHS < RHS.first;
-                    });
-                if (SectionAddress != SectionAddresses.begin()) {
-                  --SectionAddress;
-                }
+        mcInstRaiser->addMCInstOrData(Index, Inst);
+
+        // Find branch target and record it. Call targets are not
+        // recorded as they are not needed to build per-function CFG.
+        if (MIA && MIA->isBranch(Inst)) {
+          uint64_t Target;
+          if (MIA->evaluateBranch(Inst, Index, Size, Target)) {
+            // In a relocatable object, the target's section must reside in
+            // the same section as the call instruction or it is accessed
+            // through a relocation.
+            //
+            // In a non-relocatable object, the target may be in any
+            // section.
+            //
+            // N.B. We don't walk the relocations in the relocatable case
+            // yet.
+            if (!Obj->isRelocatableObject()) {
+              auto SectionAddress = std::upper_bound(
+                  SectionAddresses.begin(), SectionAddresses.end(), Target,
+                  [](uint64_t LHS,
+                      const std::pair<uint64_t, SectionRef> &RHS) {
+                    return LHS < RHS.first;
+                  });
+              if (SectionAddress != SectionAddresses.begin()) {
+                --SectionAddress;
               }
-              // Add the index Target to target indices set.
-              branchTargetSet.insert(Target);
             }
-
-            // Mark the next instruction as a target.
-            uint64_t fallThruIndex = Index + Size;
-            branchTargetSet.insert(fallThruIndex);
+            // Add the index Target to target indices set.
+            branchTargetSet.insert(Target);
           }
+
+          // Mark the next instruction as a target.
+          uint64_t fallThruIndex = Index + Size;
+          branchTargetSet.insert(fallThruIndex);
         }
       }
       FuncFilter->eraseFunctionBySymbol(Symbols[si].Name,
