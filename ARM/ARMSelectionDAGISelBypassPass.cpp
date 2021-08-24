@@ -249,48 +249,48 @@ bool raiseMachineInstr(BasicBlock &BB, MachineInstr &MI) {
       Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
       
       Instruction Instr = BinaryOperator::Create(BinaryOps::AShr, Rn, imm, "ASRi", BB);
-      Values->setRegValue(Rd, MI.getParent()->getNumber(), Instr);
-    }
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
     case ARM::ASRr: { // 248 | ASR{S}<c> <Rd>, <Rn>, <Rm> => Rd = AShr(<Rn>, <Rm>)
       Register Rd = MI.getOperand(0).getReg();
       Value Rn = getRegValue(MI.getOperand(1).getReg());
       Value Rm = getRegValue(MI.getOperand(2).getReg());
 
       Instruction Instr = BinaryOperator::Create(BinaryOps::AShr, Rn, Rm, "ASRr", BB);
-      Values->setRegValue(Rd, MI.getParent()->getNumber(), Instr);
-    }
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
     case ARM::LSLi: { // 292 | LSL{S}<c> <Rd>, <Rn>, #<imm> => Rd = Shl(<Rn>, imm)
       Register Rd = MI.getOperand(0).getReg();
       Value Rn = getRegValue(MI.getOperand(1).getReg());
       Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
       
       Instruction Instr = BinaryOperator::Create(BinaryOps::Shl, Rn, imm, "LSLi", BB);
-      Values->setRegValue(Rd, MI.getParent()->getNumber(), Instr);
-    }
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
     case ARM::LSLr: { // 293 | LSL{S}<c> <Rd>, <Rn>, <Rm> => Rd = Shl(<Rn>, <Rm>)
       Register Rd = MI.getOperand(0).getReg();
       Value Rn = getRegValue(MI.getOperand(1).getReg());
       Value Rm = getRegValue(MI.getOperand(2).getReg());
 
       Instruction Instr = BinaryOperator::Create(BinaryOps::Shl, Rn, Rm, "LSLr", BB);
-      Values->setRegValue(Rd, MI.getParent()->getNumber(), Instr);
-    }
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
     case ARM::LSRi: { // 294 | LSR{S}<c> <Rd>, <Rn>, #<imm> => Rd = LShr(<Rn>, imm)
       Register Rd = MI.getOperand(0).getReg();
       Value Rn = getRegValue(MI.getOperand(1).getReg());
       Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
       
       Instruction Instr = BinaryOperator::Create(BinaryOps::LShr, Rn, imm, "LSRi", BB);
-      Values->setRegValue(Rd, MI.getParent()->getNumber(), Instr);
-    }
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
     case ARM::LSRr: { // 295 | LSR{S}<c> <Rd>, <Rn>, <Rm> => Rd = LShr(<Rn>, <Rm>)
       Register Rd = MI.getOperand(0).getReg();
       Value Rn = getRegValue(MI.getOperand(1).getReg());
       Value Rm = getRegValue(MI.getOperand(2).getReg());
 
       Instruction Instr = BinaryOperator::Create(BinaryOps::LShr, Rn, Rm, "LSRr", BB);
-      Values->setRegValue(Rd, MI.getParent()->getNumber(), Instr);
-    }
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
     case ARM::RORi: { // 325 | ROR{S}<c> <Rd>, <Rn>, #<imm> => Rd = OR(Shl(<Rn>, imm), LShr(<Rn>, Sub(32, imm)))
       Register Rd = MI.getOperand(0).getReg();
       Value Rn = getRegValue(MI.getOperand(1).getReg());
@@ -300,8 +300,8 @@ bool raiseMachineInstr(BasicBlock &BB, MachineInstr &MI) {
       Instruction Sub = BinaryOperator::Create(BinaryOps::Sub, ConstantInt::get(Rn.getType(), 32), imm, "RORiSub", BB);
       Instruction LShr = BinaryOperator::Create(BinaryOps::LShr, Rn, Sub, "RORiLShr", BB);
       Instruction Instr = BinaryOperator::Create(BinaryOps::Or, Shl, LShr, "RORiOR", BB);
-      Values->setRegValue(Rd, MI.getParent()->getNumber(), Instr);
-    }
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
     case ARM::RORr: { // 326 | ROR{S}<c> <Rd>, <Rn>, <Rm> => Rd = OR(Shl(<Rn>, <Rm>), LShr(<Rn>, Sub(32, <Rm>)))
       Register Rd = MI.getOperand(0).getReg();
       Value Rn = getRegValue(MI.getOperand(1).getReg());
@@ -311,587 +311,283 @@ bool raiseMachineInstr(BasicBlock &BB, MachineInstr &MI) {
       Instruction Sub = BinaryOperator::Create(BinaryOps::Sub, ConstantInt::get(Rn.getType(), 32), Rm, "RORrSub", BB);
       Instruction LShr = BinaryOperator::Create(BinaryOps::LShr, Rn, Sub, "RORrLShr", BB);
       Instruction Instr = BinaryOperator::Create(BinaryOps::Or, Shl, LShr, "RORrOR", BB);
-      Values->setRegValue(Rd, MI.getParent()->getNumber(), Instr);
-    }
-    case ARM::RRX: // 327 | RRX<c> <Rd>, <Rn> => Rd = ROR(Rn, 1)
-      /*
-      SDValue Rd = N->getOperand(0);
-    SDValue Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-    SDNode *Node = nullptr;
-    Node =
-        CurDAG->getNode(ARMISD::RRX, dl, getDefaultEVT(), Rn, getMDOperand(N))
-            .getNode();
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::RRX: { // 327 | RRX{S}<c> <Rd>, <Rm> => ?
+      assert(false && "RRX not yet implemented; requires Carry flag");
+    } break;
+    case ARM::ADCri: { // 680 | ADC{S}<c> <Rd>, <Rn>, #<imm> => Rd = Rn + Imm
+      assert(false && "RRX not yet implemented; requires Carry flag");
+    } break;
+    case ARM::ADCrsi: { // 682 | ADC{S}<c> <Rd>, <Rn>, <Rm>{,<shift>}
+      assert(false && "Shifted instructions should have been removed in an earlier pass.");
+    } break;
+    case ARM::ADDri: { // 684 | ADD{S}<c> <Rd>, <Rn>, #<imm> => Rd = Rn + Imm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
+      
+      Instruction Instr = BinaryOperator::Create(BinaryOps::Add, Rn, imm, "ADDri", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::ADDrr: { // 685 | ADD{S}<c> <Rd>, <Rn>, <Rm> => Rd = Rn + Rm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value Rm = getRegValue(MI.getOperand(2).getReg());
 
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-      */
+      Instruction Instr = BinaryOperator::Create(BinaryOps::Add, Rn, Rm, "ADDrr", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::ADDrsi: { // 686 | ADD{S}<c> <Rd>, <Rn>, #<imm>
+      assert(false && "Shifted instructions should have been removed in an earlier pass.");
+    } break;
+    case ARM::ANDri: { // 693 | AND{S}<c> <Rd>, <Rn>, #<imm> => Rd = Rn & Imm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
+      
+      Instruction Instr = BinaryOperator::Create(BinaryOps::And, Rn, imm, "ANDri", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::BICri: { // 706 | BIC{S}<c> <Rd>, <Rn>, #<imm> => Rd = Rn & ~Imm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
+
+      Instruction Instr = BinaryOperator::Create(BinaryOps::And, Rn, ConstantInt::get(Rn.getType(), ~imm), "BICri", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::BL: { // 711 | BL <label> => br label
+      assert(false && "ARM::BL not yet implemented; requires PC-relative branch");
+      // BasicBlock *Target = getBlockFromAddress(MI.getOperand(0).getImm());
+      // Instruction Instr = BranchInst::Create(Target, BB);
+      // Instr.setSuccessor(0, BB);
+      // setValue(MI.getOperand(0).getReg(), BB->getNumber(), Instr);
+    } break;
+    case ARM::BX_RET: { // 718 | BX_RET <Rn> => br label
+      assert(false && "ARM::BX_RET not yet implemented; requires PC-relative branch");
+      // BasicBlock *Target = getBlockFromAddress(MI.getOperand(0).getImm());
+      // Instruction Instr = BranchInst::Create(Target, BB);
+      // Instr.setSuccessor(0, BB);
+      // setValue(MI.getOperand(0).getReg(), BB->getNumber(), Instr);
+    } break;
+    case ARM::Bcc: { // 720 | Bcc <cond> <label> => br <cond> label
+      assert(false && "ARM::Bcc not yet implemented; requires PC-relative branch");
+      // BasicBlock *Target = getBlockFromAddress(MI.getOperand(1).getImm());
+      // Instruction Instr = BranchInst::Create(Target, BB);
+      // Instr.setSuccessor(0, BB);
+      // setValue(MI.getOperand(0).getReg(), BB->getNumber(), Instr);
+    } break;
+    case ARM::CMNri: { // 755 | CMN{S}<c> <Rn>, #<imm> => Rn + Imm
+      assert(false && "ARM::CMNri not yet implemented; requires NZCV flags");
+    } break;
+    case ARM::CMPri: { // 759 | CMP{S}<c> <Rn>, #<imm> => Rn - Imm
+      assert(false && "ARM::CMPri not yet implemented; requires NZCV flags");
+    } break;
+    case ARM::CMPrr: { // 760 | CMP{S}<c> <Rn>, <Rm> => Rn - Rm
+      assert(false && "ARM::CMPrr not yet implemented; requires NZCV flags");
+    } break;
+    case ARM::DMB: { // 773 | DMB <option> => UNDEF
+      assert(false && "ARM::DMB not yet implemented; fence");
+    } break;
+    case ARM::DSB: { // 774 | DSB <option> => UNDEF
+      assert(false && "ARM::DSB not yet implemented; fence");
+    }
+    case ARM::EORri: { // 775 | EOR{S}<c> <Rd>, <Rn>, #<imm> => Rd = Rn ^ Imm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
+
+      Instruction Instr = BinaryOperator::Create(BinaryOps::Xor, Rn, imm, "EORri", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::EORrr: { // 776 | EOR{S}<c> <Rd>, <Rn>, <Rm> => Rd = Rn ^ Rm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value Rm = getRegValue(MI.getOperand(2).getReg());
+
+      Instruction Instr = BinaryOperator::Create(BinaryOps::Xor, Rn, Rm, "EORrr", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::ISB: { // 793 | ISB <option> => UNDEF
+      assert(false && "ARM::ISB not yet implemented; fence");
+    } break;
+    case ARM::LDMIA: { // 821 | LDMIA <Rn>{!}, <registers> => Rn = Rn + 4 * registers
+      assert(false && "ARM::LDMIA not yet implemented");
+    } break;
+    case ARM::LDMIA_UPD: { // 822 | LDMIA_UPD <Rn>{!}, <registers> => Rn = Rn + 4 * registers
+      assert(false && "ARM::LDMIA_UPD not yet implemented");
+    } break;
     
+    case ARM::LDRBi12: { // 831 | LDRB<c> <Rt>, [<Rn>, #<imm>] => Rt = *(Rn + imm)
+      Register Rt = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
+      
+      Value Ptr = BinaryOperator::CreateAdd(Rn, imm, "LDRBi12Ptr", BB);
+      Instruction Instr = LoadInst::Create(Rt, Ptr, "LDRBi12", BB);
+      setRegValue(Rt, MI.getParent()->getNumber(), Instr);
+    } break;
+      
+    case ARM::LDRBrs: { // 832 | LDRB<c> <Rt>, [<Rn>, <Rm>] => Rt = *(Rn + Rm)
+      assert(false && "Shifted instructions should have been removed in an earlier pass.");
+    } break;
+    case ARM::LDRH: { // 840 | LDRH<c> <Rt>, [<Rn>, #<imm>] => Rt = *(Rn + imm)
+      Register Rt = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
 
-    case ARM::ADCri: // 680
-    case ARM::ADCrsi: // 682
-      /*
-      SDValue Rd = N->getOperand(0);
-      SDValue Rn = N->getOperand(1);
-      SDNode *Node = nullptr;
-      if (isTwoAddressMode(Rd.getNode())) {
-        // ADCS <Rdn>,<Rm>
-        // ADC<c> <Rdn>,<Rm>
-        if (RegisterSDNode::classof(N->getOperand(1).getNode()))
-          Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
+      Value Ptr = BinaryOperator::CreateAdd(Rn, imm, "LDRHPtr", BB);
+      Instruction Instr = LoadInst::Create(Rt, Ptr, "LDRH", BB);
+      setRegValue(Rt, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::LDRSB: { // 845 | LDRSB<c> <Rt>, [<Rn>, #<imm>] => Rt = *(Rn + imm)
+      assert(false && "ARM::LDRSB not yet implemented");
+    } break;
+    case ARM::LDRSB_PRE: { // 849 | LDRSB_PRE<c> <Rt>, [<Rn>, #<imm>] => Rt = *(Rn + imm)
+      assert(false && "ARM::LDRSB_PRE not yet implemented");
+    } break;
+    case ARM::LDR_PRE_IMM: { // 859 | LDR_PRE_IMM<c> <Rt>, [<Rn>, #<imm>] => Rt = *(Rn + imm)
+      assert(false && "ARM::LDR_PRE_IMM not yet implemented");
+    } break;
+    case ARM::LDR_PRE_REG: { // 860 | LDR_PRE_REG<c> <Rt>, [<Rn>, <Rm>] => Rt = *(Rn + Rm)
+      assert(false && "ARM::LDR_PRE_REG not yet implemented");
+    } break;
+    case ARM::LDRi12: { // 862 | LDR<c> <Rt>, [<Rn>, #<imm>] => Rt = *(Rn + imm)
+      Register Rt = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
 
-        SDValue Rd = FuncInfo->getValFromRegMap(N->getOperand(0));
-        Node =
-            CurDAG
-                ->getNode(ISD::ADDC, dl, getDefaultEVT(), Rd, Rn, getMDOperand(N))
-                .getNode();
-      } else {
-        // ADC{S}<c> <Rd>,<Rn>,#<const>
-        SDValue op2 = N->getOperand(2);
-        if (RegisterSDNode::classof(op2.getNode()))
-          op2 = FuncInfo->getValFromRegMap(op2);
-        Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-        Node = CurDAG
-                  ->getNode(ISD::ADDC, dl, getDefaultEVT(), Rn, op2,
-                            getMDOperand(N))
-                  .getNode();
-      }
+      Value Ptr = BinaryOperator::CreateAdd(Rn, imm, "LDRi12Ptr", BB);
+      Instruction Instr = LoadInst::Create(Rt, Ptr, "LDRi12", BB);
+      setRegValue(Rt, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::LDRrs: { // 863 | LDR<c> <Rt>, [<Rn>, <Rm>] => Rt = *(Rn + Rm)
+      assert(false && "Shifted instructions should have been removed in an earlier pass.");
+    } break;
+    case ARM::MLA: { // 868 | MLA<c> <Rd>, <Rn>, <Rm>, <Ra> => Rd = Rn * Ra + Rm
+      assert(false && "ARM::MLA not yet implemented");
+    } break;
+    case ARM::MOVPCLR: { // 870 | MOV<c> PC, LR => PC = LR
+      assert(false && "ARM::MOVPCLR not yet implemented");
+    } break;
+    case ARM::MOVTi16: { // 871 | MOVT<c> <Rd>, #<imm> => Rd = imm
+      assert(false && "ARM::MOVTi16 not yet implemented");
+    } break;
+    case ARM::MOVi: { // 872 | MOV<c> <Rd>, #<imm> => Rd = imm
+      assert(false && "ARM::MOVi not yet implemented");
+    } break;
+    case ARM::MOVi16: { // 873 | MOV<c> <Rd>, #<imm> => Rd = imm
+      assert(false && "ARM::MOVi16 not yet implemented");
+    } break;
+    case ARM::MOVr: { // 874 | MOV<c> <Rd>, <Rm> => Rd = Rm
+      assert(false && "ARM::MOVr not yet implemented");
+    } break;
+    case ARM::MOVsi: { // 876 | MOV<c> <Rd>, #<imm> => Rd = imm
+      assert(false && "ARM::MOVsi not yet implemented");
+    } break;
+    case ARM::MUL: { // 888 | MUL<c> <Rd>, <Rn>, <Rm> => Rd = Rn * Rm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value Rm = getRegValue(MI.getOperand(2).getReg());
 
-      recordDefinition(Rd.getNode(), Node);
-      replaceNode(N, Node);
-      */
-    
-    case ARM::ADDri: // 684
-    case ARM::ADDrr: // 685
-    case ARM::ADDrsi: // 686
-      /*
-      SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    // <opcode>   {<cond>}{s}<Rd>，<Rn>{，<OP2>}
-    SDNode *Node = nullptr;
-    if (FrameIndexSDNode::classof(N->getOperand(1).getNode())) {
-      Node = CurDAG
-                 ->getNode(EXT_ARMISD::LOAD, dl, getDefaultEVT(), Rn,
-                           getMDOperand(N))
-                 .getNode();
-    } else {
-      if (isTwoAddressMode(Rd.getNode())) {
-        if (RegisterSDNode::classof(N->getOperand(1).getNode()))
-          Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
+      Instruction Instr = BinaryOperator::CreateMul(Rn, Rm, "MUL", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::MVNi: { // 1736 | MVN<c> <Rd>, #<imm> => Rd = ~imm
+      Register Rd = MI.getOperand(0).getReg();
+      Value imm = ConstantInt::get(Rd.getType(), MI.getOperand(1).getImm());
 
-        SDValue Rd = FuncInfo->getValFromRegMap(N->getOperand(0));
-        Node = CurDAG
-                   ->getNode(ISD::ADD, dl, getDefaultEVT(), Rd, Rn,
-                             getMDOperand(N))
-                   .getNode();
-      } else {
-        SDValue op2 = N->getOperand(2);
-        if (RegisterSDNode::classof(op2.getNode()))
-          op2 = FuncInfo->getValFromRegMap(op2);
+      Instruction Instr = BinaryOperator::CreateNot(imm, "MVNi", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::MVNr: { // 1737 | MVN<c> <Rd>, <Rm> => Rd = ~Rm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rm = getRegValue(MI.getOperand(1).getReg());
 
-        Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-        Node = CurDAG
-                   ->getNode(ISD::ADD, dl, getDefaultEVT(), Rn, op2,
-                             getMDOperand(N))
-                   .getNode();
-      }
-    }
+      Instruction Instr = BinaryOperator::CreateNot(Rm, "MVNr", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::ORRri: { // 1748 | ORR<c> <Rd>, <Rn>, #<imm> => Rd = Rn OR imm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
 
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-      */
+      Instruction Instr = BinaryOperator::CreateOr(Rn, imm, "ORRri", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::ORRrr: { // 1749 | ORR<c> <Rd>, <Rn>, <Rm> => Rd = Rn OR Rm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value Rm = getRegValue(MI.getOperand(2).getReg());
 
-    case ARM::ANDri: // 693
-    /*
-    SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    SDNode *Node = nullptr;
+      Instruction Instr = BinaryOperator::CreateOr(Rn, Rm, "ORRrr", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::SBCri: { // 1794 | SBC<c> <Rd>, <Rn>, #<imm> => Rd = Rn - imm - C
+      assert(false && "ARM::SBCri not yet implemented; requires Carry flag");
+    } break;
+    case ARM::SBCrr: { // 1795 | SBC<c> <Rd>, <Rn>, <Rm> => Rd = Rn - Rm - C
+      assert(false && "ARM::SBCrr not yet implemented; requires Carry flag");
+    } break;
+    case ARM::SBCrsi: { // 1796 | SBC<c> <Rd>, <Rn>, #<imm> => Rd = Rn - imm - C
+      assert(false && "Shifted instructions should have been removed in an earlier pass.");
+    } break;
+    case ARM::SMLAL: { // 1824 | SMLAL<c> <Rd>, <Rn>, <Rm>, <Ra> => Rd = Rn * Ra + Rm
+      assert(false && "ARM::SMLAL not yet implemented");
+    } break;
+    case ARM::STMDB_UPD: { // 1895 | STMDB<c> <Rn>{!}, <registers>
+      assert(false && "ARM::STMDB_UPD not yet implemented");
+    } break;
+    case ARM::STMIA: { // 1896 | STMIA<c> <Rn>{!}, <registers>
+      assert(false && "ARM::STMIA not yet implemented");
+    } break;
+    case ARM::STMIA_UPD: { // 1897 | STMIA<c> <Rn>{!}, <registers>
+      assert(false && "ARM::STMIA_UPD not yet implemented");
+    } break;
+    case ARM::STMIB: { // 1898 | STMIB<c> <Rn>{!}, <registers>
+      assert(false && "ARM::STMIB not yet implemented");
+    } break;
+    case ARM::STRBi12: { // 1906 | STRB<c> <Rt>, [<Rn>, #-<imm>]!
+      assert(false && "ARM::STRBi12 not yet implemented");
+    } break;
+    case ARM::STRBrs: { // 1907 | STRB<c> <Rt>, [<Rn>, #<imm>]!
+      assert(false && "ARM::STRBrs not yet implemented");
+    } break;
+    case ARM::STRH: { // 1920 | STRH<c> <Rt>, [<Rn>, #<imm>]!
+      assert(false && "ARM::STRH not yet implemented");
+    } break;
+    case ARM::STRH: { // 1915 | STRH<c> <Rt>, [<Rn>, #<imm>]!
+      assert(false && "ARM::STRH not yet implemented");
+    } break;
+    case ARM::STR_PRE_IMM: { // 1920 | STRH<c> <Rt>, [<Rn>, #<imm>]!
+      assert(false && "ARM::STR_PRE_IMM not yet implemented");
+    } break;
+    case ARM::STRi12: { // 1926 | STR<c> <Rt>, [<Rn>, #<imm>]!
+      assert(false && "ARM::STRi12 not yet implemented");
+    } break;
+    case ARM::STRrs: { // 1927 | STR<c> <Rt>, [<Rn>, #<imm>]!
+      assert(false && "ARM::STRrs not yet implemented");
+    } break;
+    case ARM::SUBri: { // 1928 | SUB<c> <Rd>, <Rn>, #<imm> => Rd = Rn - imm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value imm = ConstantInt::get(Rn.getType(), MI.getOperand(2).getImm());
 
-    if (isTwoAddressMode(Rd.getNode())) {
-      // AND<c> <Rdn>,<Rm>
-      // ANDS <Rdn>,<Rm>
-      if (RegisterSDNode::classof(N->getOperand(1).getNode()))
-        Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-      SDValue Rd = FuncInfo->getValFromRegMap(N->getOperand(0));
-      Node =
-          CurDAG
-              ->getNode(ISD::AND, dl, getDefaultEVT(), Rd, Rn, getMDOperand(N))
-              .getNode();
-    } else {
-      // AND{S}<c> <Rd>,<Rn>,#<const>
-      SDValue op2 = N->getOperand(2);
-      if (RegisterSDNode::classof(op2.getNode()))
-        op2 = FuncInfo->getValFromRegMap(op2);
+      Instruction Instr = BinaryOperator::CreateSub(Rn, imm, "SUBri", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::SUBrr: { // 1929 | SUB<c> <Rd>, <Rn>, <Rm> => Rd = Rn - Rm
+      Register Rd = MI.getOperand(0).getReg();
+      Value Rn = getRegValue(MI.getOperand(1).getReg());
+      Value Rm = getRegValue(MI.getOperand(2).getReg());
 
-      Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-      Node =
-          CurDAG
-              ->getNode(ISD::AND, dl, getDefaultEVT(), Rn, op2, getMDOperand(N))
-              .getNode();
-    }
-
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-    // TODO:
-    // AND{S}<c>.W <Rd>,<Rn>,<Rm>{,<shift>}
-    // AND{S}<c> <Rd>,<Rn>,<Rm>{,<shift>}
-    // AND{S}<c> <Rd>,<Rn>,<Rm>,<type> <Rs>
-    */
-    case ARM::BICri: // 706
-/*
-SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    SDNode *Node = nullptr;
-    if (isTwoAddressMode(Rd.getNode())) {
-      if (RegisterSDNode::classof(N->getOperand(1).getNode()))
-        Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-
-      SDValue Rd = FuncInfo->getValFromRegMap(N->getOperand(0));
-      Node = CurDAG
-                 ->getNode(EXT_ARMISD::BIC, dl, getDefaultEVT(), Rd, Rn,
-                           getMDOperand(N))
-                 .getNode();
-    } else {
-      SDValue op2 = N->getOperand(2);
-      if (RegisterSDNode::classof(op2.getNode()))
-        op2 = FuncInfo->getValFromRegMap(op2);
-
-      Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-      Node = CurDAG
-                 ->getNode(EXT_ARMISD::BIC, dl, getDefaultEVT(), Rn, op2,
-                           getMDOperand(N))
-                 .getNode();
-    }
-
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-*/
-    case ARM::BL: // 711
-    /*
-    SDValue Func = N->getOperand(0);
-    SDNode *Node = nullptr;
-    if (RegisterSDNode::classof(Func.getNode())) {
-      Func = FuncInfo->getValFromRegMap(Func);
-      Node =
-          CurDAG
-              ->getNode(ISD::BRIND, dl, getDefaultEVT(), Func, getMDOperand(N))
-              .getNode();
-    } else {
-      Node = CurDAG
-                 ->getNode(EXT_ARMISD::BRD, dl, getDefaultEVT(), Func,
-                           getMDOperand(N))
-                 .getNode();
-    }
-
-    FuncInfo->setValueByRegister(ARM::R0, SDValue(Node, 0));
-    FuncInfo->NodeRegMap[Node] = ARM::R0;
-    replaceNode(N, Node);
-    */
-    case ARM::BX_RET: // 718
-    // assert(0 && "Branch instructions are removed in previous stage. should
-    // not get here!");
-    case ARM::Bcc: // 720
-/*
-SDValue Iftrue = N->getOperand(0);
-    SDValue Cond = N->getOperand(1);
-    SDNode *Node = nullptr;
-
-    if (DAGInfo->NPMap[N]->HasCPSR)
-      Node = CurDAG
-                 ->getNode(ISD::BRCOND, dl, getDefaultEVT(), Iftrue, Cond,
-                           getMDOperand(N))
-                 .getNode();
-    else
-      Node =
-          CurDAG->getNode(ISD::BR, dl, getDefaultEVT(), Iftrue, getMDOperand(N))
-              .getNode();
-
-    const MachineBasicBlock *LMBB = DAGInfo->NPMap[N]->MI->getParent();
-    if (LMBB->succ_size() == 0) {
-      FuncInfo->setValueByRegister(ARM::R0, SDValue(Node, 0));
-      FuncInfo->NodeRegMap[Node] = ARM::R0;
-    }
-    replaceNode(N, Node);
-*/
-    case ARM::CMNri: // 755
-/*
- SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    SDNode *Node = nullptr;
-
-    if (RegisterSDNode::classof(N->getOperand(1).getNode()))
-      Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-    Rd = FuncInfo->getValFromRegMap(Rd);
-    Node =
-        CurDAG
-            ->getNode(ARMISD::CMN, dl, getDefaultEVT(), Rd, Rn, getMDOperand(N))
-            .getNode();
-
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-*/
-    case ARM::CMPri: // 759
-    case ARM::CMPrr: // 760
-    /*
-    SDValue cmpl = N->getOperand(0);
-    SDValue cmph = N->getOperand(1);
-    if (RegisterSDNode::classof(cmph.getNode()))
-      cmph = FuncInfo->getValFromRegMap(N->getOperand(1));
-    cmpl = FuncInfo->getValFromRegMap(cmpl);
-
-    // Create condition SDValuleR
-    // TODO: It should be verified why this type node can not be added Metadata
-    // Operand.
-    SDNode *Node = CurDAG
-                       ->getNode(ISD::SETCC, dl, getDefaultEVT(), cmpl, cmph
-                                 /* , getMDOperand(N) )
-                       .getNode();
-
-    replaceNode(N, Node);
-    */
-    case ARM::DMB: // 773
-    case ARM::DSB: // 774
-
-    case ARM::EORri: // 775
-    case ARM::EORrr: // 776
-      /*
-      SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    SDNode *Node = nullptr;
-    if (isTwoAddressMode(Rd.getNode())) {
-      // EORS <Rdn>,<Rm>
-      // EOR<c> <Rdn>,<Rm>
-      if (RegisterSDNode::classof(N->getOperand(1).getNode()))
-        Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-
-      SDValue Rd = FuncInfo->getValFromRegMap(N->getOperand(0));
-      Node =
-          CurDAG
-              ->getNode(ISD::XOR, dl, getDefaultEVT(), Rd, Rn, getMDOperand(N))
-              .getNode();
-    } else {
-      // EOR{S}<c> <Rd>,<Rn>,#<const>
-      SDValue op2 = N->getOperand(2);
-      if (RegisterSDNode::classof(op2.getNode()))
-        op2 = FuncInfo->getValFromRegMap(op2);
-      Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-      Node =
-          CurDAG
-              ->getNode(ISD::XOR, dl, getDefaultEVT(), Rn, op2, getMDOperand(N))
-              .getNode();
-    }
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-    // TODO:
-    // EOR{S}<c>.W <Rd>,<Rn>,<Rm>{,<shift>}
-    // EOR{S}<c> <Rd>,<Rn>,<Rm>{,<shift>}
-    // EOR{S}<c> <Rd>,<Rn>,<Rm>,<type> <Rs>
-      */
-    case ARM::ISB: // 793
-    case ARM::LDMIA: // 821
-    case ARM::LDMIA_UPD: // 822
-    
-    case ARM::LDRBi12: // 831
-    case ARM::LDRBrs: // 832
-    /*
-    EVT InstTy = EVT::getEVT(Type::getInt8Ty(*CurDAG->getContext()));
-    SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    SDNode *Node = nullptr;
-
-    if (RegisterSDNode::classof(Rn.getNode()))
-      Rn = FuncInfo->getValFromRegMap(Rn);
-    Node = CurDAG->getNode(EXT_ARMISD::LOAD, dl, InstTy, Rn, getMDOperand(N))
-               .getNode();
-
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-    */
-    case ARM::LDRH: // 840
-      /*
-      EVT InstTy = EVT::getEVT(Type::getInt16Ty(*CurDAG->getContext()));
-    SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    SDNode *Node = nullptr;
-
-    if (RegisterSDNode::classof(Rn.getNode()))
-      Rn = FuncInfo->getValFromRegMap(Rn);
-    Node = CurDAG->getNode(EXT_ARMISD::LOAD, dl, InstTy, Rn, getMDOperand(N))
-               .getNode();
-
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-      */
-    case ARM::LDRSB: // 845
-    case ARM::LDRSB_PRE: // 849
-/*
-EVT InstTy = EVT::getEVT(Type::getInt8Ty(*CurDAG->getContext()));
-    SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    SDNode *Node = nullptr;
-
-    if (RegisterSDNode::classof(Rn.getNode()))
-      Rn = FuncInfo->getValFromRegMap(Rn);
-    Node = CurDAG->getNode(EXT_ARMISD::LOAD, dl, InstTy, Rn, getMDOperand(N))
-               .getNode();
-
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-*/
-    case ARM::LDR_PRE_IMM: // 859
-    case ARM::LDR_PRE_REG: // 860
-    case ARM::LDRi12: // 862
-    case ARM::LDRrs: // 863
-      /*
-      EVT InstTy = EVT::getEVT(Type::getInt32Ty(*CurDAG->getContext()));
-    SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    SDNode *Node = nullptr;
-    if (RegisterSDNode::classof(Rn.getNode()))
-      Rn = FuncInfo->getValFromRegMap(Rn);
-
-    Node = CurDAG->getNode(EXT_ARMISD::LOAD, dl, InstTy, Rn, getMDOperand(N))
-               .getNode();
-
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-      */
-    case ARM::MLA: // 868
-    /*
-    SDValue Rd = N->getOperand(0);
-    SDValue Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-    SDValue Rm = FuncInfo->getValFromRegMap(N->getOperand(2));
-    SDValue Ra = FuncInfo->getValFromRegMap(N->getOperand(3));
-    SDNode *Node = nullptr;
-    Node = CurDAG
-               ->getNode(EXT_ARMISD::MLA, dl, getDefaultEVT(), Rn, Rm, Ra,
-                         getMDOperand(N))
-               .getNode();
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-    */
-    case ARM::MOVPCLR: // 870
-
-    case ARM::MOVTi16: // 871
-    case ARM::MOVi: // 872
-    case ARM::MOVi16: // 873
-    case ARM::MOVr: // 874
-    case ARM::MOVsi: // 876
-      /*
-      // Dispalcement operation need do.
-    SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    if (RegisterSDNode::classof(Rn.getNode()))
-      Rn = FuncInfo->getValFromRegMap(Rn);
-
-    SDNode *Node = CurDAG
-                       ->getNode(ARMISD::CMOV, dl, getDefaultEVT(), Rn,
-                                 CurDAG->getConstant(0, dl, getDefaultEVT()))
-                       .getNode();
-
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-      */
-    
-    case ARM::MUL: // 888
-    /*
-    SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    SDNode *Node = nullptr;
-    SDValue op2 = N->getOperand(2);
-    op2 = FuncInfo->getValFromRegMap(op2);
-    Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-    Node =
-        CurDAG->getNode(ISD::MUL, dl, getDefaultEVT(), Rn, op2, getMDOperand(N))
-            .getNode();
-
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-    */
-    case ARM::MVNi: // 1736
-    case ARM::MVNr: // 1737
-    /*
-    SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    SDNode *Node = nullptr;
-    if (RegisterSDNode::classof(N->getOperand(1).getNode()))
-      Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-
-    Node = CurDAG
-               ->getNode(ISD::XOR, dl, getDefaultEVT(), Rn,
-                         CurDAG->getConstant(-1, dl, getDefaultEVT()))
-               .getNode();
-
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-    */
-    case ARM::ORRri: // 1748
-    case ARM::ORRrr:// 1749
-    /*
-        SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    // <opcode>   {<cond>}{s}<Rd>，<Rn>{，<OP2>}
-    SDNode *Node = nullptr;
-    if (isTwoAddressMode(Rd.getNode())) {
-      if (RegisterSDNode::classof(N->getOperand(1).getNode()))
-        Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-
-      SDValue Rd = FuncInfo->getValFromRegMap(N->getOperand(0));
-      Node =
-          CurDAG->getNode(ISD::OR, dl, getDefaultEVT(), Rd, Rn, getMDOperand(N))
-              .getNode();
-    } else {
-      SDValue op2 = N->getOperand(2);
-      if (RegisterSDNode::classof(op2.getNode()))
-        op2 = FuncInfo->getValFromRegMap(op2);
-
-      Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-      Node =
-          CurDAG
-              ->getNode(ISD::OR, dl, getDefaultEVT(), Rn, op2, getMDOperand(N))
-              .getNode();
-    }
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-        */
-    case ARM::SBCri: // 1794
-    case ARM::SBCrr: // 1795
-    /*
-    SDValue Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-    SDValue Operand2 = FuncInfo->getValFromRegMap(N->getOperand(2));
-    SDNode *Node = CurDAG
-                       ->getNode(EXT_ARMISD::SBC, dl, getDefaultEVT(), Rn,
-                                 Operand2, getMDOperand(N))
-                       .getNode();
-
-    recordDefinition(Rn.getNode(), Node);
-    replaceNode(N, Node);
-    */
-    case ARM::SBCrsi: // 1796
-    // missing
-    case ARM::SMLAL: // 1824
-    case ARM::STMDB_UPD: // 1895
-    case ARM::STMIA: // 1896
-    case ARM::STMIA_UPD: // 1897
-    case ARM::STMIB: // 1898
-    // missing
-    case ARM::STRBi12: // 1906
-    case ARM::STRBrs: // 1907
-    // missing
-    case ARM::STRH: // 1920
-      /*
-      EVT InstTy = EVT::getEVT(Type::getInt8Ty(*CurDAG->getContext()));
-    SDValue Val = N->getOperand(0);
-    SDValue Op1 = N->getOperand(1);
-    SDNode *Node = nullptr;
-
-    if (RegisterSDNode::classof(Val.getNode()))
-      Val = FuncInfo->getValFromRegMap(Val);
-
-    if (RegisterSDNode::classof(Op1.getNode()))
-      Op1 = FuncInfo->getValFromRegMap(Op1);
-
-    if (N->getNumOperands() < 5)
-      Node = CurDAG
-                 ->getNode(EXT_ARMISD::STORE, dl, InstTy, Val, Op1,
-                           getMDOperand(N))
-                 .getNode();
-    else {
-      SDValue Op2 = N->getOperand(2);
-      Op2 = FuncInfo->getValFromRegMap(Op2);
-      Node = CurDAG
-                 ->getNode(EXT_ARMISD::STORE, dl, InstTy, Val, Op1, Op2,
-                           getMDOperand(N))
-                 .getNode();
-    }
-
-    replaceNode(N, Node);
-      */
-
-    case ARM::STRH: // 1915
-    case ARM::STR_PRE_IMM: // 1920
-      /*
-      EVT InstTy = EVT::getEVT(Type::getInt16Ty(*CurDAG->getContext()));
-    SDValue Val = N->getOperand(0);
-    SDValue Op1 = N->getOperand(1);
-    SDNode *Node = nullptr;
-
-    if (RegisterSDNode::classof(Val.getNode()))
-      Val = FuncInfo->getValFromRegMap(Val);
-
-    if (RegisterSDNode::classof(Op1.getNode()))
-      Op1 = FuncInfo->getValFromRegMap(Op1);
-
-    if (N->getNumOperands() < 5)
-      Node = CurDAG
-                 ->getNode(EXT_ARMISD::STORE, dl, InstTy, Val, Op1,
-                           getMDOperand(N))
-                 .getNode();
-    else {
-      SDValue Op2 = N->getOperand(2);
-      Op2 = FuncInfo->getValFromRegMap(Op2);
-      Node = CurDAG
-                 ->getNode(EXT_ARMISD::STORE, dl, InstTy, Val, Op1, Op2,
-                           getMDOperand(N))
-                 .getNode();
-    }
-
-    replaceNode(N, Node);
-      */
-
-
-    case ARM::STRi12: // 1926
-    case ARM::STRrs: // 1927
-      /*
- SDValue Val = N->getOperand(0);
-    SDValue Ptr = N->getOperand(1); // This is a pointer.
-
-    if (RegisterSDNode::classof(Val.getNode()))
-      Val = FuncInfo->getValFromRegMap(Val);
-
-    if (RegisterSDNode::classof(Ptr.getNode()))
-      Ptr = FuncInfo->getValFromRegMap(Ptr);
-
-    SDNode *Node = CurDAG
-                       ->getNode(EXT_ARMISD::STORE, dl, getDefaultEVT(), Val,
-                                 Ptr, getMDOperand(N))
-                       .getNode();
-    replaceNode(N, Node);
-      */
-    case ARM::SUBri: // 1928
-    case ARM::SUBrr: // 1929
-      /*
-      SDValue Rd = N->getOperand(0);
-    SDValue Rn = N->getOperand(1);
-    SDNode *Node = nullptr;
-    if (isTwoAddressMode(Rd.getNode())) {
-      if (RegisterSDNode::classof(N->getOperand(1).getNode()))
-        Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-
-      SDValue Rd = FuncInfo->getValFromRegMap(N->getOperand(0));
-      Node =
-          CurDAG
-              ->getNode(ISD::SUB, dl, getDefaultEVT(), Rd, Rn, getMDOperand(N))
-              .getNode();
-    } else {
-      SDValue op2 = N->getOperand(2);
-      if (RegisterSDNode::classof(op2.getNode()))
-        op2 = FuncInfo->getValFromRegMap(op2);
-
-      Rn = FuncInfo->getValFromRegMap(N->getOperand(1));
-      Node =
-          CurDAG
-              ->getNode(ISD::SUB, dl, getDefaultEVT(), Rn, op2, getMDOperand(N))
-              .getNode();
-    }
-    recordDefinition(Rd.getNode(), Node);
-    replaceNode(N, Node);
-      */
-
-
-    case ARM::SVC: // 1932
-      OS << "Allowed instruction: ";
-      Monitor::printMachineInstr(&MI, true, OS);
-      break;
+      Instruction Instr = BinaryOperator::CreateSub(Rn, Rm, "SUBrr", BB);
+      setRegValue(Rd, MI.getParent()->getNumber(), Instr);
+    } break;
+    case ARM::SVC: { // 1932 | SVC<c> #<imm>
+      assert(false && "ARM::SVC not yet implemented");
+    } break;
   }
 }
 
