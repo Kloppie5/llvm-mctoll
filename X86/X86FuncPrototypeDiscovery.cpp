@@ -189,8 +189,8 @@ FunctionType *X86MachineInstructionRaiser::getRaisedFunctionPrototype() {
   // Raise the jumptable
   raiseMachineJumpTable();
 
-  if (raisedFunction != nullptr)
-    return raisedFunction->getFunctionType();
+  if (F != nullptr)
+    return F->getFunctionType();
 
   // Cleanup NOOP instructions from all MachineBasicBlocks
   deleteNOOPInstrMF();
@@ -494,21 +494,21 @@ FunctionType *X86MachineInstructionRaiser::getRaisedFunctionPrototype() {
       FunctionType::get(returnType, argTypeVector, false /* isVarArg*/);
 
   // 4. Create the real Function now that we have discovered the arguments.
-  raisedFunction =
+  F =
       Function::Create(FT, GlobalValue::ExternalLinkage, functionName, module);
 
   // Set global linkage
-  raisedFunction->setLinkage(GlobalValue::ExternalLinkage);
+  F->setLinkage(GlobalValue::ExternalLinkage);
   // Set C calling convention
-  raisedFunction->setCallingConv(CallingConv::C);
+  F->setCallingConv(CallingConv::C);
   // Set the function to be in the same linkage unit
-  raisedFunction->setDSOLocal(true);
+  F->setDSOLocal(true);
   // TODO : Set other function attributes as needed.
   // Add argument names to the function.
   // Note: Call to arg_begin() calls Function::BuildLazyArguments()
   // to build the arguments.
-  Function::arg_iterator ArgIt = raisedFunction->arg_begin();
-  unsigned numFuncArgs = raisedFunction->arg_size();
+  Function::arg_iterator ArgIt = F->arg_begin();
+  unsigned numFuncArgs = F->arg_size();
   StringRef prefix("arg");
   // Set the name.
   for (unsigned i = 0; i < numFuncArgs; ++i, ++ArgIt)
@@ -516,9 +516,9 @@ FunctionType *X86MachineInstructionRaiser::getRaisedFunctionPrototype() {
 
   // Insert the map of raised function to tempFunctionPointer.
   const_cast<ModuleRaiser *>(MR)->insertPlaceholderRaisedFunctionMap(
-      raisedFunction, tempFunctionPtr);
+      F, tempFunctionPtr);
 
-  return raisedFunction->getFunctionType();
+  return F->getFunctionType();
 }
 
 // Discover and return the type of return register (viz., RAX or its

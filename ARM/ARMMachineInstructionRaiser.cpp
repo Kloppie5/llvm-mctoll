@@ -34,35 +34,43 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   assert(amr != nullptr && "The ARM module raiser is not initialized!");
   ARMModuleRaiser &rmr = const_cast<ARMModuleRaiser &>(*amr);
 
+  // inplace MachineFunction, adds to ModuleRaiser
   ARMMIRevising mir(rmr);
-  mir.init(&MF, raisedFunction);
-  mir.setMCInstRaiser(mcInstRaiser);
+  mir.init(&MF, F);
+  mir.setMCInstRaiser(MCIR);
   mir.revise();
 
+  // inplace MachineFunction
   ARMEliminatePrologEpilog epe(rmr);
-  epe.init(&MF, raisedFunction);
+  epe.init(&MF, F);
   epe.eliminate();
 
+  // inplace MachineFunction, creates jtList
   ARMCreateJumpTable cjt(rmr);
-  cjt.init(&MF, raisedFunction);
-  cjt.setMCInstRaiser(mcInstRaiser);
+  cjt.init(&MF, F);
+  cjt.setMCInstRaiser(MCIR);
   cjt.create();
   cjt.getJTlist(jtList);
 
   ARMArgumentRaiser ar(rmr);
-  ar.init(&MF, raisedFunction);
+  ar.init(&MF, F);
   ar.raiseArgs();
 
   ARMFrameBuilder fb(rmr);
-  fb.init(&MF, raisedFunction);
+  fb.init(&MF, F);
   fb.build();
 
   ARMInstructionSplitting ispl(rmr);
-  ispl.init(&MF, raisedFunction);
+  ispl.init(&MF, F);
   ispl.split();
 
+  // Create DAG
+  // For each MBB;
+  // - create BB
+  // - do instruction selection with InstSelector
+  // - emit IR with IREmitter
   ARMSelectionDAGISel sdis(rmr);
-  sdis.init(&MF, raisedFunction);
+  sdis.init(&MF, F);
   sdis.setjtList(jtList);
   sdis.doSelection();
 
@@ -97,14 +105,14 @@ Value *ARMMachineInstructionRaiser::getRegOrArgValue(unsigned PReg, int MBBNo) {
 
 FunctionType *ARMMachineInstructionRaiser::getRaisedFunctionPrototype() {
   ARMFunctionPrototype AFP;
-  raisedFunction = AFP.discover(MF);
+  F = AFP.discover(MF);
 
   Function *ori = const_cast<Function *>(&MF.getFunction());
   // Insert the map of raised function to tempFunctionPointer.
   const_cast<ModuleRaiser *>(MR)->insertPlaceholderRaisedFunctionMap(
-      raisedFunction, ori);
+      F, ori);
 
-  return raisedFunction->getFunctionType();
+  return F->getFunctionType();
 }
 
 // Create a new MachineFunctionRaiser object and add it to the list of

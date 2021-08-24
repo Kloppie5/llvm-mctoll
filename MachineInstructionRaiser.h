@@ -45,7 +45,7 @@ public:
   MachineInstructionRaiser() = delete;
   MachineInstructionRaiser(MachineFunction &machFunc, const ModuleRaiser *mr,
                            MCInstRaiser *mcir = nullptr)
-      : MF(machFunc), raisedFunction(nullptr), mcInstRaiser(mcir), MR(mr) {}
+      : MF(machFunc), F(nullptr), MCIR(mcir), MR(mr) {}
   virtual ~MachineInstructionRaiser(){};
 
   virtual bool raise() { return true; };
@@ -55,9 +55,9 @@ public:
   virtual bool buildFuncArgTypeVector(const std::set<MCPhysReg> &,
                                       std::vector<Type *> &) = 0;
 
-  Function *getRaisedFunction() { return raisedFunction; }
-  void setRaisedFunction(Function *F) { raisedFunction = F; }
-  MCInstRaiser *getMCInstRaiser() { return mcInstRaiser; }
+  Function *getRaisedFunction() { return F; }
+  void setRaisedFunction(Function *F) { F = F; }
+  MCInstRaiser *getMCInstRaiser() { return MCIR; }
   MachineFunction &getMF() { return MF; };
   const ModuleRaiser *getModuleRaiser() { return MR; }
 
@@ -70,8 +70,8 @@ protected:
   // This is the Function object that holds the raised abstraction of MF.
   // Note that the function associated with MF should not be referenced or
   // updated. It was created just to enable the creation of MF.
-  Function *raisedFunction;
-  MCInstRaiser *mcInstRaiser;
+  Function *F;
+  MCInstRaiser *MCIR;
   const ModuleRaiser *MR;
 
   // A vector of information to be used for raising of control transfer
