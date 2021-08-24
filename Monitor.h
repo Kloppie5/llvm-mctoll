@@ -35,7 +35,12 @@ class Monitor {
             for (unsigned i = 0, e = Inst->getNumOperands(); i != e; ++i) {
                 OS << " ";
                 const MCOperand& OP = Inst->getOperand(i);
-                if (OP.isReg()) OS << "Reg:" << getInstance().MCRI->getName(OP.getReg());
+                if (OP.isReg()) {
+                    if (OP.getReg() < getInstance().MCRI->getNumRegs())
+                        OS << "Reg:" << getInstance().MCRI->getName(OP.getReg());
+                    else
+                        OS << "InvalidReg:" << OP.getReg();
+                }
                 else if (OP.isImm()) OS << "Imm:" << OP.getImm();
                 else if (OP.isInst()) OS << "Inst:" << *OP.getInst();
                 else { OS << "{"; OP.print(OS, getInstance().MCRI); OS << "}"; }
@@ -48,13 +53,18 @@ class Monitor {
             const TargetRegisterInfo* TRI = STI.getRegisterInfo();
             const TargetInstrInfo* TII = STI.getInstrInfo();
             const TargetIntrinsicInfo* TIntrI = MI->getMF()->getTarget().getIntrinsicInfo();
-            
+
             OS << TII->getName(MI->getOpcode());
             OS << " (" << MI->getOpcode() << ") {";
             for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
                 OS << " ";
                 const MachineOperand& MO = MI->getOperand(i);
-                if (MO.isReg()) OS << "Reg:" << getInstance().MCRI->getName(MO.getReg());
+                if (MO.isReg()) {
+                    if (MO.getReg() < getInstance().MCRI->getNumRegs())
+                        OS << "Reg:" << getInstance().MCRI->getName(MO.getReg());
+                    else
+                        OS << "InvalidReg:" << MO.getReg();
+                }
                 else if (MO.isImm()) OS << "Imm:" << MO.getImm();
                 else { OS << "{"; MO.print(OS, TRI, TIntrI); OS << "}"; }
             }

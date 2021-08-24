@@ -6,6 +6,7 @@
 #include "FunctionRaisingInfo.h"
 #include "IREmitter.h"
 #include "InstSelector.h"
+#include "Monitor.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 
 using namespace llvm;
@@ -13,15 +14,109 @@ using namespace llvm;
 #define DEBUG_TYPE "mctoll"
 
 bool ARMSelectionDAGISelBypassPass::precondition(MachineFunction *MF, Function *F) {
+  Monitor::NOTE("ARMSelectionDAGISelBypassPass; precondition");
+  auto OS = WithColor(errs(), HighlightColor::Warning);
+  for (MachineBasicBlock &MBB : *MF) {
+    OS << "In MBB: " << MBB.getFullName() << "\n";
+    for (MachineInstr &MI : MBB) {
+      
+      switch (MI.getOpcode()) {
+        default:
+          OS << "ARMSelectionDAGISelBypassPass encountered unhandled opcode in instruction ";
+          Monitor::printMachineInstr(&MI, true, OS);
+          return false;
+        
+        case ARM::LDAEXB: // 797
+        case ARM::LDREXB: // 837
+        case ARM::STLEXB: // 1888
+        case ARM::STREXB: // 1912
+          OS << "LL-SC loop instruction does not have a single instruction decompilation: ";
+          Monitor::printMachineInstr(&MI, true, OS);
+          break;
+
+        case ARM::ASRi: // 247
+        case ARM::ASRr: // 248
+        case ARM::LSLi: // 292
+        case ARM::LSLr: // 293
+        case ARM::LSRi: // 294
+        case ARM::LSRr: // 295
+        case ARM::RORi: // 325
+        case ARM::RORr: // 326
+        case ARM::RRX: // 327
+
+        case ARM::ADCri: // 680
+        case ARM::ADCrsi: // 682
+        case ARM::ADDri: // 684
+        case ARM::ADDrr: // 685
+        case ARM::ADDrsi: // 686
+        case ARM::ANDri: // 693
+        case ARM::BICri: // 706
+        case ARM::BL: // 711
+        case ARM::BX_RET: // 718
+        case ARM::Bcc: // 720
+        case ARM::CMNri: // 755
+        case ARM::CMPri: // 759
+        case ARM::CMPrr: // 760
+        case ARM::DMB: // 773
+        case ARM::DSB: // 774
+        case ARM::EORri: // 775
+        case ARM::EORrr: // 776
+        case ARM::ISB: // 793
+        case ARM::LDMIA: // 821
+        case ARM::LDMIA_UPD: // 822
+        case ARM::LDRBi12: // 831
+        case ARM::LDRBrs: // 832
+        case ARM::LDRH: // 840
+        case ARM::LDRSB: // 845
+        case ARM::LDRSB_PRE: // 849
+        case ARM::LDR_PRE_IMM: // 859
+        case ARM::LDR_PRE_REG: // 860
+        case ARM::LDRi12: // 862
+        case ARM::LDRrs: // 863
+        case ARM::MLA: // 868
+        case ARM::MOVPCLR: // 870
+        case ARM::MOVTi16: // 871
+        case ARM::MOVi: // 872
+        case ARM::MOVi16: // 873
+        case ARM::MOVr: // 874
+        case ARM::MOVsi: // 876
+        case ARM::MUL: // 888
+        case ARM::MVNi: // 1736
+        case ARM::MVNr: // 1737
+        case ARM::ORRri: // 1748
+        case ARM::ORRrr:// 1749
+        case ARM::SBCri: // 1794
+        case ARM::SBCrr: // 1795
+        case ARM::SBCrsi: // 1796
+        case ARM::SMLAL: // 1824
+        case ARM::STMDB_UPD: // 1895
+        case ARM::STMIA: // 1896
+        case ARM::STMIA_UPD: // 1897
+        case ARM::STMIB: // 1898
+        case ARM::STRBi12: // 1906
+        case ARM::STRBrs: // 1907
+        case ARM::STRH: // 1915
+        case ARM::STRi12: // 1926
+        case ARM::STRrs: // 1927
+        case ARM::SUBri: // 1928
+        case ARM::SUBrr: // 1929
+        case ARM::SVC: // 1932
+          OS << "Allowed instruction: ";
+          Monitor::printMachineInstr(&MI, true, OS);
+          break;
+      }
+    }
+  }
+
+  Monitor::NOTE("ARMSelectionDAGISelBypassPass; precondition passed");
   return true;
 }
 
 bool ARMSelectionDAGISelBypassPass::run(MachineFunction *MF, Function *F) {
   ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser &>(MR);
   
-  if (!precondition(MF, F)) {
+  if (!precondition(MF, F))
     return false;
-  }
 
   std::unique_ptr<OptimizationRemarkEmitter> ORE = make_unique<OptimizationRemarkEmitter>(F);
 
