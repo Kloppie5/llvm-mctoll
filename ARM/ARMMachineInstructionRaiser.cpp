@@ -21,6 +21,7 @@
 #include "ARMMIRevising.h"
 #include "ARMModuleRaiser.h"
 #include "ARMSelectionDAGISel.h"
+#include "ARMSelectionDAGISelBypassPass.h"
 
 using namespace llvm;
 
@@ -56,12 +57,7 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   ARMInstructionSplitting ispl(rmr);
   ispl.run(&MF, F);
 
-  // Create DAG
-  // For each MBB;
-  // - create BB
-  // - do instruction selection with InstSelector
-  // - emit IR with IREmitter
-  ARMSelectionDAGISel sdis(rmr, jtList);
+  ARMSelectionDAGISelBypassPass sdis(rmr, jtList);
   sdis.run(&MF, F);
 
   return true;

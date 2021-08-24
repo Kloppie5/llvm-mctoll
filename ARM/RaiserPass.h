@@ -25,7 +25,9 @@ protected:
   RaiserPass() = delete;
   RaiserPass(ModuleRaiser &MR) : MR(MR) {}
 
+  virtual bool precondition (MachineFunction *MF, Function *F) { return true; }
   virtual bool run (MachineFunction *MF, Function *F) = 0;
+  virtual bool postcondition (MachineFunction *MF, Function *F) { return true; }
 };
 
 #endif // LLVM_TOOLS_LLVM_MCTOLL_ARM_RAISERPASS_H
