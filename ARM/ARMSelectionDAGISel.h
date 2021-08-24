@@ -14,7 +14,7 @@
 #ifndef LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMSELECTIONDAGISEL_H
 #define LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMSELECTIONDAGISEL_H
 
-#include "ARMRaiserBase.h"
+#include "RaiserPass.h"
 #include "DAGBuilder.h"
 #include "DAGRaisingInfo.h"
 #include "FunctionRaisingInfo.h"
@@ -25,18 +25,13 @@
 
 /// This is responsible for constructing DAG, and does instruction selection on
 /// the DAG, eventually emits SDNodes of the DAG to LLVM IRs.
-class ARMSelectionDAGISel : public ARMRaiserBase {
+class ARMSelectionDAGISel : public RaiserPass {
 public:
-  ARMSelectionDAGISel(ARMModuleRaiser &mr);
-  ~ARMSelectionDAGISel() override;
-  void init(MachineFunction *mf = nullptr, Function *rf = nullptr) override;
-  bool doSelection();
-  bool runOnMachineFunction(MachineFunction &mf) override;
-  bool setjtList(std::vector<JumpTableInfo> &List);
-  static char ID;
+  ARMSelectionDAGISel(ModuleRaiser &MR, std::vector<JumpTableInfo> &List) : RaiserPass(MR), jtList(List) {}
+  bool run (MachineFunction *MF, Function *F) override;
 
 private:
-  void initEntryBasicBlock();
+  void initEntryBasicBlock(Function *F);
   void selectBasicBlock();
   void doInstructionSelection();
   void emitDAG();

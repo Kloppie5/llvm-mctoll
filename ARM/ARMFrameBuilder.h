@@ -14,7 +14,7 @@
 #ifndef LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMFRAMEBUILDER_H
 #define LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMFRAMEBUILDER_H
 
-#include "ARMRaiserBase.h"
+#include "RaiserPass.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/IR/DataLayout.h"
@@ -24,7 +24,7 @@ using namespace llvm;
 /// This class is use to build ARM abstract stack frame by analyzing ARM SP
 /// register operations. Simultaneously, converts MI SP operands to
 /// MO_FrameIndex type.
-class ARMFrameBuilder : public ARMRaiserBase {
+class ARMFrameBuilder : public RaiserPass {
 private:
   struct StackElement {
     uint64_t Size;
@@ -40,11 +40,8 @@ private:
 public:
   static char ID;
 
-  ARMFrameBuilder(ARMModuleRaiser &mr);
-  ~ARMFrameBuilder() override;
-  void init(MachineFunction *mf = nullptr, Function *rf = nullptr) override;
-  bool build();
-  bool runOnMachineFunction(MachineFunction &mf) override;
+  ARMFrameBuilder(ModuleRaiser &MR) : RaiserPass(MR) {};
+  bool run (MachineFunction *MF, Function *F) override;
 
 private:
   unsigned getBitCount(unsigned opcode);
@@ -54,7 +51,7 @@ private:
   /// Analyze frame index of stack operands.
   int64_t identifyStackOp(const MachineInstr &mi);
   /// Find out all of frame relative operands, and update them.
-  void searchStackObjects(MachineFunction &mf);
+  void searchStackObjects(MachineFunction *MF, Function *F);
 
   /// Records of assigned common registers by sp.
   SmallVector<unsigned, 16> RegAssignedBySP;

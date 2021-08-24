@@ -14,7 +14,7 @@
 #ifndef LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMMIREVISING_H
 #define LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMMIREVISING_H
 
-#include "ARMRaiserBase.h"
+#include "RaiserPass.h"
 #include "MCInstRaiser.h"
 #include "llvm/CodeGen/MachineInstr.h"
 
@@ -24,17 +24,11 @@ using namespace object;
 /// This class is use to revise information of each MachineInstr. Something
 /// like size of operands, immediate data value and so on. Currently, the
 /// generation of global objects is included at here.
-class ARMMIRevising : public ARMRaiserBase {
+class ARMMIRevising : public RaiserPass {
 
 public:
-  static char ID;
-
-  ARMMIRevising(ARMModuleRaiser &MRsr);
-  ~ARMMIRevising() override;
-  void init(MachineFunction *mf = nullptr, Function *rf = nullptr) override;
-  bool revise();
-  bool runOnMachineFunction(MachineFunction &mf) override;
-  void setMCInstRaiser(MCInstRaiser *PMCIR);
+  ARMMIRevising(ModuleRaiser &MR, MCInstRaiser *MCIR) : RaiserPass(MR), MCIR(MCIR) {}
+  bool run (MachineFunction *MF, Function *F) override;
 
 private:
   bool reviseMI(MachineInstr &MI);

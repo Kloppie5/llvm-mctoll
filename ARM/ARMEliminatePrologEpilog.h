@@ -14,20 +14,15 @@
 #ifndef LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMELIMINATEPROLOGEPILOG_H
 #define LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMELIMINATEPROLOGEPILOG_H
 
-#include "ARMRaiserBase.h"
+#include "RaiserPass.h"
 
 using namespace llvm;
 
-class ARMEliminatePrologEpilog : public ARMRaiserBase {
+class ARMEliminatePrologEpilog : public RaiserPass {
 public:
-  static char ID;
-
-  ARMEliminatePrologEpilog(ARMModuleRaiser &mr);
-  ~ARMEliminatePrologEpilog();
-  void init(MachineFunction *mf = nullptr, Function *rf = nullptr) override;
-  bool eliminate();
-  bool runOnMachineFunction(MachineFunction &mf) override;
-
+  ARMEliminatePrologEpilog(ModuleRaiser &MR) : RaiserPass(MR) {};
+  bool run (MachineFunction *MF, Function *F) override;
+  
 private:
   bool checkRegister(unsigned Reg, std::vector<MachineInstr *> &instrs) const;
   bool eliminateProlog(MachineFunction &mf) const;

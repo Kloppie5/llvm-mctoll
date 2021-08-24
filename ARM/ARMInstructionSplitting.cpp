@@ -21,18 +21,95 @@
 
 using namespace llvm;
 
-char ARMInstructionSplitting::ID = 0;
-
-ARMInstructionSplitting::ARMInstructionSplitting(ARMModuleRaiser &mr)
-    : ARMRaiserBase(ID, mr) {}
-
-ARMInstructionSplitting::~ARMInstructionSplitting() {}
-
-void ARMInstructionSplitting::init(MachineFunction *mf, Function *rf) {
-  ARMRaiserBase::init(mf, rf);
+bool ARMInstructionSplitting::run(MachineFunction *MF, Function *F) {
   TII = MF->getSubtarget<ARMSubtarget>().getInstrInfo();
   MRI = &MF->getRegInfo();
-  CTX = &M->getContext();
+  CTX = &MR.getModule()->getContext();
+
+  LLVM_DEBUG(dbgs() << "ARMInstructionSplitting start.\n");
+
+  std::vector<MachineInstr *> removelist;
+  for (MachineBasicBlock &MBB : *MF) {
+    for (MachineBasicBlock::iterator I = MBB.begin(), E = MBB.end(); I != E;
+         ++I) {
+      MachineInstr &MI = *I;
+      MachineInstr *removeMI = nullptr;
+
+      unsigned Opcode, newOpc;
+      Opcode = MI.getOpcode();
+      newOpc = checkisShifter(Opcode);
+
+      // Need to split
+      if (getLoadStoreOpcode(Opcode)) {
+        // Split the MI about Load and Store.
+
+        // TODO: LDRSH/LDRSB/LDRH/LDRD split.
+        if (isLDRSTRPre(Opcode)) {
+          if (MI.getOperand(3).isReg())
+            removeMI = splitLDRSTRPre(MBB, MI);
+          else if (MI.getOperand(3).isImm() && MI.getOperand(3).getImm() != 0)
+            removeMI = splitLDRSTRPreImm(MBB, MI);
+          if (removeMI)
+            removelist.push_back(removeMI);
+        } else if (MI.getOperand(1).isReg() &&
+                   MI.getOperand(1).getReg() != ARM::SP &&
+                   MI.getOperand(1).getReg() != ARM::PC) {
+          if (MI.getOperand(2).isReg())
+            removeMI = splitLDRSTR(MBB, MI);
+          else if (MI.getOperand(2).isImm() && MI.getOperand(2).getImm() != 0)
+            removeMI = splitLDRSTRImm(MBB, MI);
+          if (removeMI)
+            removelist.push_back(removeMI);
+        }
+      } else if (newOpc) {
+        // Split the MI except Load and Store.
+
+        bool UpdateCPSR = false;
+        bool CondCode = false;
+        int idx = MI.findRegisterUseOperandIdx(ARM::CPSR);
+
+        // Check if MI contains CPSR
+        if (idx != -1) {
+          if (MI.getOperand(idx + 1).isReg() &&
+              MI.getOperand(idx + 1).getReg() == ARM::CPSR) {
+            UpdateCPSR = true;
+            CondCode = true;
+          } else if (MI.getOperand(idx - 1).isImm() &&
+                     MI.getOperand(idx - 1).getImm() != ARMCC::AL) {
+            CondCode = true;
+          } else
+            UpdateCPSR = true;
+        }
+
+        if (!UpdateCPSR && !CondCode)
+          // Split the MI has no cpsr.
+          removeMI = splitCommon(MBB, MI, newOpc);
+        else if (UpdateCPSR && !CondCode)
+          // Split the MI updates cpsr.
+          removeMI = splitS(MBB, MI, newOpc, idx);
+        else if (!UpdateCPSR && CondCode)
+          // Split the MI checks CondCode.
+          removeMI = splitC(MBB, MI, newOpc, idx);
+        else
+          // Split the MI both updates cpsr and check CondCode
+          removeMI = splitCS(MBB, MI, newOpc, idx);
+
+        if (removeMI)
+          removelist.push_back(removeMI);
+      }
+    }
+  }
+
+  // Remove old MI.
+  for (MachineInstr *mi : removelist)
+    mi->removeFromParent();
+
+  // For debugging.
+  LLVM_DEBUG(MF->dump());
+  LLVM_DEBUG(F->dump());
+  LLVM_DEBUG(dbgs() << "ARMInstructionSplitting end.\n");
+
+  return true;
 }
 
 /// Check if the MI has shift pattern.
@@ -1122,110 +1199,4 @@ MachineInstr *ARMInstructionSplitting::splitCS(MachineBasicBlock &MBB,
   return mi;
 }
 
-bool ARMInstructionSplitting::split() {
-  LLVM_DEBUG(dbgs() << "ARMInstructionSplitting start.\n");
-
-  std::vector<MachineInstr *> removelist;
-  for (MachineBasicBlock &MBB : *MF) {
-    for (MachineBasicBlock::iterator I = MBB.begin(), E = MBB.end(); I != E;
-         ++I) {
-      MachineInstr &MI = *I;
-      MachineInstr *removeMI = nullptr;
-
-      unsigned Opcode, newOpc;
-      Opcode = MI.getOpcode();
-      newOpc = checkisShifter(Opcode);
-
-      // Need to split
-      if (getLoadStoreOpcode(Opcode)) {
-        // Split the MI about Load and Store.
-
-        // TODO: LDRSH/LDRSB/LDRH/LDRD split.
-        if (isLDRSTRPre(Opcode)) {
-          if (MI.getOperand(3).isReg())
-            removeMI = splitLDRSTRPre(MBB, MI);
-          else if (MI.getOperand(3).isImm() && MI.getOperand(3).getImm() != 0)
-            removeMI = splitLDRSTRPreImm(MBB, MI);
-          if (removeMI)
-            removelist.push_back(removeMI);
-        } else if (MI.getOperand(1).isReg() &&
-                   MI.getOperand(1).getReg() != ARM::SP &&
-                   MI.getOperand(1).getReg() != ARM::PC) {
-          if (MI.getOperand(2).isReg())
-            removeMI = splitLDRSTR(MBB, MI);
-          else if (MI.getOperand(2).isImm() && MI.getOperand(2).getImm() != 0)
-            removeMI = splitLDRSTRImm(MBB, MI);
-          if (removeMI)
-            removelist.push_back(removeMI);
-        }
-      } else if (newOpc) {
-        // Split the MI except Load and Store.
-
-        bool UpdateCPSR = false;
-        bool CondCode = false;
-        int idx = MI.findRegisterUseOperandIdx(ARM::CPSR);
-
-        // Check if MI contains CPSR
-        if (idx != -1) {
-          if (MI.getOperand(idx + 1).isReg() &&
-              MI.getOperand(idx + 1).getReg() == ARM::CPSR) {
-            UpdateCPSR = true;
-            CondCode = true;
-          } else if (MI.getOperand(idx - 1).isImm() &&
-                     MI.getOperand(idx - 1).getImm() != ARMCC::AL) {
-            CondCode = true;
-          } else
-            UpdateCPSR = true;
-        }
-
-        if (!UpdateCPSR && !CondCode)
-          // Split the MI has no cpsr.
-          removeMI = splitCommon(MBB, MI, newOpc);
-        else if (UpdateCPSR && !CondCode)
-          // Split the MI updates cpsr.
-          removeMI = splitS(MBB, MI, newOpc, idx);
-        else if (!UpdateCPSR && CondCode)
-          // Split the MI checks CondCode.
-          removeMI = splitC(MBB, MI, newOpc, idx);
-        else
-          // Split the MI both updates cpsr and check CondCode
-          removeMI = splitCS(MBB, MI, newOpc, idx);
-
-        if (removeMI)
-          removelist.push_back(removeMI);
-      }
-    }
-  }
-
-  // Remove old MI.
-  for (MachineInstr *mi : removelist)
-    mi->removeFromParent();
-
-  // For debugging.
-  LLVM_DEBUG(MF->dump());
-  LLVM_DEBUG(getCRF()->dump());
-  LLVM_DEBUG(dbgs() << "ARMInstructionSplitting end.\n");
-
-  return true;
-}
-
-bool ARMInstructionSplitting::runOnMachineFunction(MachineFunction &mf) {
-  bool rtn = false;
-  init();
-  rtn = split();
-  return rtn;
-}
-
 #undef DEBUG_TYPE
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-FunctionPass *InitializeARMInstructionSplitting(ARMModuleRaiser &mr) {
-  return new ARMInstructionSplitting(mr);
-}
-
-#ifdef __cplusplus
-}
-#endif

@@ -19,17 +19,21 @@
 
 using namespace llvm;
 
-char ARMFrameBuilder::ID = 0;
-
-ARMFrameBuilder::ARMFrameBuilder(ARMModuleRaiser &mr) : ARMRaiserBase(ID, mr) {}
-
-ARMFrameBuilder::~ARMFrameBuilder() {}
-
-void ARMFrameBuilder::init(MachineFunction *mf, Function *rf) {
-  ARMRaiserBase::init(mf, rf);
+bool ARMFrameBuilder::run(MachineFunction *MF, Function *F) {
   MFI = &MF->getFrameInfo();
-  CTX = &M->getContext();
-  DLT = &M->getDataLayout();
+  CTX = &MR.getModule()->getContext();
+  DLT = &MR.getModule()->getDataLayout();
+
+  LLVM_DEBUG(dbgs() << "ARMFrameBuilder start.\n");
+
+  searchStackObjects(MF, F);
+
+  // For debugging.
+  LLVM_DEBUG(MF->dump());
+  LLVM_DEBUG(F->dump());
+  LLVM_DEBUG(dbgs() << "ARMFrameBuilder end.\n");
+
+  return true;
 }
 
 static bool isLoadOP(unsigned opcode) {
@@ -112,8 +116,8 @@ Type *ARMFrameBuilder::getStackType(unsigned size) {
 
   switch (size) {
   default:
-    t = Type::getIntNTy(M->getContext(),
-                        M->getDataLayout().getPointerSizeInBits());
+    t = Type::getIntNTy(MR.getModule()->getContext(),
+                        MR.getModule()->getDataLayout().getPointerSizeInBits());
     break;
   case 8:
     t = Type::getInt64Ty(*CTX);
@@ -211,13 +215,13 @@ int64_t ARMFrameBuilder::identifyStackOp(const MachineInstr &mi) {
 }
 
 /// Find out all of frame relative operands, and update them.
-void ARMFrameBuilder::searchStackObjects(MachineFunction &mf) {
+void ARMFrameBuilder::searchStackObjects(MachineFunction *MF, Function *F) {
   // <SPOffset, frame_element_ptr>
   std::map<int64_t, StackElement *, std::greater<int64_t>> SPOffElementMap;
   DenseMap<MachineInstr *, StackElement *> InstrToElementMap;
 
   std::vector<MachineInstr *> removelist;
-  for (MachineFunction::iterator mbbi = mf.begin(), mbbe = mf.end();
+  for (MachineFunction::iterator mbbi = MF->begin(), mbbe = MF->end();
        mbbi != mbbe; ++mbbi) {
     for (MachineBasicBlock::iterator mii = mbbi->begin(), mie = mbbi->end();
          mii != mie; ++mii) {
@@ -254,7 +258,7 @@ void ARMFrameBuilder::searchStackObjects(MachineFunction &mf) {
   // TODO: Before generating StackObjects, we need to check whether there is
   // any missed StackElement.
 
-  BasicBlock *pBB = &getCRF()->getEntryBlock();
+  BasicBlock *pBB = &F->getEntryBlock();
 
   assert(pBB != nullptr && "There is no BasicBlock in this Function!");
   // Generate StackObjects.
@@ -287,36 +291,4 @@ void ARMFrameBuilder::searchStackObjects(MachineFunction &mf) {
     delete e.second;
 }
 
-bool ARMFrameBuilder::build() {
-  LLVM_DEBUG(dbgs() << "ARMFrameBuilder start.\n");
-
-  searchStackObjects(*MF);
-
-  // For debugging.
-  LLVM_DEBUG(MF->dump());
-  LLVM_DEBUG(getCRF()->dump());
-  LLVM_DEBUG(dbgs() << "ARMFrameBuilder end.\n");
-
-  return true;
-}
-
-bool ARMFrameBuilder::runOnMachineFunction(MachineFunction &mf) {
-  bool rtn = false;
-  init();
-  rtn = build();
-  return rtn;
-}
-
 #undef DEBUG_TYPE
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-FunctionPass *InitializeARMFrameBuilder(ARMModuleRaiser &mr) {
-  return new ARMFrameBuilder(mr);
-}
-
-#ifdef __cplusplus
-}
-#endif

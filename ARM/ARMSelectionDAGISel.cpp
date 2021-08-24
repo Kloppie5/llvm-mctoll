@@ -15,30 +15,54 @@
 
 using namespace llvm;
 
-char ARMSelectionDAGISel::ID = 0;
-
 #define DEBUG_TYPE "mctoll"
 
-ARMSelectionDAGISel::ARMSelectionDAGISel(ARMModuleRaiser &mr)
-    : ARMRaiserBase(ID, mr) {}
-
-ARMSelectionDAGISel::~ARMSelectionDAGISel() {
-  delete SLT;
-  delete SDB;
-  delete DAGInfo;
-  delete CurDAG;
-  delete FuncInfo;
-}
-
-void ARMSelectionDAGISel::init(MachineFunction *mf, Function *rf) {
-  ARMRaiserBase::init(mf, rf);
-
-  ORE = make_unique<OptimizationRemarkEmitter>(getCRF());
+bool ARMSelectionDAGISel::run(MachineFunction *MF, Function *F) {
+  ORE = make_unique<OptimizationRemarkEmitter>(F);
   FuncInfo = new FunctionRaisingInfo();
-  CurDAG = new SelectionDAG(*MR->getTargetMachine(), CodeGenOpt::None);
+  CurDAG = new SelectionDAG(*MR.getTargetMachine(), CodeGenOpt::None);
   DAGInfo = new DAGRaisingInfo(*CurDAG);
   SDB = new DAGBuilder(*DAGInfo, *FuncInfo);
   SLT = new InstSelector(*DAGInfo, *FuncInfo);
+
+  LLVM_DEBUG(dbgs() << "ARMSelectionDAGISel start.\n");
+
+  CurDAG->init(*MF, *ORE.get(), nullptr, nullptr, nullptr, nullptr, nullptr);
+  ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser&>(MR);
+  FuncInfo->set(AMR, *F, *MF, CurDAG);
+
+  initEntryBasicBlock(F);
+  for (MachineBasicBlock &mbb : *MF) {
+    MBB = &mbb;
+    BB = FuncInfo->getOrCreateBasicBlock(MBB);
+    selectBasicBlock();
+  }
+
+  // Add an additional exit BasicBlock, all of original return BasicBlocks
+  // will branch to this exit BasicBlock. This will lead to the function has
+  // one and only exit. If the function has return value, this help return
+  // R0.
+  BasicBlock *LBB = FuncInfo->getOrCreateBasicBlock();
+
+  if (F->getReturnType()) {
+    PHINode *LPHI = PHINode::Create(F->getReturnType(),
+                                    FuncInfo->RetValMap.size(), "", LBB);
+    for (auto Pair : FuncInfo->RetValMap)
+      LPHI->addIncoming(Pair.second, Pair.first);
+
+    ReturnInst::Create(F->getContext(), LPHI, LBB);
+  } else
+    ReturnInst::Create(F->getContext(), LBB);
+
+  for (auto &FBB : F->getBasicBlockList())
+    if (FBB.getTerminator() == nullptr)
+      BranchInst::Create(LBB, &FBB);
+
+  FuncInfo->clear();
+
+  LLVM_DEBUG(dbgs() << "ARMSelectionDAGISel end.\n");
+
+  return true;
 }
 
 void ARMSelectionDAGISel::selectBasicBlock() {
@@ -87,80 +111,15 @@ void ARMSelectionDAGISel::emitDAG() {
   }
 }
 
-void ARMSelectionDAGISel::initEntryBasicBlock() {
-  BasicBlock *bb = &RF->getEntryBlock();
+void ARMSelectionDAGISel::initEntryBasicBlock(Function *F) {
+  BasicBlock *bb = &F->getEntryBlock();
   for (unsigned i = 0; i < 4; i++) {
     Align MALG(32);
-    AllocaInst *Alloc = new AllocaInst(Type::getInt1Ty(RF->getContext()), 0,
+    AllocaInst *Alloc = new AllocaInst(Type::getInt1Ty(F->getContext()), 0,
                                        nullptr, MALG, "", bb);
     FuncInfo->AllocaMap[i] = Alloc;
-    new StoreInst(ConstantInt::getFalse(RF->getContext()), Alloc, bb);
+    new StoreInst(ConstantInt::getFalse(F->getContext()), Alloc, bb);
   }
 }
 
-bool ARMSelectionDAGISel::doSelection() {
-  LLVM_DEBUG(dbgs() << "ARMSelectionDAGISel start.\n");
-
-  MachineFunction &mf = *MF;
-  CurDAG->init(mf, *ORE.get(), this, nullptr, nullptr, nullptr, nullptr);
-  FuncInfo->set(*MR, *getCRF(), mf, CurDAG);
-
-  initEntryBasicBlock();
-  for (MachineBasicBlock &mbb : mf) {
-    MBB = &mbb;
-    BB = FuncInfo->getOrCreateBasicBlock(MBB);
-    selectBasicBlock();
-  }
-
-  // Add an additional exit BasicBlock, all of original return BasicBlocks
-  // will branch to this exit BasicBlock. This will lead to the function has
-  // one and only exit. If the function has return value, this help return
-  // R0.
-  Function *CurFn = const_cast<Function *>(FuncInfo->Fn);
-  BasicBlock *LBB = FuncInfo->getOrCreateBasicBlock();
-
-  if (CurFn->getReturnType()) {
-    PHINode *LPHI = PHINode::Create(FuncInfo->getCRF()->getReturnType(),
-                                    FuncInfo->RetValMap.size(), "", LBB);
-    for (auto Pair : FuncInfo->RetValMap)
-      LPHI->addIncoming(Pair.second, Pair.first);
-
-    ReturnInst::Create(CurFn->getContext(), LPHI, LBB);
-  } else
-    ReturnInst::Create(CurFn->getContext(), LBB);
-
-  for (auto &FBB : CurFn->getBasicBlockList())
-    if (FBB.getTerminator() == nullptr)
-      BranchInst::Create(LBB, &FBB);
-
-  FuncInfo->clear();
-
-  LLVM_DEBUG(dbgs() << "ARMSelectionDAGISel end.\n");
-
-  return true;
-}
-
-bool ARMSelectionDAGISel::setjtList(std::vector<JumpTableInfo> &List) {
-  jtList = List;
-  return true;
-}
-
-bool ARMSelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
-  bool rtn = false;
-  init();
-  rtn = doSelection();
-  return rtn;
-}
 #undef DEBUG_TYPE
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-FunctionPass *InitializeARMSelectionDAGISel(ARMModuleRaiser &mr) {
-  return new ARMSelectionDAGISel(mr);
-}
-
-#ifdef __cplusplus
-}
-#endif

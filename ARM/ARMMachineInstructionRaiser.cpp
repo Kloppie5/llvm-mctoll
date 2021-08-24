@@ -35,44 +35,34 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   ARMModuleRaiser &rmr = const_cast<ARMModuleRaiser &>(*amr);
 
   // inplace MachineFunction, adds to ModuleRaiser
-  ARMMIRevising mir(rmr);
-  mir.init(&MF, F);
-  mir.setMCInstRaiser(MCIR);
-  mir.revise();
+  ARMMIRevising mir(rmr, MCIR);
+  mir.run(&MF, F);
 
   // inplace MachineFunction
   ARMEliminatePrologEpilog epe(rmr);
-  epe.init(&MF, F);
-  epe.eliminate();
+  epe.run(&MF, F);
 
   // inplace MachineFunction, creates jtList
-  ARMCreateJumpTable cjt(rmr);
-  cjt.init(&MF, F);
-  cjt.setMCInstRaiser(MCIR);
-  cjt.create();
+  ARMCreateJumpTable cjt(rmr, MCIR);
+  cjt.run(&MF, F);
   cjt.getJTlist(jtList);
 
   ARMArgumentRaiser ar(rmr);
-  ar.init(&MF, F);
-  ar.raiseArgs();
+  ar.run(&MF, F);
 
   ARMFrameBuilder fb(rmr);
-  fb.init(&MF, F);
-  fb.build();
+  fb.run(&MF, F);
 
   ARMInstructionSplitting ispl(rmr);
-  ispl.init(&MF, F);
-  ispl.split();
+  ispl.run(&MF, F);
 
   // Create DAG
   // For each MBB;
   // - create BB
   // - do instruction selection with InstSelector
   // - emit IR with IREmitter
-  ARMSelectionDAGISel sdis(rmr);
-  sdis.init(&MF, F);
-  sdis.setjtList(jtList);
-  sdis.doSelection();
+  ARMSelectionDAGISel sdis(rmr, jtList);
+  sdis.run(&MF, F);
 
   return true;
 }

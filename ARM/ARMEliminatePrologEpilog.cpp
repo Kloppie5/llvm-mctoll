@@ -19,15 +19,23 @@
 
 using namespace llvm;
 
-char ARMEliminatePrologEpilog::ID = 0;
+bool ARMEliminatePrologEpilog::run(MachineFunction *MF, Function *F) {
+  LLVM_DEBUG(dbgs() << "ARMEliminatePrologEpilog start.\n");
 
-ARMEliminatePrologEpilog::ARMEliminatePrologEpilog(ARMModuleRaiser &mr)
-    : ARMRaiserBase(ID, mr) {}
+  analyzeStackSize(*MF);
+  analyzeFrameAdjustment(*MF);
+  bool success = eliminateProlog(*MF);
 
-ARMEliminatePrologEpilog::~ARMEliminatePrologEpilog() {}
+  if (success) {
+    success = eliminateEpilog(*MF);
+  }
 
-void ARMEliminatePrologEpilog::init(MachineFunction *mf, Function *rf) {
-  ARMRaiserBase::init(mf, rf);
+  // For debugging.
+  LLVM_DEBUG(MF->dump());
+  LLVM_DEBUG(F->dump());
+  LLVM_DEBUG(dbgs() << "ARMEliminatePrologEpilog end.\n");
+
+  return !success;
 }
 
 /// Return true if an operand in the instrs vector matches the passed register
@@ -326,42 +334,4 @@ void ARMEliminatePrologEpilog::analyzeFrameAdjustment(MachineFunction &mf) {
   }
 }
 
-bool ARMEliminatePrologEpilog::eliminate() {
-  LLVM_DEBUG(dbgs() << "ARMEliminatePrologEpilog start.\n");
-
-  analyzeStackSize(*MF);
-  analyzeFrameAdjustment(*MF);
-  bool success = eliminateProlog(*MF);
-
-  if (success) {
-    success = eliminateEpilog(*MF);
-  }
-
-  // For debugging.
-  LLVM_DEBUG(MF->dump());
-  LLVM_DEBUG(getCRF()->dump());
-  LLVM_DEBUG(dbgs() << "ARMEliminatePrologEpilog end.\n");
-
-  return !success;
-}
-
-bool ARMEliminatePrologEpilog::runOnMachineFunction(MachineFunction &mf) {
-  bool rtn = false;
-  init();
-  rtn = eliminate();
-  return rtn;
-}
-
 #undef DEBUG_TYPE
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-FunctionPass *InitializeARMEliminatePrologEpilog(ARMModuleRaiser &mr) {
-  return new ARMEliminatePrologEpilog(mr);
-}
-
-#ifdef __cplusplus
-}
-#endif

@@ -14,8 +14,9 @@
 #ifndef LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMINSTRUCTIONSPLITTING_H
 #define LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMINSTRUCTIONSPLITTING_H
 
+#include "RaiserPass.h"
+
 #include "ARMBaseInstrInfo.h"
-#include "ARMRaiserBase.h"
 #include "ARMSubtarget.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 
@@ -24,14 +25,10 @@ using namespace llvm;
 /// Some instructions which their patterns include more than one operations,
 /// like 'add r0, r1, r0, asr r1' or 'ldr r0, [r1, #4]', are splitted into
 /// multiple MIs at here.
-class ARMInstructionSplitting : public ARMRaiserBase {
+class ARMInstructionSplitting : public RaiserPass {
 public:
-  static char ID;
-  ARMInstructionSplitting(ARMModuleRaiser &mr);
-  ~ARMInstructionSplitting() override;
-  void init(MachineFunction *mf = nullptr, Function *rf = nullptr) override;
-  bool split();
-  bool runOnMachineFunction(MachineFunction &mf) override;
+  ARMInstructionSplitting(ModuleRaiser &MR) : RaiserPass(MR) {};
+  bool run (MachineFunction *MF, Function *F) override;
 
 private:
   /// Check if the MI has shift pattern.

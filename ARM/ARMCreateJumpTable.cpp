@@ -34,18 +34,18 @@
 
 using namespace llvm;
 
-char ARMCreateJumpTable::ID = 0;
+bool ARMCreateJumpTable::run(MachineFunction *MF, Function *F) {
+  LLVM_DEBUG(dbgs() << "ARMCreateJumpTable start.\n");
 
-ARMCreateJumpTable::ARMCreateJumpTable(ARMModuleRaiser &mr)
-    : ARMRaiserBase(ID, mr) {}
+  raiseMachineJumpTable(*MF);
 
-ARMCreateJumpTable::~ARMCreateJumpTable() {}
+  // For debugging.
+  LLVM_DEBUG(MF->dump());
+  LLVM_DEBUG(F->dump());
+  LLVM_DEBUG(dbgs() << "ARMCreateJumpTable end.\n");
 
-void ARMCreateJumpTable::init(MachineFunction *mf, Function *rf) {
-  ARMRaiserBase::init(mf, rf);
+  return false;
 }
-
-void ARMCreateJumpTable::setMCInstRaiser(MCInstRaiser *PMCIR) { MCIR = PMCIR; }
 
 /// Get the MachineBasicBlock to add the jumptable instruction.
 MachineBasicBlock *ARMCreateJumpTable::checkJumptableBB(MachineFunction &MF) {
@@ -116,7 +116,7 @@ bool ARMCreateJumpTable::UpdatetheBranchInst(MachineBasicBlock &MBB) {
 }
 
 /// Raise the machine jumptable according to the CFG.
-bool ARMCreateJumpTable::raiseMaichineJumpTable(MachineFunction &MF) {
+bool ARMCreateJumpTable::raiseMachineJumpTable(MachineFunction &MF) {
   // A vector to record MBBs that need to be erased upon jump table creation.
   std::vector<MachineBasicBlock *> MBBsToBeErased;
 
@@ -167,7 +167,7 @@ bool ARMCreateJumpTable::raiseMaichineJumpTable(MachineFunction &MF) {
             uint64_t Offset =
                 IsFPIC ? (mcInstorData.getData() +
                           MCIR->getMCInstIndex(JmpTblOffsetCalcMI) + 16)
-                       : (mcInstorData.getData() - MR->getTextSectionAddress());
+                       : (mcInstorData.getData() - MR.getTextSectionAddress());
             auto MBBNo = MCIR->getMBBNumberOfMCInstOffset(Offset, MF);
             if (MBBNo != -1) {
               MachineBasicBlock *MBB = MF.getBlockNumbered(MBBNo);
@@ -311,7 +311,7 @@ bool ARMCreateJumpTable::raiseMaichineJumpTable(MachineFunction &MF) {
 
         // The new machine instrucion should contain the metadata.
         // Create the metadata and add it to the machine instrucion.
-        LLVMContext *CTX = &M->getContext();
+        LLVMContext *CTX = &MR.getModule()->getContext();
         ConstantAsMetadata *CAM = ConstantAsMetadata::get(
             ConstantInt::get(*CTX, llvm::APInt(64, 0, false)));
         MDNode *MDnode = MDNode::get(*CTX, CAM);
@@ -341,36 +341,4 @@ bool ARMCreateJumpTable::getJTlist(std::vector<JumpTableInfo> &List) {
   return true;
 }
 
-bool ARMCreateJumpTable::create() {
-  LLVM_DEBUG(dbgs() << "ARMCreateJumpTable start.\n");
-
-  raiseMaichineJumpTable(*MF);
-
-  // For debugging.
-  LLVM_DEBUG(MF->dump());
-  LLVM_DEBUG(getCRF()->dump());
-  LLVM_DEBUG(dbgs() << "ARMCreateJumpTable end.\n");
-
-  return false;
-}
-
-bool ARMCreateJumpTable::runOnMachineFunction(MachineFunction &mf) {
-  bool rtn = false;
-  init();
-  rtn = create();
-  return rtn;
-}
-
 #undef DEBUG_TYPE
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-FunctionPass *InitializeARMCreateJumpTable(ARMModuleRaiser &mr) {
-  return new ARMCreateJumpTable(mr);
-}
-
-#ifdef __cplusplus
-}
-#endif

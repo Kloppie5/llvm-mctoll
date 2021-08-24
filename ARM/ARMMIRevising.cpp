@@ -17,6 +17,7 @@
 #include "ExternalFunctions.h"
 #include "MCInstRaiser.h"
 #include "MachineFunctionRaiser.h"
+#include "llvm-mctoll.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELF.h"
 #include "llvm/Object/ELFObjectFile.h"
@@ -26,19 +27,33 @@
 using namespace llvm;
 using namespace llvm::object;
 
-char ARMMIRevising::ID = 0;
+bool ARMMIRevising::run(MachineFunction *MF, Function *F) {
+  bool rtn = false;
+  LLVM_DEBUG(dbgs() << "ARMMIRevising start.\n");
 
-ARMMIRevising::ARMMIRevising(ARMModuleRaiser &MRsr) : ARMRaiserBase(ID, MRsr) {
-  MCIR = nullptr;
+  vector<MachineInstr *> RMVec;
+  for (MachineFunction::iterator mbbi = MF->begin(), mbbe = MF->end();
+       mbbi != mbbe; ++mbbi) {
+    for (MachineBasicBlock::iterator mii = mbbi->begin(), mie = mbbi->end();
+         mii != mie; ++mii) {
+      if (removeNeedlessInst(&*mii)) {
+        RMVec.push_back(&*mii);
+        rtn = true;
+      } else
+        rtn = reviseMI(*mii);
+    }
+  }
+
+  for (MachineInstr *PMI : RMVec)
+    PMI->eraseFromParent();
+
+  // For debugging.
+  LLVM_DEBUG(MF->dump());
+  LLVM_DEBUG(F->dump());
+  LLVM_DEBUG(dbgs() << "ARMMIRevising end.\n");
+
+  return rtn;
 }
-
-ARMMIRevising::~ARMMIRevising() {}
-
-void ARMMIRevising::init(MachineFunction *mf, Function *rf) {
-  ARMRaiserBase::init(mf, rf);
-}
-
-void ARMMIRevising::setMCInstRaiser(MCInstRaiser *PMCIR) { MCIR = PMCIR; }
 
 // Extract the offset of MachineInstr MI from the Metadata operand.
 static uint64_t getMCInstIndex(const MachineInstr &MI) {
@@ -79,8 +94,9 @@ uint64_t getLoadAlignProgramHeader(const ELFFile<ELFT> *Obj) {
 /// Create function for external function.
 uint64_t ARMMIRevising::getCalledFunctionAtPLTOffset(uint64_t PLTEndOff,
                                                      uint64_t CallAddr) {
+  ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser&>(MR);
   const ELF32LEObjectFile *Elf32LEObjFile =
-      dyn_cast<ELF32LEObjectFile>(MR->getObjectFile());
+      dyn_cast<ELF32LEObjectFile>(AMR.getObjectFile());
   assert(Elf32LEObjFile != nullptr &&
          "Only 32-bit ELF binaries supported at present!");
   unsigned char ExecType = Elf32LEObjFile->getELFFile().getHeader().e_type;
@@ -110,13 +126,13 @@ uint64_t ARMMIRevising::getCalledFunctionAtPLTOffset(uint64_t PLTEndOff,
 
       MCInst InstAddIP;
       uint64_t InstAddIPSz;
-      bool Success = MR->getMCDisassembler()->getInstruction(
+      bool Success = AMR.getMCDisassembler()->getInstruction(
           InstAddIP, InstAddIPSz, Bytes.slice(PLTEndOff + 4 - SecStart),
           PLTEndOff + 4, nulls());
       assert(Success && "Failed to disassemble instruction in PLT");
 
       unsigned int OpcAddIP = InstAddIP.getOpcode();
-      MCInstrDesc MCIDAddIP = MR->getMCInstrInfo()->get(OpcAddIP);
+      MCInstrDesc MCIDAddIP = AMR.getMCInstrInfo()->get(OpcAddIP);
 
       if (OpcAddIP != ARM::ADDri && (MCIDAddIP.getNumOperands() != 6)) {
         assert(false && "Failed to find function entry from .plt.");
@@ -130,12 +146,12 @@ uint64_t ARMMIRevising::getCalledFunctionAtPLTOffset(uint64_t PLTEndOff,
 
       MCInst Inst;
       uint64_t InstSz;
-      Success = MR->getMCDisassembler()->getInstruction(
+      Success = AMR.getMCDisassembler()->getInstruction(
           Inst, InstSz, Bytes.slice(PLTEndOff + 8 - SecStart), PLTEndOff + 8,
           nulls());
       assert(Success && "Failed to disassemble instruction in PLT");
       unsigned int Opcode = Inst.getOpcode();
-      MCInstrDesc MCID = MR->getMCInstrInfo()->get(Opcode);
+      MCInstrDesc MCID = AMR.getMCInstrInfo()->get(Opcode);
 
       if (Opcode != ARM::LDRi12 && (MCID.getNumOperands() != 6)) {
         assert(false && "Failed to find function entry from .plt.");
@@ -148,7 +164,7 @@ uint64_t ARMMIRevising::getCalledFunctionAtPLTOffset(uint64_t PLTEndOff,
 
       uint64_t GotPltRelocOffset = PLTEndOff + Index + P_Align + 8;
       const RelocationRef *GotPltReloc =
-          MR->getDynRelocAtOffset(GotPltRelocOffset);
+          AMR.getDynRelocAtOffset(GotPltRelocOffset);
       assert(GotPltReloc != nullptr &&
              "Failed to get dynamic relocation for jmp target of PLT entry");
 
@@ -169,12 +185,12 @@ uint64_t ARMMIRevising::getCalledFunctionAtPLTOffset(uint64_t PLTEndOff,
         // Set CallTargetIndex for plt offset to map undefined function symbol
         // for emit CallInst use.
         Function *CalledFunc =
-            ExternalFunctions::Create(*CalledFuncSymName, *MR);
+            ExternalFunctions::Create(*CalledFuncSymName, MR);
         // Bail out if function prototype is not available
         if (!CalledFunc)
           exit(-1);
-        MR->setSyscallMapping(PLTEndOff, CalledFunc);
-        MR->fillInstAddrFuncMap(CallAddr, CalledFunc);
+        AMR.setSyscallMapping(PLTEndOff, CalledFunc);
+        AMR.fillInstAddrFuncMap(CallAddr, CalledFunc);
       }
       return CalledFuncSymAddr.get();
     }
@@ -184,15 +200,16 @@ uint64_t ARMMIRevising::getCalledFunctionAtPLTOffset(uint64_t PLTEndOff,
 
 /// Relocate call branch instructions in object files.
 void ARMMIRevising::relocateBranch(MachineInstr &MInst) {
+  ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser&>(MR);
   int64_t relCallTargetOffset = MInst.getOperand(0).getImm();
   const ELF32LEObjectFile *Elf32LEObjFile =
-      dyn_cast<ELF32LEObjectFile>(MR->getObjectFile());
+      dyn_cast<ELF32LEObjectFile>(AMR.getObjectFile());
   assert(Elf32LEObjFile != nullptr &&
          "Only 32-bit ELF binaries supported at present.");
 
   auto EType = Elf32LEObjFile->getELFFile().getHeader().e_type;
   if ((EType == ELF::ET_DYN) || (EType == ELF::ET_EXEC)) {
-    int64_t textSectionAddress = MR->getTextSectionAddress();
+    int64_t textSectionAddress = AMR.getTextSectionAddress();
     assert(textSectionAddress >= 0 && "Failed to find text section address");
 
     // Get MCInst offset - the offset of machine instruction in the binary
@@ -206,10 +223,10 @@ void ARMMIRevising::relocateBranch(MachineInstr &MInst) {
       Function *CalledFunc = nullptr;
       uint64_t MCInstSize = MCIR->getMCInstSize(MCInstOffset);
       uint64_t Index = 1;
-      CalledFunc = MR->getRaisedFunctionAt(CallTargetIndex);
+      CalledFunc = AMR.getRaisedFunctionAt(CallTargetIndex);
       if (CalledFunc == nullptr) {
         CalledFunc =
-            MR->getCalledFunctionUsingTextReloc(MCInstOffset, MCInstSize);
+            AMR.getCalledFunctionUsingTextReloc(MCInstOffset, MCInstSize);
       }
       // Look up the PLT to find called function.
       if (CalledFunc == nullptr)
@@ -227,7 +244,7 @@ void ARMMIRevising::relocateBranch(MachineInstr &MInst) {
     }
   } else {
     uint64_t Offset = getMCInstIndex(MInst);
-    const RelocationRef *reloc = MR->getTextRelocAtOffset(Offset, 4);
+    const RelocationRef *reloc = AMR.getTextRelocAtOffset(Offset, 4);
     auto ImmValOrErr = (*reloc->getSymbol()).getValue();
     assert(ImmValOrErr && "Failed to get immediate value");
     MInst.getOperand(0).setImm(*ImmValOrErr);
@@ -237,14 +254,15 @@ void ARMMIRevising::relocateBranch(MachineInstr &MInst) {
 /// Find global value by PC offset.
 const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
                                                    uint64_t PCOffset) {
+  ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser&>(MR);
   const Value *GlobVal = nullptr;
   const ELF32LEObjectFile *ObjFile =
-      dyn_cast<ELF32LEObjectFile>(MR->getObjectFile());
+      dyn_cast<ELF32LEObjectFile>(AMR.getObjectFile());
   assert(ObjFile != nullptr &&
          "Only 32-bit ELF binaries supported at present.");
 
   // Get the text section address
-  int64_t TextSecAddr = MR->getTextSectionAddress();
+  int64_t TextSecAddr = AMR.getTextSectionAddress();
   assert(TextSecAddr >= 0 && "Failed to find text section address");
 
   uint64_t InstAddr = TextSecAddr + MCInstOffset;
@@ -252,7 +270,7 @@ const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
 
   // Start to search the corresponding symbol.
   const SymbolRef *Symbol = nullptr;
-  const RelocationRef *DynReloc = MR->getDynRelocAtOffset(Offset);
+  const RelocationRef *DynReloc = AMR.getDynRelocAtOffset(Offset);
   if (DynReloc && (DynReloc->getType() == ELF::R_ARM_ABS32 ||
                    DynReloc->getType() == ELF::R_ARM_GLOB_DAT))
     Symbol = &*DynReloc->getSymbol();
@@ -276,14 +294,14 @@ const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
     }
   }
 
-  LLVMContext &LCTX = M->getContext();
+  LLVMContext &LCTX = MR.getModule()->getContext();
   if (Symbol != nullptr) {
     // If the symbol is found.
     Expected<StringRef> SymNameVal = Symbol->getName();
     assert(SymNameVal &&
            "Failed to find symbol associated with dynamic relocation.");
     auto SymName = SymNameVal.get();
-    GlobVal = M->getGlobalVariable(SymName);
+    GlobVal = MR.getModule()->getGlobalVariable(SymName);
     if (GlobVal == nullptr) {
       DataRefImpl SymImpl = Symbol->getRawDataRefImpl();
       auto SymbOrErr = ObjFile->getSymbol(SymImpl);
@@ -355,7 +373,7 @@ const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
           GlobInit = ConstantInt::get(GlobValTy, InitVal);
         }
 
-        auto GlobVar = new GlobalVariable(*M, GlobValTy, false /* isConstant */,
+        auto GlobVar = new GlobalVariable(*MR.getModule(), GlobValTy, false /* isConstant */,
                                           Linkage, GlobInit, SymName);
         uint64_t Align = 32;
         switch (SymSz) {
@@ -380,7 +398,7 @@ const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
     }
   } else {
     // If can not find the corresponding symbol.
-    GlobVal = MR->getRODataValueAt(Offset);
+    GlobVal = AMR.getRODataValueAt(Offset);
     if (GlobVal == nullptr) {
       uint64_t Index = Offset - TextSecAddr;
       if (MCIR->getMCInstAt(Index) != MCIR->const_mcinstr_end()) {
@@ -389,7 +407,7 @@ const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
         // Find if a global value associated with symbol name is already
         // created
         StringRef LocalNameRef(LocalName);
-        GlobVal = M->getGlobalVariable(LocalNameRef);
+        GlobVal = MR.getModule()->getGlobalVariable(LocalNameRef);
         if (GlobVal == nullptr) {
           MCInstOrData MD = MCIR->getMCInstAt(Index)->second;
           uint32_t Data = MD.getData();
@@ -418,18 +436,18 @@ const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
                   }
                 } while (c != '\0');
                 if (argNum != 0) {
-                  MR->collectRodataInstAddr(InstAddr);
-                  MR->fillInstArgMap(InstAddr, argNum + 1);
+                  AMR.collectRodataInstAddr(InstAddr);
+                  AMR.fillInstArgMap(InstAddr, argNum + 1);
                 }
                 StringRef ROStringRef(
                     reinterpret_cast<const char *>(RODataBegin));
                 Constant *StrConstant =
                     ConstantDataArray::getString(LCTX, ROStringRef);
                 auto GlobalStrConstVal = new GlobalVariable(
-                    *M, StrConstant->getType(), /* isConstant */ true,
+                    *MR.getModule(), StrConstant->getType(), /* isConstant */ true,
                     GlobalValue::PrivateLinkage, StrConstant, "RO-String");
                 // Record the mapping between offset and global value
-                MR->addRODataValueAt(GlobalStrConstVal, Offset);
+                AMR.addRODataValueAt(GlobalStrConstVal, Offset);
                 GlobVal = GlobalStrConstVal;
                 break;
               }
@@ -439,7 +457,7 @@ const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
           if (GlobVal == nullptr) {
             Type *ty = Type::getInt32Ty(LCTX);
             Constant *GlobInit = ConstantInt::get(ty, Data);
-            auto GlobVar = new GlobalVariable(*M, ty, /* isConstant */ true,
+            auto GlobVar = new GlobalVariable(*MR.getModule(), ty, /* isConstant */ true,
                                               GlobalValue::PrivateLinkage,
                                               GlobInit, LocalNameRef);
             MaybeAlign MA(32);
@@ -558,51 +576,4 @@ bool ARMMIRevising::reviseMI(MachineInstr &MInst) {
   return true;
 }
 
-bool ARMMIRevising::revise() {
-  bool rtn = false;
-  LLVM_DEBUG(dbgs() << "ARMMIRevising start.\n");
-
-  vector<MachineInstr *> RMVec;
-  for (MachineFunction::iterator mbbi = MF->begin(), mbbe = MF->end();
-       mbbi != mbbe; ++mbbi) {
-    for (MachineBasicBlock::iterator mii = mbbi->begin(), mie = mbbi->end();
-         mii != mie; ++mii) {
-      if (removeNeedlessInst(&*mii)) {
-        RMVec.push_back(&*mii);
-        rtn = true;
-      } else
-        rtn = reviseMI(*mii);
-    }
-  }
-
-  for (MachineInstr *PMI : RMVec)
-    PMI->eraseFromParent();
-
-  // For debugging.
-  LLVM_DEBUG(MF->dump());
-  LLVM_DEBUG(getCRF()->dump());
-  LLVM_DEBUG(dbgs() << "ARMMIRevising end.\n");
-
-  return rtn;
-}
-
-bool ARMMIRevising::runOnMachineFunction(MachineFunction &mf) {
-  bool rtn = false;
-  init();
-  rtn = revise();
-  return rtn;
-}
-
 #undef DEBUG_TYPE
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-FunctionPass *InitializeARMMIRevising(ARMModuleRaiser &mr) {
-  return new ARMMIRevising(mr);
-}
-
-#ifdef __cplusplus
-}
-#endif
