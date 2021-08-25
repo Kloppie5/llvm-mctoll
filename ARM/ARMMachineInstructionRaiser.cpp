@@ -48,8 +48,8 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   cjt.run(&MF, F);
   cjt.getJTlist(jtList);
 
-  ARMArgumentRaiser ar(rmr);
-  ar.run(&MF, F);
+  // ARMArgumentRaiser ar(rmr);
+  // ar.run(&MF, F);
 
   ARMFrameBuilder fb(rmr);
   fb.run(&MF, F);
@@ -57,7 +57,7 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   ARMInstructionSplitting ispl(rmr);
   ispl.run(&MF, F);
 
-  ARMSelectionDAGISelBypassPass sdis(rmr, jtList);
+  ARMSelectionDAGISelBypassPass sdis(rmr, jtList, MCIR);
   sdis.run(&MF, F);
 
   return true;

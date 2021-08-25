@@ -34,6 +34,8 @@ public:
   DenseMap<unsigned, SDNode *> RegValMap;
   /// The actual map of physical registers to IR Values.
   DenseMap<unsigned, Value *> RegValueMap;
+  /// Frame map
+  DenseMap<unsigned, Value *> FrameIndexValueMap;
   /// Set the Val for Register mapping.
   DenseMap<unsigned, Value *> ArgValMap;
   /// Set register for SDNode mapping.

@@ -23,7 +23,7 @@ void FunctionRaisingInfo::set(ARMModuleRaiser &mr, Function &fn,
   MR = &mr;
   Fn = &fn;
   MF = &mf;
-  CTX = dag->getContext();
+  CTX = &mr.getModule()->getContext();
   DLT = &MR->getModule()->getDataLayout();
 
   DefaultType = Type::getIntNTy(*CTX, DLT->getPointerSizeInBits());
