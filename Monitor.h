@@ -162,13 +162,13 @@ class Monitor {
             if (linebreak) OS << "\n";
                 for (unsigned i = 0, e = OldMIs.size(); i != e; ++i) {
                     OS << "  ";
-                    Monitor::printMachineInstr(OldMIs[i], true, OS);
+                    Monitor::printMachineInstr(OldMIs[i], linebreak, OS);
                 }
-            OS << " ] into [ ";
+            OS << " ] => [ ";
             if (linebreak) OS << "\n";
                 for (unsigned i = 0, e = NewMIs.size(); i != e; ++i) {
                     OS << "  ";
-                    Monitor::printMachineInstr(NewMIs[i], true, OS);
+                    Monitor::printMachineInstr(NewMIs[i], linebreak, OS);
                 }
             OS << " ]";
             if (linebreak) OS << "\n";

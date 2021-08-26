@@ -20,6 +20,7 @@
 #include "ARMInstructionSplitting.h"
 #include "ARMMIRevising.h"
 #include "ARMModuleRaiser.h"
+#include "ARMPredicateCleanupPass.h"
 #include "ARMSelectionDAGISel.h"
 #include "ARMSelectionDAGISelBypassPass.h"
 
@@ -34,6 +35,9 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   const ARMModuleRaiser *amr = dyn_cast<ARMModuleRaiser>(MR);
   assert(amr != nullptr && "The ARM module raiser is not initialized!");
   ARMModuleRaiser &rmr = const_cast<ARMModuleRaiser &>(*amr);
+
+  ARMPredicateCleanupPass pcp(rmr);
+  pcp.run(&MF, F);
 
   // inplace MachineFunction, adds to ModuleRaiser
   ARMMIRevising mir(rmr, MCIR);
