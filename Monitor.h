@@ -52,6 +52,7 @@ class Monitor {
             const TargetSubtargetInfo& STI = MI->getMF()->getSubtarget();
             const TargetRegisterInfo* TRI = STI.getRegisterInfo();
             const TargetInstrInfo* TII = STI.getInstrInfo();
+            const MachineRegisterInfo* MRI = &MI->getMF()->getRegInfo();
 
             OS << TII->getName(MI->getOpcode());
             OS << " (" << MI->getOpcode() << ") {";
@@ -59,12 +60,22 @@ class Monitor {
                 OS << " ";
                 const MachineOperand& MO = MI->getOperand(i);
                 switch(MO.getType()) {
-                    case MachineOperand::MO_Register:
-                        if (MO.getReg() < TRI->getNumRegs())
-                            OS << "Reg:" << TRI->getName(MO.getReg());
-                        else
-                            OS << "InvalidReg:" << MO.getReg();
-                        break;
+                    case MachineOperand::MO_Register: {
+                        Register Reg = MO.getReg();
+                        if (Register::isStackSlot(Reg))
+                            OS << "SREG:SS#" << Register::stackSlot2Index(Reg);
+                        else if (Register::isVirtualRegister(Reg)) {
+                            StringRef Name = MRI->getVRegName(Reg);
+                            if (Name != "")
+                                OS << "VREG:%" << Name;
+                            else
+                                OS << "VREG:%" << Register::virtReg2Index(Reg);
+                        } else if (Reg < TRI->getNumRegs()) {
+                            OS << "REG:$";
+                            printLowerCase(TRI->getName(Reg), OS);
+                        } else
+                            OS << "InvalidReg:" << Reg;
+                    } break;
                     case MachineOperand::MO_Immediate:
                         OS << "Imm:" << MO.getImm();
                         break;
@@ -142,6 +153,17 @@ class Monitor {
                 Monitor::printMCInst(Inst, false);
             OS << " ] to [ ";
                 Monitor::printMachineInstr(MI, false);
+            OS << " ]";
+            if (linebreak) OS << "\n";
+        }
+        static void event_SplitMachineInstr ( const MachineInstr* MI, std::vector<MachineInstr *> NewMIs, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
+            OS << "Split [ ";
+                Monitor::printMachineInstr(MI, false, OS);
+            OS << " ] into [ \n";
+                for (unsigned i = 0, e = NewMIs.size(); i != e; ++i) {
+                    OS << "  ";
+                    Monitor::printMachineInstr(NewMIs[i], true, OS);
+                }
             OS << " ]";
             if (linebreak) OS << "\n";
         }
