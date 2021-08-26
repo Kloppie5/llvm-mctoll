@@ -7,6 +7,8 @@
 #include "MCInstRaiser.h"
 #include "ModuleRaiser.h"
 
+using namespace llvm;
+
 /// This is responsible for constructing DAG, and does instruction selection on
 /// the DAG, eventually emits SDNodes of the DAG to LLVM IRs.
 class ARMSelectionDAGISelBypassPass : public RaiserPass {
@@ -18,6 +20,9 @@ public:
 
   Value *getOperandValue(MachineInstr *MI, int OpIdx, Type *Ty = nullptr);
   void setOperandValue(MachineInstr *MI, int OpIdx, Value *v);
+
+  Value *ARMCCToValue(int Cond, BasicBlock *BB);
+ 
   bool raiseMachineInstr(BasicBlock *BB, MachineInstr *MI);
 
 private:
