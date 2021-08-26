@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARMInstructionSplitting.h"
+#include "Monitor.h"
 #include "ARMBaseInstrInfo.h"
 #include "ARMSubtarget.h"
 #include "MCTargetDesc/ARMAddressingModes.h"
@@ -21,6 +22,7 @@
 
 using namespace llvm;
 
+// TODO: Overhaul
 bool ARMInstructionSplitting::run(MachineFunction *MF, Function *F) {
   TII = MF->getSubtarget<ARMSubtarget>().getInstrInfo();
   MRI = &MF->getRegInfo();
@@ -336,6 +338,12 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTRPreImm(MachineBasicBlock &MBB,
   }
   fst.addMetadata(N_fst);
   sec.addMetadata(N_sec);
+
+  std::vector<MachineInstr *> NewMIs;
+  NewMIs.push_back(fst.getInstr());
+  NewMIs.push_back(sec.getInstr());
+  Monitor::event_SplitMachineInstr(&MI, NewMIs);
+
   return &MI;
 }
 
@@ -411,6 +419,12 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTRPre(MachineBasicBlock &MBB,
     fst.addMetadata(N_fst);
     sec.addMetadata(N_sec);
     thd.addMetadata(N_thd);
+
+    std::vector<MachineInstr *> NewMIs;
+    NewMIs.push_back(fst.getInstr());
+    NewMIs.push_back(sec.getInstr());
+    NewMIs.push_back(thd.getInstr());
+    Monitor::event_SplitMachineInstr(&MI, NewMIs);
   } else if (ShiftOpc == ARM::RRX) {
     // Split LDRxxx/STRxxx<c><q> <Rt>, [<Rn>, +/-<Rm>, RRX]!
     MachineInstrBuilder fst =
@@ -441,6 +455,12 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTRPre(MachineBasicBlock &MBB,
     fst.addMetadata(N_fst);
     sec.addMetadata(N_sec);
     thd.addMetadata(N_thd);
+
+    std::vector<MachineInstr *> NewMIs;
+    NewMIs.push_back(fst.getInstr());
+    NewMIs.push_back(sec.getInstr());
+    NewMIs.push_back(thd.getInstr());
+    Monitor::event_SplitMachineInstr(&MI, NewMIs);
   } else {
     // Split LDRxxx/STRxxx<c><q> <Rt>, [<Rn>, +/-<Rm>]!
     MachineInstrBuilder fst =
@@ -466,6 +486,11 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTRPre(MachineBasicBlock &MBB,
     }
     fst.addMetadata(N_fst);
     sec.addMetadata(N_sec);
+
+    std::vector<MachineInstr *> NewMIs;
+    NewMIs.push_back(fst.getInstr());
+    NewMIs.push_back(sec.getInstr());
+    Monitor::event_SplitMachineInstr(&MI, NewMIs);
   }
   return &MI;
 }
@@ -517,6 +542,12 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTRImm(MachineBasicBlock &MBB,
   }
   fst.addMetadata(N_fst);
   sec.addMetadata(N_sec);
+
+  std::vector<MachineInstr *> NewMIs;
+  NewMIs.push_back(fst.getInstr());
+  NewMIs.push_back(sec.getInstr());
+  Monitor::event_SplitMachineInstr(&MI, NewMIs);
+
   return &MI;
 }
 
@@ -585,6 +616,12 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTR(MachineBasicBlock &MBB,
     fst.addMetadata(N_fst);
     sec.addMetadata(N_sec);
     thd.addMetadata(N_thd);
+
+    std::vector<MachineInstr *> NewMIs;
+    NewMIs.push_back(fst.getInstr());
+    NewMIs.push_back(sec.getInstr());
+    NewMIs.push_back(thd.getInstr());
+    Monitor::event_SplitMachineInstr(&MI, NewMIs);
   } else if (ShiftOpc == ARM::RRX) {
     // Split LDRxxx/STRxxx Rd, [Rn, Rm, rrx]
     MachineInstrBuilder fst =
@@ -613,6 +650,12 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTR(MachineBasicBlock &MBB,
     fst.addMetadata(N_fst);
     sec.addMetadata(N_sec);
     thd.addMetadata(N_thd);
+
+    std::vector<MachineInstr *> NewMIs;
+    NewMIs.push_back(fst.getInstr());
+    NewMIs.push_back(sec.getInstr());
+    NewMIs.push_back(thd.getInstr());
+    Monitor::event_SplitMachineInstr(&MI, NewMIs);
   } else {
     // Split LDRxxx/STRxxx Rd, [Rn, Rm]
     MachineInstrBuilder fst =
@@ -636,6 +679,11 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTR(MachineBasicBlock &MBB,
     }
     fst.addMetadata(N_fst);
     sec.addMetadata(N_sec);
+
+    std::vector<MachineInstr *> NewMIs;
+    NewMIs.push_back(fst.getInstr());
+    NewMIs.push_back(sec.getInstr());
+    Monitor::event_SplitMachineInstr(&MI, NewMIs);
   }
   return &MI;
 }
@@ -685,6 +733,11 @@ MachineInstr *ARMInstructionSplitting::splitCommon(MachineBasicBlock &MBB,
           }
           sec.addReg(VReg);
           sec.addMetadata(N_sec);
+
+          std::vector<MachineInstr *> NewMIs;
+          NewMIs.push_back(fst.getInstr());
+          NewMIs.push_back(sec.getInstr());
+          Monitor::event_SplitMachineInstr(&MI, NewMIs);
         } else {
           if (ShiftOpc == ARM::RRX) {
             // Split 'opcode Rd, Rn, Rm, RRX'
@@ -702,6 +755,11 @@ MachineInstr *ARMInstructionSplitting::splitCommon(MachineBasicBlock &MBB,
             }
             sec.addReg(VReg);
             sec.addMetadata(N_sec);
+
+            std::vector<MachineInstr *> NewMIs;
+            NewMIs.push_back(fst.getInstr());
+            NewMIs.push_back(sec.getInstr());
+            Monitor::event_SplitMachineInstr(&MI, NewMIs);
           } else {
             // Split 'opcode Rd, Rn, Rm, shift Rs'
 
@@ -722,6 +780,11 @@ MachineInstr *ARMInstructionSplitting::splitCommon(MachineBasicBlock &MBB,
             }
             sec.addReg(VReg);
             sec.addMetadata(N_sec);
+
+            std::vector<MachineInstr *> NewMIs;
+            NewMIs.push_back(fst.getInstr());
+            NewMIs.push_back(sec.getInstr());
+            Monitor::event_SplitMachineInstr(&MI, NewMIs);
           }
         }
         mi = &MI;
@@ -785,6 +848,11 @@ MachineInstr *ARMInstructionSplitting::splitS(MachineBasicBlock &MBB,
             sec.addImm(ARMCC::AL);
             addOperand(sec, MI.getOperand(idx));
             sec.addMetadata(N_sec);
+
+            std::vector<MachineInstr *> NewMIs;
+            NewMIs.push_back(fst.getInstr());
+            NewMIs.push_back(sec.getInstr());
+            Monitor::event_SplitMachineInstr(&MI, NewMIs);
           } else {
             if (ShiftOpc == ARM::RRX) {
               // Split opcode<s> Rd, Rn, Rm, RRX.
@@ -806,6 +874,11 @@ MachineInstr *ARMInstructionSplitting::splitS(MachineBasicBlock &MBB,
               sec.addImm(ARMCC::AL);
               addOperand(sec, MI.getOperand(idx));
               sec.addMetadata(N_sec);
+
+              std::vector<MachineInstr *> NewMIs;
+              NewMIs.push_back(fst.getInstr());
+              NewMIs.push_back(sec.getInstr());
+              Monitor::event_SplitMachineInstr(&MI, NewMIs);
             } else {
               // Split opcode<s> Rd, Rn, Rm, shift Rs.
               // The new MI updates CPSR.
@@ -828,6 +901,11 @@ MachineInstr *ARMInstructionSplitting::splitS(MachineBasicBlock &MBB,
               sec.addImm(ARMCC::AL);
               addOperand(sec, MI.getOperand(idx));
               sec.addMetadata(N_sec);
+
+              std::vector<MachineInstr *> NewMIs;
+              NewMIs.push_back(fst.getInstr());
+              NewMIs.push_back(sec.getInstr());
+              Monitor::event_SplitMachineInstr(&MI, NewMIs);
             }
           }
         } else {
@@ -853,6 +931,11 @@ MachineInstr *ARMInstructionSplitting::splitS(MachineBasicBlock &MBB,
             sec.addImm(ARMCC::AL);
             addOperand(sec, MI.getOperand(idx));
             sec.addMetadata(N_sec);
+
+            std::vector<MachineInstr *> NewMIs;
+            NewMIs.push_back(fst.getInstr());
+            NewMIs.push_back(sec.getInstr());
+            Monitor::event_SplitMachineInstr(&MI, NewMIs);
           } else {
             if (ShiftOpc == ARM::RRX) {
               // Split opcode<s> Rd, Rn, Rm, rrx.
@@ -873,6 +956,11 @@ MachineInstr *ARMInstructionSplitting::splitS(MachineBasicBlock &MBB,
               sec.addImm(ARMCC::AL);
               addOperand(sec, MI.getOperand(idx));
               sec.addMetadata(N_sec);
+
+              std::vector<MachineInstr *> NewMIs;
+              NewMIs.push_back(fst.getInstr());
+              NewMIs.push_back(sec.getInstr());
+              Monitor::event_SplitMachineInstr(&MI, NewMIs);
             } else {
               // Split opcode<s> Rd, Rn, Rm, shift Rs.
 
@@ -896,6 +984,11 @@ MachineInstr *ARMInstructionSplitting::splitS(MachineBasicBlock &MBB,
               sec.addImm(ARMCC::AL);
               addOperand(sec, MI.getOperand(idx));
               sec.addMetadata(N_sec);
+
+              std::vector<MachineInstr *> NewMIs;
+              NewMIs.push_back(fst.getInstr());
+              NewMIs.push_back(sec.getInstr());
+              Monitor::event_SplitMachineInstr(&MI, NewMIs);
             }
           }
         }
@@ -956,6 +1049,11 @@ MachineInstr *ARMInstructionSplitting::splitC(MachineBasicBlock &MBB,
           sec.addImm(MI.getOperand(idx - 1).getImm());
           addOperand(sec, MI.getOperand(idx));
           sec.addMetadata(N_sec);
+
+          std::vector<MachineInstr *> NewMIs;
+          NewMIs.push_back(fst.getInstr());
+          NewMIs.push_back(sec.getInstr());
+          Monitor::event_SplitMachineInstr(&MI, NewMIs);
         } else {
           if (ShiftOpc == ARM::RRX) {
             // Split opcode<c> Rd, Rn, Rm, RRX
@@ -977,6 +1075,11 @@ MachineInstr *ARMInstructionSplitting::splitC(MachineBasicBlock &MBB,
             sec.addImm(MI.getOperand(idx - 1).getImm());
             addOperand(sec, MI.getOperand(idx));
             sec.addMetadata(N_sec);
+
+            std::vector<MachineInstr *> NewMIs;
+            NewMIs.push_back(fst.getInstr());
+            NewMIs.push_back(sec.getInstr());
+            Monitor::event_SplitMachineInstr(&MI, NewMIs);
           } else {
             // Split opcode<c> Rd, Rn, Rm, shift Rs
             // The new MI checks CondCode.
@@ -1000,6 +1103,11 @@ MachineInstr *ARMInstructionSplitting::splitC(MachineBasicBlock &MBB,
             sec.addImm(MI.getOperand(idx - 1).getImm());
             addOperand(sec, MI.getOperand(idx));
             sec.addMetadata(N_sec);
+
+            std::vector<MachineInstr *> NewMIs;
+            NewMIs.push_back(fst.getInstr());
+            NewMIs.push_back(sec.getInstr());
+            Monitor::event_SplitMachineInstr(&MI, NewMIs);
           }
         }
         mi = &MI;
@@ -1063,6 +1171,11 @@ MachineInstr *ARMInstructionSplitting::splitCS(MachineBasicBlock &MBB,
             addOperand(sec, MI.getOperand(idx));
             addOperand(sec, MI.getOperand(idx + 1));
             sec.addMetadata(N_sec);
+
+            std::vector<MachineInstr *> NewMIs;
+            NewMIs.push_back(fst.getInstr());
+            NewMIs.push_back(sec.getInstr());
+            Monitor::event_SplitMachineInstr(&MI, NewMIs);
           } else {
             if (ShiftOpc == ARM::RRX) {
               // Split opcode<s><c> Rd, Rn, Rm, RRX
@@ -1084,6 +1197,11 @@ MachineInstr *ARMInstructionSplitting::splitCS(MachineBasicBlock &MBB,
               addOperand(sec, MI.getOperand(idx));
               addOperand(sec, MI.getOperand(idx + 1));
               sec.addMetadata(N_sec);
+
+              std::vector<MachineInstr *> NewMIs;
+              NewMIs.push_back(fst.getInstr());
+              NewMIs.push_back(sec.getInstr());
+              Monitor::event_SplitMachineInstr(&MI, NewMIs);
             } else {
               // Split opcode<s><c> Rd, Rn, Rm, shift Rs
 
@@ -1109,6 +1227,11 @@ MachineInstr *ARMInstructionSplitting::splitCS(MachineBasicBlock &MBB,
               addOperand(sec, MI.getOperand(idx));
               addOperand(sec, MI.getOperand(idx + 1));
               sec.addMetadata(N_sec);
+
+              std::vector<MachineInstr *> NewMIs;
+              NewMIs.push_back(fst.getInstr());
+              NewMIs.push_back(sec.getInstr());
+              Monitor::event_SplitMachineInstr(&MI, NewMIs);
             }
           }
         } else {
@@ -1139,6 +1262,11 @@ MachineInstr *ARMInstructionSplitting::splitCS(MachineBasicBlock &MBB,
             addOperand(sec, MI.getOperand(idx));
             addOperand(sec, MI.getOperand(idx + 1));
             sec.addMetadata(N_sec);
+
+            std::vector<MachineInstr *> NewMIs;
+            NewMIs.push_back(fst.getInstr());
+            NewMIs.push_back(sec.getInstr());
+            Monitor::event_SplitMachineInstr(&MI, NewMIs);
           } else {
             if (ShiftOpc == ARM::RRX) {
               // Split opcode<s><c> Rd, Rn, Rm, RRX
@@ -1160,6 +1288,11 @@ MachineInstr *ARMInstructionSplitting::splitCS(MachineBasicBlock &MBB,
               addOperand(sec, MI.getOperand(idx));
               addOperand(sec, MI.getOperand(idx + 1));
               sec.addMetadata(N_sec);
+
+              std::vector<MachineInstr *> NewMIs;
+              NewMIs.push_back(fst.getInstr());
+              NewMIs.push_back(sec.getInstr());
+              Monitor::event_SplitMachineInstr(&MI, NewMIs);
             } else {
               // Split opcode<s><c> Rd, Rn, Rm, shift Rs
 
@@ -1187,6 +1320,11 @@ MachineInstr *ARMInstructionSplitting::splitCS(MachineBasicBlock &MBB,
               addOperand(sec, MI.getOperand(idx));
               addOperand(sec, MI.getOperand(idx + 1));
               sec.addMetadata(N_sec);
+
+              std::vector<MachineInstr *> NewMIs;
+              NewMIs.push_back(fst.getInstr());
+              NewMIs.push_back(sec.getInstr());
+              Monitor::event_SplitMachineInstr(&MI, NewMIs);
             }
           }
         }

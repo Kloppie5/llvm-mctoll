@@ -17,12 +17,9 @@
 
 Function *ModuleRaiser::getRaisedFunctionAt(uint64_t Index) const {
   int64_t TextSecAddr = getTextSectionAddress();
-  for (auto MFR : mfRaiserVector) {
-    dbgs() << "Function: " << MFR->getRaisedFunction()->getName() << "\n";
-    dbgs() << "@ " << (MFR->getMCInstRaiser()->getFuncStart() + TextSecAddr) << "\n";
+  for (auto MFR : mfRaiserVector)
     if ((MFR->getMCInstRaiser()->getFuncStart() + TextSecAddr) == Index)
       return MFR->getRaisedFunction();
-  }
 
   return nullptr;
 }
