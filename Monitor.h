@@ -156,10 +156,16 @@ class Monitor {
             OS << " ]";
             if (linebreak) OS << "\n";
         }
-        static void event_SplitMachineInstr ( const MachineInstr* MI, std::vector<MachineInstr *> NewMIs, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
-            OS << "Split [ ";
-                Monitor::printMachineInstr(MI, false, OS);
-            OS << " ] into [\n";
+        static void event_MachineInstrsToMachineInstrs ( const char* prefix, std::vector<MachineInstr *> OldMIs, std::vector<MachineInstr *> NewMIs, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
+            OS << prefix;
+            OS << " [ ";
+            if (linebreak) OS << "\n";
+                for (unsigned i = 0, e = OldMIs.size(); i != e; ++i) {
+                    OS << "  ";
+                    Monitor::printMachineInstr(OldMIs[i], true, OS);
+                }
+            OS << " ] into [ ";
+            if (linebreak) OS << "\n";
                 for (unsigned i = 0, e = NewMIs.size(); i != e; ++i) {
                     OS << "  ";
                     Monitor::printMachineInstr(NewMIs[i], true, OS);
