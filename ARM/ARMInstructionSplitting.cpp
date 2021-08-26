@@ -297,7 +297,7 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTRPreImm(MachineBasicBlock &MBB,
   MachineOperand &Rd = MI.getOperand(0);
   MachineOperand &Rn = MI.getOperand(1);
   MachineOperand &Rm = MI.getOperand(2);
-  MachineOperand &Rs = MI.getOperand(3);
+  MachineOperand &imm = MI.getOperand(3);
 
   // MI is splitted into 2 instructions.
   // So get Metadata for the first instruction.
@@ -313,10 +313,10 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTRPreImm(MachineBasicBlock &MBB,
   unsigned newOpc = getLoadStoreOpcode(MI.getOpcode());
   // Add Rm,[Rm, #imm]!
   MachineInstrBuilder fst =
-      BuildMI(MBB, MI, MI.getDebugLoc(), TII->get(ARM::ADDrr));
+      BuildMI(MBB, MI, MI.getDebugLoc(), TII->get(ARM::ADDri));
   addOperand(fst, Rm, true);
   addOperand(fst, Rm);
-  fst.addImm(Rs.getImm());
+  fst.addImm(imm.getImm());
 
   MachineInstrBuilder sec =
       BuildMI(MBB, MI, MI.getDebugLoc(), TII->get(newOpc));
@@ -503,7 +503,7 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTRImm(MachineBasicBlock &MBB,
   unsigned VReg = MRI->createVirtualRegister(&ARM::GPRnopcRegClass);
   MachineOperand &Rd = MI.getOperand(0);
   MachineOperand &Rn = MI.getOperand(1);
-  MachineOperand &Rm = MI.getOperand(2);
+  MachineOperand &imm = MI.getOperand(2);
 
   // The MI is splitted into 2 instructions.
   // Get Metadata for the first instruction.
@@ -519,9 +519,9 @@ MachineInstr *ARMInstructionSplitting::splitLDRSTRImm(MachineBasicBlock &MBB,
   unsigned newOpc = getLoadStoreOpcode(MI.getOpcode());
   // Add VReg, Rn, #imm
   MachineInstrBuilder fst =
-      BuildMI(MBB, MI, MI.getDebugLoc(), TII->get(ARM::ADDrr), VReg);
+      BuildMI(MBB, MI, MI.getDebugLoc(), TII->get(ARM::ADDri), VReg);
   addOperand(fst, Rn);
-  fst.addImm(Rm.getImm());
+  fst.addImm(imm.getImm());
 
   // LDRxxx/STRxxx Rd, [VReg]
   MachineInstrBuilder sec =
