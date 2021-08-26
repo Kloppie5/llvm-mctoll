@@ -159,7 +159,7 @@ class Monitor {
         static void event_SplitMachineInstr ( const MachineInstr* MI, std::vector<MachineInstr *> NewMIs, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
             OS << "Split [ ";
                 Monitor::printMachineInstr(MI, false, OS);
-            OS << " ] into [ \n";
+            OS << " ] into [\n";
                 for (unsigned i = 0, e = NewMIs.size(); i != e; ++i) {
                     OS << "  ";
                     Monitor::printMachineInstr(NewMIs[i], true, OS);
@@ -167,11 +167,14 @@ class Monitor {
             OS << " ]";
             if (linebreak) OS << "\n";
         }
-        static void event_RaisedInstruction ( const MachineInstr* MI, const Instruction* Instr, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
+        static void event_RaisedInstruction ( const MachineInstr* MI, std::vector<Instruction* > Instrs, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
             OS << "Raised [ ";
                 Monitor::printMachineInstr(MI, false);
-            OS << " ] to [ ";
-                Monitor::printInstruction(Instr, false);
+            OS << " ] to [\n";
+                for (unsigned i = 0, e = Instrs.size(); i != e; ++i) {
+                    OS << "  ";
+                    Monitor::printInstruction(Instrs[i], true, OS);
+                }
             OS << " ]";
             if (linebreak) OS << "\n";
         }
