@@ -282,9 +282,9 @@ void ARMFrameBuilder::searchStackObjects(MachineFunction *MF, Function *F) {
     pmi->getOperand(1).ChangeToFrameIndex(pse->ObjectIndex);
     unsigned opc = pmi->getOpcode();
     if (isHalfwordOP(opc)) {
-      pmi->RemoveOperand(3);
+      pmi->getOperand(3).setImm(0);
     }
-    pmi->RemoveOperand(2);
+    pmi->getOperand(2).setImm(0);
   }
 
   for (auto &e : SPOffElementMap)

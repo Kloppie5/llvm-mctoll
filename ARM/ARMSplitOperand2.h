@@ -1,4 +1,4 @@
-//===- ARMInstructionSplitting.h --------------------------------*- C++ -*-===//
+//===- ARMSplitOperand2.h --------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,13 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file contains the declaration of ARMInstructionSplitting class for use
+// This file contains the declaration of ARMSplitOperand2 class for use
 // by llvm-mctoll.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMINSTRUCTIONSPLITTING_H
-#define LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMINSTRUCTIONSPLITTING_H
+#ifndef LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMSPLITOPERAND2_H
+#define LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMSPLITOPERAND2_H
 
 #include "RaiserPass.h"
 
@@ -25,9 +25,9 @@ using namespace llvm;
 /// Some instructions which their patterns include more than one operations,
 /// like 'add r0, r1, r0, asr r1' or 'ldr r0, [r1, #4]', are splitted into
 /// multiple MIs at here.
-class ARMInstructionSplitting : public RaiserPass {
+class ARMSplitOperand2 : public RaiserPass {
 public:
-  ARMInstructionSplitting(ModuleRaiser &MR) : RaiserPass(MR) {};
+  ARMSplitOperand2(ModuleRaiser &MR) : RaiserPass(MR) {};
   bool run (MachineFunction *MF, Function *F) override;
 
 private:
@@ -55,4 +55,4 @@ private:
   LLVMContext *CTX;
 };
 
-#endif // LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMINSTRUCTIONSPLITTING_H
+#endif // LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMSPLITOPERAND2_H

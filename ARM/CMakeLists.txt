@@ -18,7 +18,7 @@ add_llvm_library(ARMRaiser
   ARMCreateJumpTable.cpp
   ARMArgumentRaiser.cpp
   ARMFrameBuilder.cpp
-  ARMInstructionSplitting.cpp
+  ARMSplitOperand2.cpp
   DAG/FunctionRaisingInfo.cpp
   DAG/DAGRaisingInfo.cpp
   DAG/DAGBuilder.cpp

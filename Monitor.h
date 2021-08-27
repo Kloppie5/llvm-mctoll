@@ -56,23 +56,28 @@ class Monitor {
 
             OS << TII->getName(MI->getOpcode());
             OS << " (" << MI->getOpcode() << ") {";
-            for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
+
+            const MCInstrDesc &MCID = MI->getDesc();
+            for (unsigned i = 0, e = MCID.getNumOperands(); i != e; ++i) {
+                // MCID.getNumOperands() is used instead of MI->getNumOperands()
+                // to force the supplied MachineInstr to be valid and skip
+                // any additional operands that may be added to the end of
+                // the MachineInstr.
                 OS << " ";
                 const MachineOperand& MO = MI->getOperand(i);
                 switch(MO.getType()) {
                     case MachineOperand::MO_Register: {
                         Register Reg = MO.getReg();
                         if (Register::isStackSlot(Reg))
-                            OS << "SREG:SS#" << Register::stackSlot2Index(Reg);
+                            OS << "SReg:SS#" << Register::stackSlot2Index(Reg);
                         else if (Register::isVirtualRegister(Reg)) {
                             StringRef Name = MRI->getVRegName(Reg);
                             if (Name != "")
-                                OS << "VREG:%" << Name;
+                                OS << "VReg:%" << Name;
                             else
-                                OS << "VREG:%" << Register::virtReg2Index(Reg);
+                                OS << "VReg:%" << Register::virtReg2Index(Reg);
                         } else if (Reg < TRI->getNumRegs()) {
-                            OS << "REG:$";
-                            printLowerCase(TRI->getName(Reg), OS);
+                            OS << "Reg:$" << TRI->getName(Reg);
                         } else
                             OS << "InvalidReg:" << Reg;
                     } break;
