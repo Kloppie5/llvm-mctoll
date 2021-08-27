@@ -39,12 +39,6 @@ private:
   MachineInstr *splitLDRSTRPre(MachineBasicBlock &MBB, MachineInstr &MI);
   MachineInstr *splitLDRSTRPreImm(MachineBasicBlock &MBB, MachineInstr &MI);
   MachineInstr *splitLDRSTRImm(MachineBasicBlock &MBB, MachineInstr &MI);
-  MachineInstr *splitCommon(MachineBasicBlock &MBB, MachineInstr &MI,
-                            unsigned newOpc);
-  MachineInstr *splitS(MachineBasicBlock &MBB, MachineInstr &MI,
-                       unsigned newOpc, int idx);
-  MachineInstr *splitC(MachineBasicBlock &MBB, MachineInstr &MI,
-                       unsigned newOpc, int idx);
   MachineInstr *splitCS(MachineBasicBlock &MBB, MachineInstr &MI,
                         unsigned newOpc, int idx);
   /// True if the ARM instruction performs Shift_C().

@@ -3,9 +3,9 @@
 
 # CHECK: ARMInstructionSplitting start
 # CHECK: %0:gprnopc = ASRi $r0, 2
-# CHECK-NEXT: $r0 = ADDrr $r1, %0:gprnopc, 14, $cpsr
-# CHECK-NEXT: %1:gprnopc = ASRi $r0, 2, 14, $cpsr
-# CHECK-NEXT: $r0 = EORrr $r1, %1:gprnopc, 14, $cpsr
+# CHECK-NEXT: $r0 = ADDrr $r1, %0:gprnopc
+# CHECK-NEXT: %1:gprnopc = ASRi $r0, 2
+# CHECK-NEXT: $r0 = EORrr $r1, %1:gprnopc
 # CHECK: ARMInstructionSplitting end
 
   .text
