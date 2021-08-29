@@ -1,19 +1,19 @@
 # RUN: clang -target arm -mfloat-abi=soft -c -o %t.o %s
 # RUN: llvm-mctoll -d -debug  %t.o 2>&1 | FileCheck %s
 
-# CHECK: ARMInstructionSplitting start
-# CHECK: %1:gprnopc = ADDrr $r0, $r1
-# CHECK-NEXT: STRi12 $r0, %1:gprnopc
-# CHECK-NEXT: %3:gprnopc = ADDrr $r0, $r1
-# CHECK-NEXT: $r0 = LDRi12 %3:gprnopc
-# CHECK: ARMInstructionSplitting end
+# CHECK: ARMInstrSplitter start
+# CHECK: %0:gprnopc = ADDrr $r0, $r1
+# CHECK-NEXT: STRi12 $r0, %0:gprnopc, 0
+# CHECK-NEXT: %1:gprnopc = ADDrr $r0, $r1
+# CHECK-NEXT: $r0 = LDRi12 %1:gprnopc, 0
+# CHECK: ARMInstrSplitter end
 
-# CHECK: ARMInstructionSplitting start
-# CHECK: %1:gprnopc = ADDrr $r0, $r1, 0, $cpsr
-# CHECK-NEXT: STRi12 $r0, %1:gprnopc, 0, $cpsr
-# CHECK-NEXT: %3:gprnopc = ADDrr $r0, $r1, 0, $cpsr
-# CHECK-NEXT: $r0 = LDRi12 %3:gprnopc, 0, $cpsr
-# CHECK: ARMInstructionSplitting end
+# CHECK: ARMInstrSplitter start
+# CHECK: %0:gprnopc = ADDrr $r0, $r1, 0, $cpsr
+# CHECK-NEXT: STRi12 $r0, %0:gprnopc, 0, 0, $cpsr
+# CHECK-NEXT: %1:gprnopc = ADDrr $r0, $r1, 0, $cpsr
+# CHECK-NEXT: $r0 = LDRi12 %1:gprnopc, 0, 0, $cpsr
+# CHECK: ARMInstrSplitter end
 
   .text
   .align 4

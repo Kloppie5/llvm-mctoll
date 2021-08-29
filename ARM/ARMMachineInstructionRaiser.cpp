@@ -17,7 +17,7 @@
 #include "ARMEliminatePrologEpilog.h"
 #include "ARMFrameBuilder.h"
 #include "ARMFunctionPrototype.h"
-#include "ARMSplitOperand2.h"
+#include "ARMInstrSplitter.h"
 #include "ARMMIRevising.h"
 #include "ARMModuleRaiser.h"
 #include "ARMSelectionDAGISel.h"
@@ -54,7 +54,7 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   ARMFrameBuilder fb(rmr);
   fb.run(&MF, F);
 
-  ARMSplitOperand2 ispl(rmr);
+  ARMInstrSplitter ispl(rmr);
   ispl.run(&MF, F);
 
   ARMSelectionDAGISelBypassPass sdis(rmr, jtList, MCIR);

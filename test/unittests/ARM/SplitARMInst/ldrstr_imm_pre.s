@@ -1,21 +1,21 @@
 # RUN: clang -target arm -mfloat-abi=soft -c -o %t.o %s
 # RUN: llvm-mctoll -d -debug  %t.o 2>&1 | FileCheck %s
 
-# CHECK: ARMInstructionSplitting start
+# CHECK: ARMInstrSplitter start
 # CHECK: $r1 = ADDri $r1, 4
-# CHECK-NEXT: STRi12 $r0, $r1
+# CHECK-NEXT: STRi12 $r0, $r1, 0
 # CHECK-NEXT: $r1 = SUBri $r1, 4
 # CHECK-NEXT: $r1 = ADDri $r1, 4
-# CHECK-NEXT: $r0 = LDRi12 $r1
-# CHECK: ARMInstructionSplitting end
+# CHECK-NEXT: $r0 = LDRi12 $r1, 0
+# CHECK: ARMInstrSplitter end
 
-# CHECK: ARMInstructionSplitting start
+# CHECK: ARMInstrSplitter start
 # CHECK: $r1 = ADDri $r1, 4, 0, $cpsr
-# CHECK-NEXT: STRi12 $r0, $r1, 0, $cpsr
+# CHECK-NEXT: STRi12 $r0, $r1, 0, 0, $cpsr
 # CHECK-NEXT: $r1 = SUBri $r1, 4, 0, $cpsr
 # CHECK-NEXT: $r1 = ADDri $r1, 4, 0, $cpsr
-# CHECK-NEXT: $r0 = LDRi12 $r1, 0, $cpsr
-# CHECK: ARMInstructionSplitting end
+# CHECK-NEXT: $r0 = LDRi12 $r1, 0, 0, $cpsr
+# CHECK: ARMInstrSplitter end
 
   .text
   .align 4

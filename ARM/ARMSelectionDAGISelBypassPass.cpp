@@ -4,6 +4,7 @@
 #include "FunctionRaisingInfo.h"
 #include "Monitor.h"
 
+#include "ARMModuleRaiser.h"
 #include "ARMSubtarget.h"
 #include "llvm/IR/Instruction.h"
 
@@ -93,7 +94,6 @@ bool ARMSelectionDAGISelBypassPass::precondition(MachineFunction *MF, Function *
         case ARM::STRBrs: // 1907
         case ARM::STRH: // 1915
         case ARM::STRi12: // 1926
-        case ARM::STRrs: // 1927
         case ARM::SUBri: // 1928
         case ARM::SUBrr: // 1929
         case ARM::SVC: // 1932
@@ -121,16 +121,10 @@ bool ARMSelectionDAGISelBypassPass::run(MachineFunction *MF, Function *F) {
   LLVM_DEBUG(dbgs() << "ARMSelectionDAGISelBypassPass start.\n");
 
   // Add arguments to FuncInfo->RegValueMap
-  
   if (F->arg_size() > 0) FuncInfo->RegValueMap[ARM::R0] = F->getArg(0);
   if (F->arg_size() > 1) FuncInfo->RegValueMap[ARM::R1] = F->getArg(1);
   if (F->arg_size() > 2) FuncInfo->RegValueMap[ARM::R2] = F->getArg(2);
   if (F->arg_size() > 3) FuncInfo->RegValueMap[ARM::R3] = F->getArg(3);
-  if (F->arg_size() > 4) FuncInfo->FrameIndexValueMap[0] = F->getArg(4);
-  if (F->arg_size() > 5) FuncInfo->FrameIndexValueMap[1] = F->getArg(5);
-  if (F->arg_size() > 6) FuncInfo->FrameIndexValueMap[2] = F->getArg(6);
-  if (F->arg_size() > 7) FuncInfo->FrameIndexValueMap[3] = F->getArg(7);
-  if (F->arg_size() > 8) assert(false && "Fix arguments");
 
   { // Create NZCV store instructions
     BasicBlock *bb = &F->getEntryBlock();
@@ -146,7 +140,7 @@ bool ARMSelectionDAGISelBypassPass::run(MachineFunction *MF, Function *F) {
   for (MachineBasicBlock &MBB : *MF) {
     BasicBlock *BB = FuncInfo->getOrCreateBasicBlock(&MBB);
     for (MachineInstr &MI : MBB) {
-      raiseMachineInstr(BB, &MI);
+      raiseMachineInstr(&MBB, &MI, BB);
     }
 
     // If the current function has return value, records relationship between
@@ -183,6 +177,8 @@ bool ARMSelectionDAGISelBypassPass::run(MachineFunction *MF, Function *F) {
 
   FuncInfo->clear();
 
+  LLVM_DEBUG(MF->dump());
+  LLVM_DEBUG(F->dump());
   LLVM_DEBUG(dbgs() << "ARMSelectionDAGISelBypassPass end.\n");
 
   return true;
@@ -190,15 +186,33 @@ bool ARMSelectionDAGISelBypassPass::run(MachineFunction *MF, Function *F) {
 
 Value *ARMSelectionDAGISelBypassPass::getOperandValue(MachineInstr *MI, int OpIdx, Type *Ty /* = nullptr */) {
   switch(MI->getOperand(OpIdx).getType()) {
-    case MachineOperand::MO_Register:
-      dbgs() << "Get register operand: " << MI->getOperand(OpIdx).getReg() << " | " << FuncInfo->RegValueMap[MI->getOperand(OpIdx).getReg()] << "\n";
-      return FuncInfo->RegValueMap[MI->getOperand(OpIdx).getReg()];
-    case MachineOperand::MO_FrameIndex:
-      dbgs() << "Get frame index operand: " << MI->getOperand(OpIdx).getIndex() << " | " << FuncInfo->FrameIndexValueMap[MI->getOperand(OpIdx).getIndex()] << "\n";
-      return FuncInfo->FrameIndexValueMap[MI->getOperand(OpIdx).getIndex()];
-    case MachineOperand::MO_Immediate:
-      dbgs() << "Get immediate operand: " << MI->getOperand(OpIdx).getImm() << "\n";
-      return ConstantInt::get(Ty, MI->getOperand(OpIdx).getImm());
+    case MachineOperand::MO_Register: {
+      Value *v = FuncInfo->RegValueMap[MI->getOperand(OpIdx).getReg()];
+      if (!v)
+        Monitor::ERROR("Operand register has no assigned value.");
+      return v;
+    }
+    case MachineOperand::MO_FrameIndex: {
+      int frameindex = MI->getOperand(OpIdx).getIndex();
+      Value *v = FuncInfo->FrameIndexValueMap[frameindex];
+      if (v)
+        return v;
+      
+      if (frameindex < (int) FuncInfo->Fn->arg_size()-4) { // ArgIndex
+        v = FuncInfo->Fn->getArg(frameindex);
+        FuncInfo->FrameIndexValueMap[frameindex] = v;
+        return v;
+      } else { // StackIndex
+        const MachineFrameInfo &MFI = MI->getMF()->getFrameInfo();
+        v = const_cast<AllocaInst *>(MFI.getObjectAllocation(frameindex)); // TODO: propagate const qualifier instead of const_cast
+        FuncInfo->FrameIndexValueMap[frameindex] = v;
+        return v;
+      }
+    }
+    case MachineOperand::MO_Immediate: {
+      Value *v = ConstantInt::get(Ty, MI->getOperand(OpIdx).getImm());
+      return v;
+    }
     default:
       llvm_unreachable("Unsupported operand type!");
   }
@@ -207,11 +221,9 @@ void ARMSelectionDAGISelBypassPass::setOperandValue(MachineInstr *MI, int OpIdx,
   switch(MI->getOperand(OpIdx).getType()) {
     case MachineOperand::MO_Register:
       FuncInfo->RegValueMap[MI->getOperand(OpIdx).getReg()] = v;
-      dbgs() << "Set register value: " << MI->getOperand(OpIdx).getReg() << " to " << v << "\n";
       break;
     case MachineOperand::MO_FrameIndex:
       FuncInfo->FrameIndexValueMap[MI->getOperand(OpIdx).getIndex()] = v;
-      dbgs() << "Set frame index value: " << MI->getOperand(OpIdx).getIndex() << " to " << v << "\n";
       break;
     default:
       llvm_unreachable("Unsupported operand type!");
@@ -317,9 +329,23 @@ Value *ARMSelectionDAGISelBypassPass::ARMCCToValue(int Cond, BasicBlock *BB, std
   }
 }
 
-bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(BasicBlock *BB, MachineInstr *MI) {
-  Monitor::printMachineInstr(MI, true, dbgs());
+bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, MachineInstr *MI, BasicBlock *BB) {
+  Monitor::printMachineInstr(MI);
   std::vector<Instruction *> Instrs;
+
+  
+  // TODO: Fix and move to instruction splitting
+  int idx = MI->findFirstPredOperandIdx();
+  if (idx != -1) {
+    dbgs() << "Predicate Operand: " << idx << "\n";	
+    ARMCC::CondCodes CC = (ARMCC::CondCodes)MI->getOperand(idx).getImm();
+    // Register CPSR = MI->getOperand(idx+1).getReg();
+    if (CC != ARMCC::AL) {
+      Monitor::ERROR("Condition code not supported");
+      //Instruction *Cond = getCond(CC, CPSR, BB, Instrs);
+    }
+  }
+
   switch (MI->getOpcode()) {
     default: {
       auto OS = WithColor(errs(), HighlightColor::Warning);
@@ -458,21 +484,27 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(BasicBlock *BB, MachineIns
       Instruction *Instr = CallInst::Create(Func, ArgVals, "", BB); Instrs.push_back(Instr);
     } break;
     case ARM::BX_RET: { // 718 | BX_RET = BX LR = Return
-      Instruction *Instr = ReturnInst::Create(BB->getContext(), BB); Instrs.push_back(Instr);
+      // BX_RET return is delayed to the end of the function;
+      // we don't need to do anything here.
+      /*
+      Type *RetTy = F->getReturnType();
+      Instruction *Instr;
+      if (RetTy->isVoidTy())
+        Instr = ReturnInst::Create(BB->getContext(), BB);
+      else if (RetTy->isIntegerTy())
+        Instr = ReturnInst::Create(BB->getContext(), FuncInfo->RegValueMap[ARM::R0], BB);
+      else assert(false && "Unsupported return type");
+      Instrs.push_back(Instr);
+      */
     } break;
-    case ARM::Bcc: { // 720 | Bcc <label> <cond?> => Branch      
-      MachineBasicBlock *MBB = FuncInfo->MBBMap[BB];
-      BasicBlock *DefaultBB = FuncInfo->getOrCreateBasicBlock(*MBB->succ_begin());
-      if (MI->getNumOperands() >= 3
-       && MI->getOperand(2).isReg()
-       && MI->getOperand(2).getReg() == ARM::CPSR) {
-        int CC = MI->getOperand(1).getImm();
-        Value *Cmp = ARMCCToValue(CC, BB, Instrs);
-        BasicBlock *CondBB = FuncInfo->getOrCreateBasicBlock(&*std::next(MBB->getIterator()));
-        Instruction *Instr = BranchInst::Create(DefaultBB, CondBB, Cmp, BB); Instrs.push_back(Instr);
-      } else { // Bcc <label> => Branch
-        Instruction *Instr = BranchInst::Create(DefaultBB, BB); Instrs.push_back(Instr);
-      }
+    case ARM::Bcc: { // 720 | Bcc <label> <cond?> => Branch
+      // int offset = MI->getOperand(0).getImm();
+      //BasicBlock *Target = getBasicBlockFromOffset(offset);
+      //if (Target == nullptr) {
+      //  dbgs() << "Bcc: Target not found.\n";
+      //  return false;
+      //}
+      assert(false && "ARM::Bcc not yet implemented; get stuff from FuncInfo");  
     } break;
     case ARM::CMNri: { // 755 | CMN{S}<c> <Rn>, #<imm> => Rn + Imm
       assert(false && "ARM::CMNri not yet implemented; requires NZCV flags");
@@ -581,12 +613,20 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(BasicBlock *BB, MachineIns
     case ARM::LDR_PRE_REG: { // 860 | LDR_PRE_REG<c> <Rt>, [<Rn>, <Rm>] => Rt = *(Rn + Rm)
       assert(false && "ARM::LDR_PRE_REG not yet implemented");
     } break;
-    case ARM::LDRi12: { // 862 | LDR<c> <Rt>, [#<imm>] => Rt = *(imm)
+    case ARM::LDRi12: { // 862 | LDR<c> Rt, [Rn, imm] / LDR<c> Rt, [Ptr]
       Type *Ty = Type::getInt32Ty(BB->getContext());
-      Value *Ptr = getOperandValue(MI, 1, Ty);
+      Value *Rn = getOperandValue(MI, 1);
 
-      // Instr = new LoadInst(Ty, Ptr, "LDRi12", BB);
-      setOperandValue(MI, 0, Ptr);
+      if (Rn->getType()->isPointerTy() && MI->getOperand(2).getImm() == 0) {
+        Instruction *Instr = new LoadInst(Ty, Rn, "LDRi12", BB); Instrs.push_back(Instr);
+        setOperandValue(MI, 0, Instr);
+      } else {
+        Value *imm = getOperandValue(MI, 2, Ty);
+        Instruction *Ptr = BinaryOperator::Create(Instruction::Add, Rn, imm, "STRPtr", BB); Instrs.push_back(Ptr);
+        Instruction *Cast = new IntToPtrInst(Ptr, PointerType::get(Ty, 0), "STRCast", BB); Instrs.push_back(Cast);
+        Instruction *Instr = new LoadInst(Ty, Cast, "LDRi12", BB); Instrs.push_back(Instr);
+        setOperandValue(MI, 0, Instr);
+      }
     } break;
     case ARM::LDRrs: { // 863 | LDR<c> <Rt>, [<Rn>, <Rm>] => Rt = *(Rn + Rm)
       assert(false && "Shifted instructions should have been removed in an earlier pass.");
@@ -600,21 +640,23 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(BasicBlock *BB, MachineIns
     case ARM::MOVTi16: { // 871 | MOVT<c> <Rd>, #<imm> => Rd = imm
       assert(false && "ARM::MOVTi16 not yet implemented");
     } break;
-    case ARM::MOVi: { // 872 | MOV<c> <Rd>, #<imm> => Rd = imm
+    case ARM::MOVi: { // 872 | MOV<c> <Rd>, #<imm> => Rd = imm + 0
       Type *Ty = Type::getInt32Ty(BB->getContext());
       Value *imm = getOperandValue(MI, 1, Ty);
       Value *zero = ConstantInt::get(Ty, 0);
-
+      // Uses an Instruction because of other parts of the backend that rely on
       Instruction *Instr = BinaryOperator::Create(Instruction::Add, imm, zero, "MOVi", BB); Instrs.push_back(Instr);
       setOperandValue(MI, 0, Instr);
     } break;
     case ARM::MOVi16: { // 873 | MOV<c> <Rd>, #<imm> => Rd = imm
       assert(false && "ARM::MOVi16 not yet implemented");
     } break;
-    case ARM::MOVr: { // 874 | MOV<c> <Rd>, Operand2 => Rd = Operand2
+    case ARM::MOVr: { // 874 | MOV<c> <Rd>, Operand2 => Rd = Operand2 + 0
       Value *Op2 = getOperandValue(MI, 1);
-      
-      setOperandValue(MI, 0, Op2);
+      Value *zero = ConstantInt::get(Op2->getType(), 0);
+      // Uses an Instruction because of other parts of the backend that rely on
+      Instruction *Instr = BinaryOperator::Create(Instruction::Add, Op2, zero, "MOVi", BB); Instrs.push_back(Instr);
+      setOperandValue(MI, 0, Instr);
     } break;
     case ARM::MOVsi: { // 876 | MOV<c> <Rd>, #<imm> => Rd = imm
       assert(false && "ARM::MOVsi not yet implemented");
@@ -691,15 +733,19 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(BasicBlock *BB, MachineIns
     case ARM::STR_PRE_IMM: { // 1920 | STRH<c> <Rt>, [<Rn>, #<imm>]!
       assert(false && "ARM::STR_PRE_IMM not yet implemented");
     } break;
-    case ARM::STRi12: { // 1926 | STR<c> <Rt>, [<Rn>, #<imm>]!
+    case ARM::STRi12: { // 1926 | STR<c> Rt, [Rn, imm] / STR<c> Rt, [Ptr]
+      Type *Ty = Type::getInt32Ty(BB->getContext());
       Value *Rt = getOperandValue(MI, 0);
-      // Value *Ptr = getOperandValue(MI, 1);
+      Value *Rn = getOperandValue(MI, 1);
 
-      // Instr = new StoreInst(Rt, Ptr, false, BB);
-      setOperandValue(MI, 1, Rt);
-    } break;
-    case ARM::STRrs: { // 1927 | STR<c> <Rt>, [<Rn>, #<imm>]!
-      assert(false && "ARM::STRrs not yet implemented");
+      if (Rn->getType()->isPointerTy() && MI->getOperand(2).getImm() == 0) {
+        Instruction *Instr = new StoreInst(Rt, Rn, false, BB); Instrs.push_back(Instr);
+      } else {
+        Value *imm = getOperandValue(MI, 2, Ty);
+        Instruction *Ptr = BinaryOperator::Create(Instruction::Add, Rn, imm, "STRPtr", BB); Instrs.push_back(Ptr);
+        Instruction *Cast = new IntToPtrInst(Ptr, PointerType::get(Ty, 0), "STRCast", BB); Instrs.push_back(Cast);
+        Instruction *Instr = new StoreInst(Rt, Cast, false, BB); Instrs.push_back(Instr);
+      }
     } break;
     case ARM::SUBri: { // 1928 | SUB<c> <Rd>, <Rn>, #<imm> => Rd = Rn - imm
       Value *Rn = getOperandValue(MI, 1);

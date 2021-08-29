@@ -1,41 +1,41 @@
 # RUN: clang -target arm -mfloat-abi=soft -c -o %t.o %s
 # RUN: llvm-mctoll -d -debug  %t.o 2>&1 | FileCheck %s
 
-# CHECK: ARMInstructionSplitting start
+# CHECK: ARMInstrSplitter start
 # CHECK: %0:gprnopc = LSLi $r1, 2
 # CHECK-NEXT: $r2 = ADDrr $r2, %0:gprnopc
 # CHECK-NEXT: STRi12 $r0, $r2
 # CHECK-NEXT: %1:gprnopc = LSLi $r1, 2
 # CHECK-NEXT: $r3 = ADDrr $r3, %1:gprnopc
 # CHECK-NEXT: $r0 = LDRi12 $r3
-# CHECK: ARMInstructionSplitting end
+# CHECK: ARMInstrSplitter end
 
-# CHECK: ARMInstructionSplitting start
-# CHECK: %0:gprnopc = LSLi $r1, 2, 0, $cpsr
+# CHECK: ARMInstrSplitter start
+# CHECK: %0:gprnopc = LSLi $r1, 2
 # CHECK-NEXT: $r2 = ADDrr $r2, %0:gprnopc, 0, $cpsr
-# CHECK-NEXT: STRi12 $r0, $r2, 0, $cpsr
+# CHECK-NEXT: STRi12 $r0, $r2, 0, 0, $cpsr
 # CHECK-NEXT: %1:gprnopc = LSLi $r1, 2, 0, $cpsr
 # CHECK-NEXT: $r3 = ADDrr $r3, %1:gprnopc, 0, $cpsr
-# CHECK-NEXT: $r0 = LDRi12 $r3, 0, $cpsr
-# CHECK: ARMInstructionSplitting end
+# CHECK-NEXT: $r0 = LDRi12 $r3, 0, 0, $cpsr
+# CHECK: ARMInstrSplitter end
 
-# CHECK: ARMInstructionSplitting start
-# CHECK: %0:gprnopc = RRX $r1, <{{0x[0-9a-f]+}}>, implicit $cpsr
+# CHECK: ARMInstrSplitter start
+# CHECK: %0:gprnopc = RRX $r1
 # CHECK-NEXT: $r2 = ADDrr $r2, %0:gprnopc
-# CHECK-NEXT: STRi12 $r0, $r2
-# CHECK-NEXT: %1:gprnopc = RRX $r1, <{{0x[0-9a-f]+}}>, implicit $cpsr
+# CHECK-NEXT: STRi12 $r0, $r2, 0
+# CHECK-NEXT: %1:gprnopc = RRX $r1
 # CHECK-NEXT: $r3 = ADDrr $r3, %1:gprnopc
-# CHECK-NEXT: $r0 = LDRi12 $r3
-# CHECK: ARMInstructionSplitting end
+# CHECK-NEXT: $r0 = LDRi12 $r3, 0
+# CHECK: ARMInstrSplitter end
 
-# CHECK: ARMInstructionSplitting start
-# CHECK: %0:gprnopc = RRX $r1, <{{0x[0-9a-f]+}}>, implicit $cpsr
+# CHECK: ARMInstrSplitter start
+# CHECK: %0:gprnopc = RRX $r1
 # CHECK-NEXT: $r2 = ADDrr $r2, %0:gprnopc, 0, $cpsr
-# CHECK-NEXT: STRi12 $r0, $r2, 0, $cpsr
-# CHECK-NEXT: %1:gprnopc = RRX $r1, <{{0x[0-9a-f]+}}>, implicit $cpsr
+# CHECK-NEXT: STRi12 $r0, $r2, 0, 0, $cpsr
+# CHECK-NEXT: %1:gprnopc = RRX $r1
 # CHECK-NEXT: $r3 = ADDrr $r3, %1:gprnopc, 0, $cpsr
-# CHECK-NEXT: $r0 = LDRi12 $r3, 0, $cpsr
-# CHECK: ARMInstructionSplitting end
+# CHECK-NEXT: $r0 = LDRi12 $r3, 0, 0, $cpsr
+# CHECK: ARMInstrSplitter end
 
   .text
   .align 4

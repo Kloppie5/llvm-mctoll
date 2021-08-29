@@ -1,12 +1,12 @@
 # RUN: clang -target arm -mfloat-abi=soft -c -o %t.o %s
 # RUN: llvm-mctoll -d -debug  %t.o 2>&1 | FileCheck %s
 
-# CHECK: ARMInstructionSplitting start
-# CHECK: %0:gprnopc = ASRi $r0, 2, 0, $cpsr
+# CHECK: ARMInstrSplitter start
+# CHECK: %0:gprnopc = ASRi $r0, 2
 # CHECK-NEXT: $r0 = ADDrr $r1, %0:gprnopc, 0, $cpsr, $cpsr
-# CHECK-NEXT: %1:gprnopc = ASRi $r0, 2, 0, $cpsr, $cpsr
+# CHECK-NEXT: %1:gprnopc = ASRi $r0, 2
 # CHECK-NEXT: $r0 = EORrr $r1, %1:gprnopc, 0, $cpsr, $cpsr
-# CHECK: ARMInstructionSplitting end
+# CHECK: ARMInstrSplitter end
 
   .text
   .align 4

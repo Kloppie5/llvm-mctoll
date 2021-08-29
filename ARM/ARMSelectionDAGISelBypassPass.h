@@ -23,7 +23,7 @@ public:
 
   Value *ARMCCToValue(int Cond, BasicBlock *BB, std::vector<Instruction *> &Instrs);
  
-  bool raiseMachineInstr(BasicBlock *BB, MachineInstr *MI);
+  bool raiseMachineInstr(MachineBasicBlock *MBB, MachineInstr *MI, BasicBlock *BB);
 
 private:
   FunctionRaisingInfo *FuncInfo;
