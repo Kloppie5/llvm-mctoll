@@ -90,6 +90,32 @@ class Monitor {
                     case MachineOperand::MO_FrameIndex:
                         OS << "FI:" << MO.getIndex();
                         break;
+                    case MachineOperand::MO_ConstantPoolIndex:
+                        OS << "CPI:" << MO.getIndex();
+                        break;
+                    case MachineOperand::MO_JumpTableIndex:
+                        OS << "JTI:" << MO.getIndex();
+                        break;
+                    case MachineOperand::MO_GlobalAddress:
+                        OS << "GA:" << MO.getGlobal()->getName();
+                        break;
+                    case MachineOperand::MO_ExternalSymbol:
+                        OS << "ES:" << MO.getSymbolName();
+                        break;
+                    case MachineOperand::MO_BlockAddress:
+                        OS << "BA:" << MO.getBlockAddress();
+                        break;
+                    case MachineOperand::MO_Metadata:
+                        OS << "MD:" << MO.getMetadata();
+                        break;
+                    case MachineOperand::MO_RegisterMask:
+                        OS << "Mask:";
+                        for (const unsigned *Mask = MO.getRegMask(); *Mask; ++Mask)
+                            OS << " " << TRI->getName(*Mask);
+                        break;
+                    case MachineOperand::MO_MCSymbol:
+                        OS << "Sym:" << MO.getMCSymbol();
+                        break;
                     default:
                         OS << "{";
                         MO.print(OS, TRI);
