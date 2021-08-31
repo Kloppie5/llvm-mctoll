@@ -142,38 +142,7 @@ bool ARMSelectionDAGISelBypassPass::run(MachineFunction *MF, Function *F) {
     for (MachineInstr &MI : MBB) {
       raiseMachineInstr(&MBB, &MI, BB);
     }
-
-    // If the current function has return value, records relationship between
-    // BasicBlock and each Value *which is mapped with R0. In order to record
-    // the return Value *of each exit BasicBlock.
-    Type *RTy = FuncInfo->Fn->getReturnType();
-    if (RTy != nullptr && !RTy->isVoidTy() && MBB.succ_size() == 0) {
-      Instruction *TInst = dyn_cast<Instruction>(FuncInfo->RegValueMap[ARM::R0]);
-      assert(TInst && "A def R0 was pointed to a non-instruction!!!");
-      BasicBlock *TBB = TInst->getParent();
-      FuncInfo->RetValMap[TBB] = TInst;
-    }
   }
-
-  // Add an additional exit BasicBlock, all of original return BasicBlocks
-  // will branch to this exit BasicBlock. This will lead to the function has
-  // one and only exit. If the function has return value, this help return
-  // R0.
-  BasicBlock *LBB = FuncInfo->getOrCreateBasicBlock();
-
-  if (F->getReturnType()) {
-    PHINode *LPHI = PHINode::Create(F->getReturnType(),
-                                    FuncInfo->RetValMap.size(), "", LBB);
-    for (auto Pair : FuncInfo->RetValMap)
-      LPHI->addIncoming(Pair.second, Pair.first);
-
-    ReturnInst::Create(F->getContext(), LPHI, LBB);
-  } else
-    ReturnInst::Create(F->getContext(), LBB);
-
-  for (auto &FBB : F->getBasicBlockList())
-    if (FBB.getTerminator() == nullptr)
-      BranchInst::Create(LBB, &FBB);
 
   FuncInfo->clear();
 
@@ -230,6 +199,7 @@ void ARMSelectionDAGISelBypassPass::setOperandValue(MachineInstr *MI, int OpIdx,
   }
 }
 
+// TODO: Move CC to separate pass.
 Value *ARMSelectionDAGISelBypassPass::ARMCCToValue(int Cond, BasicBlock *BB, std::vector<Instruction *> &Instrs) {
   LLVMContext &Ctx = BB->getContext();
   // Why do ICmpInst constructors put &InsertBefore/&InsertAtEnd as the first
@@ -238,88 +208,88 @@ Value *ARMSelectionDAGISelBypassPass::ARMCCToValue(int Cond, BasicBlock *BB, std
     default:
       llvm_unreachable("Unknown condition code!");
     case ARMCC::EQ: { // Z = 1
-      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "Z", BB); Instrs.push_back(Z);
-      Instruction *ZS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z , ConstantInt::getTrue(Ctx), "ZS"); Instrs.push_back(ZS);
+      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[1], "Z", BB); Instrs.push_back(Z);
+      Instruction *ZS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getTrue(Ctx), "ZS"); Instrs.push_back(ZS);
       return ZS;
     } break;
     case ARMCC::NE: { // Z = 0
-      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "Z", BB); Instrs.push_back(Z);
-      Instruction *ZC = new ICmpInst(*BB, ICmpInst::ICMP_NE, Z , ConstantInt::getFalse(Ctx), "ZC"); Instrs.push_back(ZC);
+      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[1], "Z", BB); Instrs.push_back(Z);
+      Instruction *ZC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getFalse(Ctx), "ZC"); Instrs.push_back(ZC);
       return ZC;
     } break;
     case ARMCC::HS: { // C = 1
-      Instruction *C = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[1], "C", BB); Instrs.push_back(C);
-      Instruction *CS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, C , ConstantInt::getTrue(Ctx), "CS"); Instrs.push_back(CS);
+      Instruction *C = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[2], "C", BB); Instrs.push_back(C);
+      Instruction *CS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, C, ConstantInt::getTrue(Ctx), "CS"); Instrs.push_back(CS);
       return CS;
     } break;
     case ARMCC::LO: { // C = 0
-      Instruction *C = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[1], "C", BB); Instrs.push_back(C);
-      Instruction *CC = new ICmpInst(*BB, ICmpInst::ICMP_NE, C , ConstantInt::getFalse(Ctx), "CC"); Instrs.push_back(CC);
+      Instruction *C = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[2], "C", BB); Instrs.push_back(C);
+      Instruction *CC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, C, ConstantInt::getFalse(Ctx), "CC"); Instrs.push_back(CC);
       return CC;
     } break;
     case ARMCC::MI: { // N = 1
-      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[2], "N", BB); Instrs.push_back(N);
-      Instruction *NS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, N , ConstantInt::getTrue(Ctx), "NS"); Instrs.push_back(NS);
+      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "N", BB); Instrs.push_back(N);
+      Instruction *NS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, N, ConstantInt::getTrue(Ctx), "NS"); Instrs.push_back(NS);
       return NS;
     } break;
     case ARMCC::PL: { // N = 0
-      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[2], "N", BB); Instrs.push_back(N);
-      Instruction *NC = new ICmpInst(*BB, ICmpInst::ICMP_NE, N , ConstantInt::getFalse(Ctx), "NC"); Instrs.push_back(NC);
+      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "N", BB); Instrs.push_back(N);
+      Instruction *NC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, N, ConstantInt::getFalse(Ctx), "NC"); Instrs.push_back(NC);
       return NC;
     } break;
     case ARMCC::VS: { // V = 1
       Instruction *V = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[3], "V", BB); Instrs.push_back(V);
-      Instruction *VS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, V , ConstantInt::getTrue(Ctx), "VS"); Instrs.push_back(VS);
+      Instruction *VS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, V, ConstantInt::getTrue(Ctx), "VS"); Instrs.push_back(VS);
       return VS;
     } break;
     case ARMCC::VC: { // V = 0
       Instruction *V = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[3], "V", BB); Instrs.push_back(V);
-      Instruction *VC = new ICmpInst(*BB, ICmpInst::ICMP_NE, V , ConstantInt::getFalse(Ctx), "VC"); Instrs.push_back(VC);
+      Instruction *VC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, V, ConstantInt::getFalse(Ctx), "VC"); Instrs.push_back(VC);
       return VC;
     } break;
     case ARMCC::HI: { // C = 1 && Z = 0
-      Instruction *C = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[1], "C", BB); Instrs.push_back(C);
-      Instruction *CS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, C , ConstantInt::getTrue(Ctx), "CS"); Instrs.push_back(CS);
-      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "Z", BB); Instrs.push_back(Z);
-      Instruction *ZC = new ICmpInst(*BB, ICmpInst::ICMP_NE, Z , ConstantInt::getFalse(Ctx), "ZC"); Instrs.push_back(ZC);
+      Instruction *C = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[2], "C", BB); Instrs.push_back(C);
+      Instruction *CS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, C, ConstantInt::getTrue(Ctx), "CS"); Instrs.push_back(CS);
+      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[1], "Z", BB); Instrs.push_back(Z);
+      Instruction *ZC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getFalse(Ctx), "ZC"); Instrs.push_back(ZC);
       Instruction *HI = BinaryOperator::Create(Instruction::Add, CS, ZC, "HI", BB); Instrs.push_back(HI);
       return HI;
     } break;
     case ARMCC::LS: { // C = 0 || Z = 1
-      Instruction *C = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[1], "C", BB); Instrs.push_back(C);
-      Instruction *CC = new ICmpInst(*BB, ICmpInst::ICMP_NE, C , ConstantInt::getFalse(Ctx), "CC"); Instrs.push_back(CC);
-      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "Z", BB); Instrs.push_back(Z);
-      Instruction *ZS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z , ConstantInt::getTrue(Ctx), "ZS"); Instrs.push_back(ZS);
+      Instruction *C = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[2], "C", BB); Instrs.push_back(C);
+      Instruction *CC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, C, ConstantInt::getFalse(Ctx), "CC"); Instrs.push_back(CC);
+      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[1], "Z", BB); Instrs.push_back(Z);
+      Instruction *ZS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getTrue(Ctx), "ZS"); Instrs.push_back(ZS);
       Instruction *LS = BinaryOperator::Create(Instruction::Or, CC, ZS, "LS", BB); Instrs.push_back(LS);
       return LS;
     } break;
     case ARMCC::GE: { // N = V
-      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[2], "N", BB); Instrs.push_back(N);
+      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "N", BB); Instrs.push_back(N);
       Instruction *V = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[3], "V", BB); Instrs.push_back(V);
-      Instruction *GE = new ICmpInst(*BB, ICmpInst::ICMP_EQ, N , V, "GE"); Instrs.push_back(GE);
+      Instruction *GE = new ICmpInst(*BB, ICmpInst::ICMP_EQ, N, V, "GE"); Instrs.push_back(GE);
       return GE;
     } break;
     case ARMCC::LT: { // N != V
-      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[2], "N", BB); Instrs.push_back(N);
+      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "N", BB); Instrs.push_back(N);
       Instruction *V = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[3], "V", BB); Instrs.push_back(V);
-      Instruction *LT = new ICmpInst(*BB, ICmpInst::ICMP_NE, N , V, "LT"); Instrs.push_back(LT);
+      Instruction *LT = new ICmpInst(*BB, ICmpInst::ICMP_NE, N, V, "LT"); Instrs.push_back(LT);
       return LT;
     } break;
     case ARMCC::GT: { // Z = 0 && N = V
-      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "Z", BB); Instrs.push_back(Z);
-      Instruction *ZC = new ICmpInst(*BB, ICmpInst::ICMP_NE, Z , ConstantInt::getFalse(Ctx), "ZC"); Instrs.push_back(ZC);
-      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[2], "N", BB); Instrs.push_back(N);
+      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[1], "Z", BB); Instrs.push_back(Z);
+      Instruction *ZC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getFalse(Ctx), "ZC"); Instrs.push_back(ZC);
+      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "N", BB); Instrs.push_back(N);
       Instruction *V = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[3], "V", BB); Instrs.push_back(V);
-      Instruction *Sign = new ICmpInst(*BB, ICmpInst::ICMP_EQ, N , V, "S"); Instrs.push_back(Sign);
+      Instruction *Sign = new ICmpInst(*BB, ICmpInst::ICMP_EQ, N, V, "S"); Instrs.push_back(Sign);
       Instruction *GT = BinaryOperator::Create(Instruction::And, ZC, Sign, "GT", BB); Instrs.push_back(GT);
       return GT;
     } break;
     case ARMCC::LE: { // Z = 1 || N != V
-      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "Z", BB); Instrs.push_back(Z);
-      Instruction *ZS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z , ConstantInt::getTrue(Ctx), "ZS"); Instrs.push_back(ZS);
-      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[2], "N", BB); Instrs.push_back(N);
+      Instruction *Z = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[1], "Z", BB); Instrs.push_back(Z);
+      Instruction *ZS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getTrue(Ctx), "ZS"); Instrs.push_back(ZS);
+      Instruction *N = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[0], "N", BB); Instrs.push_back(N);
       Instruction *V = new LoadInst(Type::getInt1Ty(Ctx), FuncInfo->AllocaMap[3], "V", BB); Instrs.push_back(V);
-      Instruction *Sign = new ICmpInst(*BB, ICmpInst::ICMP_NE, N , V, "S"); Instrs.push_back(Sign);
+      Instruction *Sign = new ICmpInst(*BB, ICmpInst::ICMP_NE, N, V, "S"); Instrs.push_back(Sign);
       Instruction *LE = BinaryOperator::Create(Instruction::Or, ZS, Sign, "LE", BB); Instrs.push_back(LE);
       return LE;
     } break;
@@ -333,17 +303,13 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
   Monitor::printMachineInstr(MI);
   std::vector<Instruction *> Instrs;
 
-  
-  // TODO: Fix and move to instruction splitting
+    // TODO: Fix and move to instruction splitting
   int idx = MI->findFirstPredOperandIdx();
-  if (idx != -1) {
-    dbgs() << "Predicate Operand: " << idx << "\n";	
-    ARMCC::CondCodes CC = (ARMCC::CondCodes)MI->getOperand(idx).getImm();
-    // Register CPSR = MI->getOperand(idx+1).getReg();
-    if (CC != ARMCC::AL) {
-      Monitor::ERROR("Condition code not supported");
-      //Instruction *Cond = getCond(CC, CPSR, BB, Instrs);
-    }
+  ARMCC::CondCodes CC = (ARMCC::CondCodes)MI->getOperand(idx).getImm();
+  // Register CPSR = MI->getOperand(idx+1).getReg();
+  if (CC != ARMCC::AL) {
+    Monitor::ERROR("Condition code not supported");
+    //Instruction *Cond = getCond(CC, CPSR, BB, Instrs);
   }
 
   switch (MI->getOpcode()) {
@@ -482,36 +448,45 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
       }
 
       Instruction *Instr = CallInst::Create(Func, ArgVals, "", BB); Instrs.push_back(Instr);
+      if (Func->getReturnType()->isVoidTy()) {
+        // FuncInfo->RegValueMap[ARM::R0] = ConstantInt::get(Type::getInt32Ty(BB->getContext()), 0);
+      } else {
+        FuncInfo->RegValueMap[ARM::R0] = Instr;
+      }
     } break;
     case ARM::BX_RET: { // 718 | BX_RET = BX LR = Return
-      // BX_RET return is delayed to the end of the function;
-      // we don't need to do anything here.
-      /*
-      Type *RetTy = F->getReturnType();
-      Instruction *Instr;
-      if (RetTy->isVoidTy())
-        Instr = ReturnInst::Create(BB->getContext(), BB);
-      else if (RetTy->isIntegerTy())
-        Instr = ReturnInst::Create(BB->getContext(), FuncInfo->RegValueMap[ARM::R0], BB);
-      else assert(false && "Unsupported return type");
-      Instrs.push_back(Instr);
-      */
+      Type *RetTy = FuncInfo->Fn->getReturnType();
+
+      if (RetTy->isVoidTy()) {
+        Instruction *Instr = ReturnInst::Create(BB->getContext(), BB); Instrs.push_back(Instr);
+      } else if (RetTy->isIntegerTy()) {
+        Instruction *Instr = ReturnInst::Create(BB->getContext(), FuncInfo->RegValueMap[ARM::R0], BB); Instrs.push_back(Instr);
+      } else
+        assert(false && "Unsupported return type");
     } break;
     case ARM::Bcc: { // 720 | Bcc <label> <cond?> => Branch
-      // int offset = MI->getOperand(0).getImm();
-      //BasicBlock *Target = getBasicBlockFromOffset(offset);
-      //if (Target == nullptr) {
-      //  dbgs() << "Bcc: Target not found.\n";
-      //  return false;
-      //}
-      assert(false && "ARM::Bcc not yet implemented; get stuff from FuncInfo");  
+
+      BasicBlock *BranchBB = FuncInfo->getOrCreateBasicBlock(*MBB->succ_begin());
+      // The offset is ignored since it was used in an earlier part of the raising process
+      // to determine the successor basic blocks.
+
+      if (MI->getOperand(2).getReg() == 0) {
+        // Unconditional branch
+        Instruction *Branch = BranchInst::Create(BranchBB, BB); Instrs.push_back(Branch);
+      } else {
+        // Conditional branch
+        BasicBlock *NextBB = FuncInfo->getOrCreateBasicBlock(&*std::next(MBB->getIterator()));
+        Value *Cond = ARMCCToValue(MI->getOperand(1).getImm(), BB, Instrs);
+        Instruction *Branch = BranchInst::Create(BranchBB, NextBB, Cond, BB); Instrs.push_back(Branch);
+      }
     } break;
     case ARM::CMNri: { // 755 | CMN{S}<c> <Rn>, #<imm> => Rn + Imm
       assert(false && "ARM::CMNri not yet implemented; requires NZCV flags");
     } break;
     case ARM::CMPri: { // 759 | CMP{S}<c> <Rn>, #<imm> => Rn - Imm
+      Type *Ty = Type::getInt32Ty(BB->getContext());
       Value *Rn = getOperandValue(MI, 0);
-      Value *imm = getOperandValue(MI, 1);
+      Value *imm = getOperandValue(MI, 1, Ty);
 
       // Negative flag
       Instruction *CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, Rn, imm, "CMPriNeg", BB); Instrs.push_back(CmpNeg);
@@ -522,12 +497,16 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
       Instruction *StoreZero = new StoreInst(CmpZero, FuncInfo->AllocaMap[1], BB); Instrs.push_back(StoreZero);
 
       // Carry flag
-      Instruction *CmpCarry = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SGT, Rn, imm, "CMPriCarry", BB); Instrs.push_back(CmpCarry);
-      Instruction *StoreCarry = new StoreInst(CmpCarry, FuncInfo->AllocaMap[2], BB); Instrs.push_back(StoreCarry);
+      //Instruction *CmpCarry = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SGT, Rn, imm, "CMPriCarry", BB); Instrs.push_back(CmpCarry);
+      Instruction *CallUAdd = CallInst::Create(Intrinsic::getDeclaration(MR.getModule(), Intrinsic::uadd_with_overflow, Ty), {Rn, imm}, "UAddInstrinsic", BB); Instrs.push_back(CallUAdd);
+      Instruction *C_Flag = ExtractValueInst::Create(CallUAdd, 1, "CMPCFlag", BB); Instrs.push_back(C_Flag);
+      Instruction *StoreCarry = new StoreInst(C_Flag, FuncInfo->AllocaMap[2], BB); Instrs.push_back(StoreCarry);
 
       // Overflow flag
-      Instruction *CmpOverflow = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_UGT, Rn, imm, "CMPriOverflow", BB); Instrs.push_back(CmpOverflow);
-      Instruction *StoreOverflow = new StoreInst(CmpOverflow, FuncInfo->AllocaMap[3], BB); Instrs.push_back(StoreOverflow);
+      //Instruction *CmpOverflow = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_UGT, Rn, imm, "CMPriOverflow", BB); Instrs.push_back(CmpOverflow);
+      Instruction *CallSAdd = CallInst::Create(Intrinsic::getDeclaration(MR.getModule(), Intrinsic::sadd_with_overflow, Ty), {Rn, imm}, "SAddIntrinsic", BB); Instrs.push_back(CallSAdd);
+      Instruction *V_Flag = ExtractValueInst::Create(CallSAdd, 1, "CMPVFlag", BB); Instrs.push_back(V_Flag);
+      Instruction *StoreOverflow = new StoreInst(V_Flag, FuncInfo->AllocaMap[3], BB); Instrs.push_back(StoreOverflow);
     } break;
     case ARM::CMPrr: { // 760 | CMP{S}<c> <Rn>, <Rm> => Rn - Rm
       Value *Rn = getOperandValue(MI, 0);
@@ -613,20 +592,29 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
     case ARM::LDR_PRE_REG: { // 860 | LDR_PRE_REG<c> <Rt>, [<Rn>, <Rm>] => Rt = *(Rn + Rm)
       assert(false && "ARM::LDR_PRE_REG not yet implemented");
     } break;
-    case ARM::LDRi12: { // 862 | LDR<c> Rt, [Rn, imm] / LDR<c> Rt, [Ptr]
+    case ARM::LDRi12: { // 862 | LDR<c> Rt, [Rn, imm] => Rt = *(Rn + imm)
       Type *Ty = Type::getInt32Ty(BB->getContext());
+      Type *PtrTy = Ty->getPointerTo();
       Value *Rn = getOperandValue(MI, 1);
+      Value *Ptr = nullptr;
 
-      if (Rn->getType()->isPointerTy() && MI->getOperand(2).getImm() == 0) {
-        Instruction *Instr = new LoadInst(Ty, Rn, "LDRi12", BB); Instrs.push_back(Instr);
-        setOperandValue(MI, 0, Instr);
+      if (Rn->getType()->isPointerTy()
+       && MI->getOperand(2).isImm()
+       && MI->getOperand(2).getImm() == 0) {
+        Ptr = Rn;
       } else {
         Value *imm = getOperandValue(MI, 2, Ty);
-        Instruction *Ptr = BinaryOperator::Create(Instruction::Add, Rn, imm, "STRPtr", BB); Instrs.push_back(Ptr);
-        Instruction *Cast = new IntToPtrInst(Ptr, PointerType::get(Ty, 0), "STRCast", BB); Instrs.push_back(Cast);
-        Instruction *Instr = new LoadInst(Ty, Cast, "LDRi12", BB); Instrs.push_back(Instr);
-        setOperandValue(MI, 0, Instr);
+        Instruction *Add = BinaryOperator::Create(Instruction::Add, Rn, imm, "STRi12", BB); Instrs.push_back(Add);
+        Ptr = Add;
       }
+
+      if (!Ptr->getType()->isPointerTy()) {
+        Instruction *Cast = new IntToPtrInst(Ptr, PtrTy, "", BB); Instrs.push_back(Cast);
+        Ptr = Cast;
+      }
+
+      Instruction *Instr = new LoadInst(Ty, Ptr, "LDRi12", BB); Instrs.push_back(Instr);
+      setOperandValue(MI, 0, Instr);
     } break;
     case ARM::LDRrs: { // 863 | LDR<c> <Rt>, [<Rn>, <Rm>] => Rt = *(Rn + Rm)
       assert(false && "Shifted instructions should have been removed in an earlier pass.");
@@ -733,19 +721,27 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
     case ARM::STR_PRE_IMM: { // 1920 | STRH<c> <Rt>, [<Rn>, #<imm>]!
       assert(false && "ARM::STR_PRE_IMM not yet implemented");
     } break;
-    case ARM::STRi12: { // 1926 | STR<c> Rt, [Rn, imm] / STR<c> Rt, [Ptr]
+    case ARM::STRi12: { // 1926 | STR<c> Rt, [Rn, imm] => &*(Rn+imm) = Rt
       Type *Ty = Type::getInt32Ty(BB->getContext());
+      Type *PtrTy = PointerType::get(Ty, 0);
       Value *Rt = getOperandValue(MI, 0);
       Value *Rn = getOperandValue(MI, 1);
+      Value *imm = getOperandValue(MI, 2, Ty);
+      Value *Ptr = nullptr;
 
       if (Rn->getType()->isPointerTy() && MI->getOperand(2).getImm() == 0) {
-        Instruction *Instr = new StoreInst(Rt, Rn, false, BB); Instrs.push_back(Instr);
+        Ptr = Rn;
       } else {
-        Value *imm = getOperandValue(MI, 2, Ty);
-        Instruction *Ptr = BinaryOperator::Create(Instruction::Add, Rn, imm, "STRPtr", BB); Instrs.push_back(Ptr);
-        Instruction *Cast = new IntToPtrInst(Ptr, PointerType::get(Ty, 0), "STRCast", BB); Instrs.push_back(Cast);
-        Instruction *Instr = new StoreInst(Rt, Cast, false, BB); Instrs.push_back(Instr);
+        Instruction *Add = BinaryOperator::Create(Instruction::Add, Rn, imm, "STRi12", BB); Instrs.push_back(Add);
+        Ptr = Add;
       }
+
+      if (!Ptr->getType()->isPointerTy()) {
+        Instruction *Cast = new IntToPtrInst(Ptr, PtrTy, "", BB); Instrs.push_back(Cast);
+        Ptr = Cast;
+      }
+
+      Instruction *Instr = new StoreInst(Rt, Ptr, false, BB); Instrs.push_back(Instr);
     } break;
     case ARM::SUBri: { // 1928 | SUB<c> <Rd>, <Rn>, #<imm> => Rd = Rn - imm
       Value *Rn = getOperandValue(MI, 1);
