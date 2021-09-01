@@ -20,16 +20,27 @@
 using namespace llvm;
 
 class Monitor {
+    private:
+        Monitor(raw_ostream &OS) : OS(OS) {}
+
+        const MCInstrInfo *MCII;
+        const MCRegisterInfo *MCRI;
+
+        raw_ostream &OS;
+        std::vector<const char*> EventStack;
+
     public:
         static Monitor& getInstance() {
-            static Monitor instance;
+            static Monitor instance(WithColor(dbgs(), HighlightColor::Remark));
             return instance;
         }
+        Monitor ( Monitor const& ) = delete;
+        void operator= ( Monitor const& ) = delete;
 
         static void registerMCInstrInfo ( const MCInstrInfo *MCII ) { getInstance().MCII = MCII; }
         static void registerMCRegisterInfo ( const MCRegisterInfo *MCRI ) { getInstance().MCRI = MCRI; }
 
-        static void printMCInst ( const MCInst* Inst, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
+        static void printMCInst ( const MCInst* Inst, bool linebreak = true, raw_ostream &OS = getInstance().OS) {
             OS << getInstance().MCII->getName(Inst->getOpcode());
             OS << " (" << Inst->getOpcode() << ") {";
             for (unsigned i = 0, e = Inst->getNumOperands(); i != e; ++i) {
@@ -41,14 +52,20 @@ class Monitor {
                     else
                         OS << "InvalidReg:" << OP.getReg();
                 }
-                else if (OP.isImm()) OS << "Imm:" << OP.getImm();
-                else if (OP.isInst()) OS << "Inst:" << *OP.getInst();
-                else { OS << "{"; OP.print(OS, getInstance().MCRI); OS << "}"; }
+                else if (OP.isImm())
+                    OS << "Imm:" << OP.getImm();
+                else if (OP.isInst())
+                    OS << "Inst:" << *OP.getInst();
+                else {
+                    OS << "{";
+                    OP.print(OS, getInstance().MCRI);
+                    OS << "}";
+                }
             }
             OS << " }";
             if (linebreak) OS << "\n";
         }
-        static void printMachineInstr ( const MachineInstr* MI, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
+        static void printMachineInstr ( const MachineInstr* MI, bool linebreak = true, raw_ostream &OS = getInstance().OS) {
             const TargetSubtargetInfo& STI = MI->getMF()->getSubtarget();
             const TargetRegisterInfo* TRI = STI.getRegisterInfo();
             const TargetInstrInfo* TII = STI.getInstrInfo();
@@ -126,7 +143,7 @@ class Monitor {
             OS << " }";
             if (linebreak) OS << "\n";
         }
-        static void printInstruction ( const Instruction* Instr, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
+        static void printInstruction ( const Instruction* Instr, bool linebreak = true, raw_ostream &OS = getInstance().OS ) {
             if (Instr == nullptr) {
                 OS << "nullptr";
                 if (linebreak) OS << "\n";
@@ -161,59 +178,73 @@ class Monitor {
             OS << " }";
             if (linebreak) OS << "\n";
         }
-        static void printSDNode ( const SDNode* N, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
-            if (N->isMachineOpcode()) {
-                OS << "(" << getInstance().MCII->getName(N->getMachineOpcode()) << ")\n";
-            } else {
-                OS << "SDNode:";
-                N->dump();
+
+        static void event_start ( const char* name, raw_ostream &OS = getInstance().OS ) {
+            getInstance().EventStack.push_back(name);
+            OS << name << " {\n";
+        }
+        static void event_stateswitch ( raw_ostream &OS = getInstance().OS ) {
+            OS << "} => {\n";
+        }
+        static void event_end ( const char* name, raw_ostream &OS = getInstance().OS ) {
+            if (getInstance().EventStack.back() != name) {
+                OS << "EventStack mismatch: " << getInstance().EventStack.back() << " != " << name << "\n";
+                return;
             }
-            if (linebreak) OS << "\n";
+            OS << "}\n";
+            getInstance().EventStack.pop_back();
+        }
+        static raw_ostream& event_raw ( raw_ostream &OS = getInstance().OS ) {
+            OS << "  ";
+            return OS;
+        }
+        static void event_Bytes ( const ArrayRef<uint8_t> Bytes, raw_ostream &OS = getInstance().OS ) {
+            OS << "  ";
+            dumpBytes(Bytes, OS);
+        }
+        static void event_MCInst ( const MCInst *Inst, raw_ostream &OS = getInstance().OS ) {
+            OS << "  ";
+            printMCInst(Inst, true, OS);
+        }
+        static void event_MachineInstr ( const MachineInstr* MI, raw_ostream &OS = getInstance().OS ) {
+            OS << "  ";
+            printMachineInstr(MI, true, OS);
+        }
+        static void event_Instruction ( const Instruction* Instr, raw_ostream &OS = getInstance().OS ) {
+            OS << "  ";
+            printInstruction(Instr, true, OS);
         }
 
-        static void event_ParsedMCInst ( const ArrayRef<uint8_t> Bytes, const MCInst* Inst, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
-            OS << "Parsed [ ";
-                dumpBytes(Bytes, OS);
-            OS << " ] to [ ";
-                Monitor::printMCInst(Inst, false, OS);
-            OS << " ]";
-            if (linebreak) OS << "\n";
+        static void event_ParsedMCInst ( const ArrayRef<uint8_t> Bytes, const MCInst* Inst, raw_ostream &OS = getInstance().OS ) {
+            event_start("Parsed", OS);
+            event_Bytes(Bytes, OS);
+            event_stateswitch(OS);
+            event_MCInst(Inst, OS);
+            event_end("Parsed", OS);
         }
-        static void event_RaisedMachineInstr ( const MCInst* Inst, const MachineInstr* MI, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
-            OS << "Raised [ ";
-                Monitor::printMCInst(Inst, false);
-            OS << " ] to [ ";
-                Monitor::printMachineInstr(MI, false);
-            OS << " ]";
-            if (linebreak) OS << "\n";
+        static void event_RaisedMachineInstr ( const MCInst* Inst, const MachineInstr* MI, raw_ostream &OS = getInstance().OS ) {
+            event_start("Raised", OS);
+            event_MCInst(Inst, OS);
+            event_stateswitch(OS);
+            event_MachineInstr(MI, OS);
+            event_end("Raised", OS);
         }
-        static void event_MachineInstrsToMachineInstrs ( const char* prefix, std::vector<MachineInstr *> OldMIs, std::vector<MachineInstr *> NewMIs, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
-            OS << prefix;
-            OS << " [ ";
-            if (linebreak) OS << "\n";
-                for (unsigned i = 0, e = OldMIs.size(); i != e; ++i) {
-                    OS << "  ";
-                    Monitor::printMachineInstr(OldMIs[i], linebreak, OS);
-                }
-            OS << " ] => [ ";
-            if (linebreak) OS << "\n";
-                for (unsigned i = 0, e = NewMIs.size(); i != e; ++i) {
-                    OS << "  ";
-                    Monitor::printMachineInstr(NewMIs[i], linebreak, OS);
-                }
-            OS << " ]";
-            if (linebreak) OS << "\n";
+        static void event_MachineInstrsToMachineInstrs ( const char* prefix, std::vector<MachineInstr *> OldMIs, std::vector<MachineInstr *> NewMIs, raw_ostream &OS = getInstance().OS ) {
+            event_start(prefix, OS);
+            for (auto MI : OldMIs)
+                event_MachineInstr(MI, OS);
+            event_stateswitch(OS);
+            for (auto MI : NewMIs)
+                event_MachineInstr(MI, OS);
+            event_end(prefix, OS);
         }
-        static void event_RaisedInstruction ( const MachineInstr* MI, std::vector<Instruction* > Instrs, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Remark) ) {
-            OS << "Raised [ ";
-                Monitor::printMachineInstr(MI, false);
-            OS << " ] to [\n";
-                for (unsigned i = 0, e = Instrs.size(); i != e; ++i) {
-                    OS << "  ";
-                    Monitor::printInstruction(Instrs[i], true, OS);
-                }
-            OS << " ]";
-            if (linebreak) OS << "\n";
+        static void event_RaisedInstruction ( const MachineInstr* MI, std::vector<Instruction* > Instrs, raw_ostream &OS = getInstance().OS ) {
+            event_start("Raised", OS);
+            event_MachineInstr(MI, OS);
+            event_stateswitch(OS);
+            for (auto I : Instrs)
+                event_Instruction(I, OS);
+            event_end("Raised", OS);
         }
 
         static void TODO ( const char* Message, bool linebreak = true, raw_ostream& OS = WithColor(dbgs(), HighlightColor::Warning) ) {
@@ -228,15 +259,6 @@ class Monitor {
             OS << "ERROR: " << Message;
             if (linebreak) OS << "\n";
         }
-
-    private:
-        Monitor() {}
-
-        const MCInstrInfo *MCII;
-        const MCRegisterInfo *MCRI;
-    public:
-        Monitor ( Monitor const& ) = delete;
-        void operator= ( Monitor const& ) = delete;
 };
 
 #endif // LLVM_TOOLS_LLVM_MCTOLL_MONITOR_H_
