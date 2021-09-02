@@ -21,7 +21,7 @@ public:
   Value *getOperandValue(MachineInstr *MI, int OpIdx, Type *Ty = nullptr);
   void setOperandValue(MachineInstr *MI, int OpIdx, Value *v);
 
-  Value *ARMCCToValue(int Cond, BasicBlock *BB, std::vector<Instruction *> &Instrs);
+  Value *ARMCCToValue(int Cond, BasicBlock *BB);
  
   bool raiseMachineInstr(MachineBasicBlock *MBB, MachineInstr *MI, BasicBlock *BB);
 

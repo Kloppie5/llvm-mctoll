@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARMEliminatePrologEpilog.h"
+#include "Monitor.h"
 #include "ARMSubtarget.h"
 #include "llvm/Support/Debug.h"
 
@@ -20,6 +21,7 @@
 using namespace llvm;
 
 bool ARMEliminatePrologEpilog::run(MachineFunction *MF, Function *F) {
+  Monitor::event_start("ARMEliminatePrologEpilog");
   LLVM_DEBUG(dbgs() << "ARMEliminatePrologEpilog start.\n");
 
   analyzeStackSize(*MF);
@@ -30,11 +32,10 @@ bool ARMEliminatePrologEpilog::run(MachineFunction *MF, Function *F) {
     success = eliminateEpilog(*MF);
   }
 
-  // For debugging.
   LLVM_DEBUG(MF->dump());
   LLVM_DEBUG(F->dump());
   LLVM_DEBUG(dbgs() << "ARMEliminatePrologEpilog end.\n");
-
+  Monitor::event_end("ARMEliminatePrologEpilog");
   return !success;
 }
 

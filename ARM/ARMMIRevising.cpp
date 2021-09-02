@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARMMIRevising.h"
+#include "Monitor.h"
 #include "ARMModuleRaiser.h"
 #include "ARMSubtarget.h"
 #include "ExternalFunctions.h"
@@ -28,8 +29,10 @@ using namespace llvm;
 using namespace llvm::object;
 
 bool ARMMIRevising::run(MachineFunction *MF, Function *F) {
-  bool rtn = false;
+  Monitor::event_start("ARMMIRevising");
   LLVM_DEBUG(dbgs() << "ARMMIRevising start.\n");
+
+  bool rtn = false;
 
   vector<MachineInstr *> RMVec;
   for (MachineFunction::iterator mbbi = MF->begin(), mbbe = MF->end();
@@ -47,11 +50,10 @@ bool ARMMIRevising::run(MachineFunction *MF, Function *F) {
   for (MachineInstr *PMI : RMVec)
     PMI->eraseFromParent();
 
-  // For debugging.
   LLVM_DEBUG(MF->dump());
   LLVM_DEBUG(F->dump());
   LLVM_DEBUG(dbgs() << "ARMMIRevising end.\n");
-
+  Monitor::event_end("ARMMIRevising");
   return rtn;
 }
 
@@ -181,6 +183,10 @@ uint64_t ARMMIRevising::getCalledFunctionAtPLTOffset(uint64_t PLTEndOff,
       assert(CalledFuncSymAddr &&
              "Failed to get called function address of PLT entry");
 
+      Monitor::event_raw() << "Found called function "
+                           << CalledFuncSymName.get() << " at "
+                           << CalledFuncSymAddr.get() << "\n";
+
       if (CalledFuncSymAddr.get() == 0) {
         // Set CallTargetIndex for plt offset to map undefined function symbol
         // for emit CallInst use.
@@ -190,6 +196,8 @@ uint64_t ARMMIRevising::getCalledFunctionAtPLTOffset(uint64_t PLTEndOff,
         if (!CalledFunc)
           exit(-1);
         AMR.setSyscallMapping(PLTEndOff, CalledFunc);
+        Monitor::event_raw() << "Set Syscall " << CalledFunc->getName()
+                             << " for PLT offset " << PLTEndOff << "\n";
         AMR.fillInstAddrFuncMap(CallAddr, CalledFunc);
       }
       return CalledFuncSymAddr.get();
@@ -200,6 +208,10 @@ uint64_t ARMMIRevising::getCalledFunctionAtPLTOffset(uint64_t PLTEndOff,
 
 /// Relocate call branch instructions in object files.
 void ARMMIRevising::relocateBranch(MachineInstr &MInst) {
+  Monitor::event_start("Relocate call branch instruction");
+  Monitor::event_MachineInstr(&MInst);
+  Monitor::event_stateswitch();
+
   ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser&>(MR);
   int64_t relCallTargetOffset = MInst.getOperand(0).getImm();
   const ELF32LEObjectFile *Elf32LEObjFile =
@@ -217,6 +229,11 @@ void ARMMIRevising::relocateBranch(MachineInstr &MInst) {
     int64_t MCInstOffset = getMCInstIndex(MInst);
     int64_t CallAddr = MCInstOffset + textSectionAddress;
     int64_t CallTargetIndex = CallAddr + relCallTargetOffset + 8;
+    Monitor::event_raw() << "Call target index: "
+      << MCInstOffset
+      << " + " << textSectionAddress
+      << " + " << relCallTargetOffset
+      << " + 8\n";
     assert(MCIR != nullptr && "MCInstRaiser was not initialized");
     int64_t CallTargetOffset = CallTargetIndex - textSectionAddress;
     if (CallTargetOffset < 0 || !MCIR->isMCInstInRange(CallTargetOffset)) {
@@ -224,13 +241,20 @@ void ARMMIRevising::relocateBranch(MachineInstr &MInst) {
       uint64_t MCInstSize = MCIR->getMCInstSize(MCInstOffset);
       uint64_t Index = 1;
       CalledFunc = AMR.getRaisedFunctionAt(CallTargetIndex);
+      Monitor::event_raw() << "Direct call target: "
+        << (CalledFunc ? CalledFunc->getName() : "null") << "\n";
       if (CalledFunc == nullptr) {
-        CalledFunc =
-            AMR.getCalledFunctionUsingTextReloc(MCInstOffset, MCInstSize);
+        CalledFunc = AMR.getCalledFunctionUsingTextReloc(MCInstOffset, MCInstSize);
+        Monitor::event_raw() << "Call target using text reloc: "
+          << (CalledFunc ? CalledFunc->getName() : "null") << "\n";
       }
       // Look up the PLT to find called function.
-      if (CalledFunc == nullptr)
+      if (CalledFunc == nullptr) {
         Index = getCalledFunctionAtPLTOffset(CallTargetIndex, CallAddr);
+        CalledFunc = AMR.getRaisedFunctionAt(CallTargetIndex);
+        Monitor::event_raw() << "Call target using PLT: "
+          << (CalledFunc ? CalledFunc->getName() : "null") << "\n";
+      }
 
       if (CalledFunc == nullptr) {
         if (Index == 0)
@@ -244,18 +268,23 @@ void ARMMIRevising::relocateBranch(MachineInstr &MInst) {
     }
   } else {
     uint64_t Offset = getMCInstIndex(MInst);
+    Monitor::event_raw() << "Offset: " << Offset << "\n";
     const RelocationRef *reloc = AMR.getTextRelocAtOffset(Offset, 4);
     auto ImmValOrErr = (*reloc->getSymbol()).getValue();
     assert(ImmValOrErr && "Failed to get immediate value");
+    Monitor::event_raw() << "Relocated: " << *ImmValOrErr << "\n";
     MInst.getOperand(0).setImm(*ImmValOrErr);
   }
+
+  Monitor::event_MachineInstr(&MInst);
+  Monitor::event_end("Relocate call branch instruction");
 }
 
 /// Find global value by PC offset.
-const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
+const GlobalValue *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
                                                    uint64_t PCOffset) {
   ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser&>(MR);
-  const Value *GlobVal = nullptr;
+  const GlobalValue *GlobVal = nullptr;
   const ELF32LEObjectFile *ObjFile =
       dyn_cast<ELF32LEObjectFile>(AMR.getObjectFile());
   assert(ObjFile != nullptr &&
@@ -373,33 +402,17 @@ const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
           GlobInit = ConstantInt::get(GlobValTy, InitVal);
         }
 
-        auto GlobVar = new GlobalVariable(*MR.getModule(), GlobValTy, false /* isConstant */,
+        GlobVal = new GlobalVariable(*MR.getModule(), GlobValTy, false /* isConstant */,
                                           Linkage, GlobInit, SymName);
-        uint64_t Align = 32;
-        switch (SymSz) {
-        default:
-        case 4:
-          // When the symbol size is bigger than 4 bytes, identify the object as
-          // array or struct and set alignment to 32 bits.
-          Align = 32;
-          break;
-        case 2:
-          Align = 16;
-          break;
-        case 1:
-          Align = 8;
-          break;
-        }
-        MaybeAlign MA(Align);
-        GlobVar->setAlignment(MA);
-        GlobVar->setDSOLocal(true);
-        GlobVal = GlobVar;
       }
     }
   } else {
     // If can not find the corresponding symbol.
-    GlobVal = AMR.getRODataValueAt(Offset);
-    if (GlobVal == nullptr) {
+    const Value *ROVal = AMR.getRODataValueAt(Offset);
+    if (ROVal != nullptr) {
+      GlobVal = dyn_cast<GlobalVariable>(ROVal);
+      assert(GlobVal && "Failed to cast the value to global variable!");
+    } else {
       uint64_t Index = Offset - TextSecAddr;
       if (MCIR->getMCInstAt(Index) != MCIR->const_mcinstr_end()) {
         std::string LocalName("ROConst");
@@ -443,7 +456,7 @@ const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
                     reinterpret_cast<const char *>(RODataBegin));
                 Constant *StrConstant =
                     ConstantDataArray::getString(LCTX, ROStringRef);
-                auto GlobalStrConstVal = new GlobalVariable(
+                GlobalValue *GlobalStrConstVal = new GlobalVariable(
                     *MR.getModule(), StrConstant->getType(), /* isConstant */ true,
                     GlobalValue::PrivateLinkage, StrConstant, "RO-String");
                 // Record the mapping between offset and global value
@@ -457,13 +470,9 @@ const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
           if (GlobVal == nullptr) {
             Type *ty = Type::getInt32Ty(LCTX);
             Constant *GlobInit = ConstantInt::get(ty, Data);
-            auto GlobVar = new GlobalVariable(*MR.getModule(), ty, /* isConstant */ true,
+            GlobVal = new GlobalVariable(*MR.getModule(), ty, /* isConstant */ true,
                                               GlobalValue::PrivateLinkage,
                                               GlobInit, LocalNameRef);
-            MaybeAlign MA(32);
-            GlobVar->setAlignment(MA);
-            GlobVar->setDSOLocal(true);
-            GlobVal = GlobVar;
           }
         }
       }
@@ -475,7 +484,7 @@ const Value *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
 
 /// Address PC relative data in function, and create corresponding global value.
 void ARMMIRevising::addressPCRelativeData(MachineInstr &MInst) {
-  const Value *GlobVal = nullptr;
+  const GlobalValue *GlobVal = nullptr;
   int64_t Imm = 0;
   // To match the pattern: OPCODE Rx, [PC, #IMM]
   if (MInst.getNumOperands() > 2) {
@@ -486,60 +495,34 @@ void ARMMIRevising::addressPCRelativeData(MachineInstr &MInst) {
   // Get MCInst offset - the offset of machine instruction in the binary
   // and instruction size
   int64_t MCInstOffset = getMCInstIndex(MInst);
-  GlobVal =
-      getGlobalValueByOffset(MCInstOffset, static_cast<uint64_t>(Imm) + 8);
-
-  // Check the next instruction whether it is also related to PC relative data
-  // of global variable.
-  // It should like:
-  // ldr     r1, [pc, #32]
-  // ldr     r1, [pc, r1]
-  MachineInstr *NInst = MInst.getNextNode();
-  // To match the pattern: OPCODE Rx, [PC, Rd], Rd must be the def of previous
-  // instruction.
-  if (NInst->getNumOperands() >= 2 && NInst->getOperand(1).isReg() &&
-      NInst->getOperand(1).getReg() == ARM::PC &&
-      NInst->getOperand(2).isReg() &&
-      NInst->getOperand(2).getReg() == MInst.getOperand(0).getReg()) {
-    auto GV = dyn_cast<GlobalVariable>(GlobVal);
-    if (GV != nullptr && GV->isConstant()) {
-      // Firstly, read the PC relative data according to PC offset.
-      auto Init = GV->getInitializer();
-      uint64_t GVData = Init->getUniqueInteger().getZExtValue();
-      int64_t MCInstOff = getMCInstIndex(*NInst);
-      // Search the global symbol of object by PC relative data.
-      GlobVal = getGlobalValueByOffset(MCInstOff, GVData + 8);
-      // If the global symbol is exist, erase current ldr instruction.
-      if (GlobVal != nullptr)
-        NInst->eraseFromParent();
-    }
-  }
+  GlobVal = getGlobalValueByOffset(MCInstOffset, static_cast<uint64_t>(Imm) + 8);
 
   assert(GlobVal && "A not addressed pc-relative data!");
 
+  MachineInstr *OldMI = MInst.getParent()->getParent()->CloneMachineInstr(&MInst);
+  MInst.getParent()->insertAfter(MInst.getIterator(), OldMI);
   // Replace PC relative operands to symbol operand.
   // The pattern will be generated.
   // ldr r3, [pc, #20] => ldr r3, @globalvalue
-  MInst.getOperand(1).ChangeToES(GlobVal->getName().data());
-
-  if (MInst.getNumOperands() > 2) {
-    MInst.RemoveOperand(2);
-  }
+  MInst.getOperand(1).ChangeToGA(GlobVal, 0);
+  MInst.getOperand(2).setImm(0);
+  Monitor::event_MachineInstrsToMachineInstrs("Revised", {OldMI}, {&MInst});
+  OldMI->removeFromParent();
 }
 
 /// Decode modified immediate constants in some instructions with immediate
 /// operand.
 void ARMMIRevising::decodeModImmOperand(MachineInstr &MInst) {
   switch (MInst.getOpcode()) {
-  default:
-    break;
-  case ARM::ORRri:
-    MachineOperand &mo = MInst.getOperand(2);
-    unsigned Bits = mo.getImm() & 0xFF;
-    unsigned Rot = (mo.getImm() & 0xF00) >> 7;
-    int64_t Rotated = static_cast<int64_t>(ARM_AM::rotr32(Bits, Rot));
-    mo.setImm(Rotated);
-    break;
+    default:
+      break;
+    case ARM::ORRri: {
+      MachineOperand &mo = MInst.getOperand(2);
+      unsigned Bits = mo.getImm() & 0xFF;
+      unsigned Rot = (mo.getImm() & 0xF00) >> 7;
+      int64_t Rotated = static_cast<int64_t>(ARM_AM::rotr32(Bits, Rot));
+      mo.setImm(Rotated);
+    } break;
   }
 }
 
@@ -565,7 +548,7 @@ bool ARMMIRevising::reviseMI(MachineInstr &MInst) {
     if (mo0.isImm())
       relocateBranch(MInst);
   }
-
+  
   if (MInst.getOpcode() == ARM::LDRi12 || MInst.getOpcode() == ARM::STRi12) {
     if (MInst.getNumOperands() >= 2 && MInst.getOperand(1).isReg() &&
         MInst.getOperand(1).getReg() == ARM::PC) {

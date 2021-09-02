@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARMCreateJumpTable.h"
+#include "Monitor.h"
 #include "ARMBaseInstrInfo.h"
 #include "ARMMachineFunctionInfo.h"
 #include "ARMSubtarget.h"
@@ -35,15 +36,15 @@
 using namespace llvm;
 
 bool ARMCreateJumpTable::run(MachineFunction *MF, Function *F) {
+  Monitor::event_start("ARMCreateJumpTable");
   LLVM_DEBUG(dbgs() << "ARMCreateJumpTable start.\n");
 
   raiseMachineJumpTable(*MF);
 
-  // For debugging.
   LLVM_DEBUG(MF->dump());
   LLVM_DEBUG(F->dump());
   LLVM_DEBUG(dbgs() << "ARMCreateJumpTable end.\n");
-
+  Monitor::event_end("ARMCreateJumpTable");
   return false;
 }
 

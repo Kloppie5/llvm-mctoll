@@ -48,9 +48,6 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   cjt.run(&MF, F);
   cjt.getJTlist(jtList);
 
-  // ARMArgumentRaiser ar(rmr);
-  // ar.run(&MF, F);
-
   ARMFrameBuilder fb(rmr);
   fb.run(&MF, F);
 

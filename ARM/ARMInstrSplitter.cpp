@@ -53,12 +53,18 @@ bool ARMInstrSplitter::precondition(MachineFunction *MF, Function *F) {
         // Ignored instructions;
         case ARM::ADDri: // 684
         case ARM::ADDrr: // 685
+        case ARM::ANDri: // 693
         case ARM::BL: // 711
         case ARM::BX_RET: // 718
+        case ARM::Bcc: // 720
+        case ARM::CMPri: // 759
         case ARM::CMPrr: // 760
+        case ARM::LDRBi12: // 831
         case ARM::LDRi12: // 862
         case ARM::MOVi: // 872
         case ARM::MOVr: // 874
+        case ARM::MUL: // 888
+        case ARM::STRBi12: // 1906
         case ARM::STRi12: // 1926
         case ARM::SUBri: // 1928
         case ARM::SUBrr: // 1929
@@ -69,14 +75,15 @@ bool ARMInstrSplitter::precondition(MachineFunction *MF, Function *F) {
   return true;
 }
 bool ARMInstrSplitter::run(MachineFunction *MF, Function *F) {
+  Monitor::event_start("ARMInstrSplitter");
+  LLVM_DEBUG(dbgs() << "ARMInstrSplitter start.\n");
+
   TII = MF->getSubtarget<ARMSubtarget>().getInstrInfo();
   MRI = &MF->getRegInfo();
   CTX = &MR.getModule()->getContext();
 
   if (!precondition(MF, F))
     return false;
-
-  LLVM_DEBUG(dbgs() << "ARMInstrSplitter start.\n");
 
   // Because instructions are added to the blocks,
   // we can run into problems with the iterator.
@@ -92,13 +99,13 @@ bool ARMInstrSplitter::run(MachineFunction *MF, Function *F) {
       if(splitMachineInstr(&MBB, &MI))
         goto ONCE_MORE;
 
-  LLVM_DEBUG(MF->dump());
-  LLVM_DEBUG(F->dump());
-  LLVM_DEBUG(dbgs() << "ARMInstrSplitter end.\n");
-
   if (!postcondition(MF, F))
     return false;
 
+  LLVM_DEBUG(MF->dump());
+  LLVM_DEBUG(F->dump());
+  LLVM_DEBUG(dbgs() << "ARMInstrSplitter end.\n");
+  Monitor::event_end("ARMInstrSplitter");
   return true;
 }
 bool ARMInstrSplitter::postcondition(MachineFunction *MF, Function *F) {
@@ -143,13 +150,19 @@ bool ARMInstrSplitter::postcondition(MachineFunction *MF, Function *F) {
         case ARM::RRX: // 327
         case ARM::ADDri: // 684
         case ARM::ADDrr: // 685
+        case ARM::ANDri: // 693
         case ARM::BL: // 711
         case ARM::BX_RET: // 718
+        case ARM::Bcc: // 720
+        case ARM::CMPri: // 759
         case ARM::CMPrr: // 760
         case ARM::EORrr: // 776
+        case ARM::LDRBi12: // 831
         case ARM::LDRi12: // 862
         case ARM::MOVi: // 872
         case ARM::MOVr: // 874
+        case ARM::MUL: // 888
+        case ARM::STRBi12: // 1906
         case ARM::STRi12: // 1926
         case ARM::SUBri: // 1928
         case ARM::SUBrr: // 1929

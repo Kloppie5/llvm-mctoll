@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARMFrameBuilder.h"
+#include "Monitor.h"
 #include "ARMSubtarget.h"
 #include "llvm/ADT/DenseMap.h"
 
@@ -20,19 +21,20 @@
 using namespace llvm;
 
 bool ARMFrameBuilder::run(MachineFunction *MF, Function *F) {
+  Monitor::event_start("ARMFrameBuilder");
+  LLVM_DEBUG(dbgs() << "ARMFrameBuilder start.\n");
+
+
   MFI = &MF->getFrameInfo();
   CTX = &MR.getModule()->getContext();
   DLT = &MR.getModule()->getDataLayout();
 
-  LLVM_DEBUG(dbgs() << "ARMFrameBuilder start.\n");
-
   searchStackObjects(MF, F);
 
-  // For debugging.
   LLVM_DEBUG(MF->dump());
   LLVM_DEBUG(F->dump());
   LLVM_DEBUG(dbgs() << "ARMFrameBuilder end.\n");
-
+  Monitor::event_end("ARMFrameBuilder");
   return true;
 }
 
