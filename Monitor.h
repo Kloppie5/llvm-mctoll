@@ -181,9 +181,11 @@ class Monitor {
 
         static void event_start ( const char* name, raw_ostream &OS = getInstance().OS ) {
             getInstance().EventStack.push_back(name);
+            OS << std::string(getInstance().EventStack.size()-1, ' ');
             OS << name << " {\n";
         }
         static void event_stateswitch ( raw_ostream &OS = getInstance().OS ) {
+            OS << std::string(getInstance().EventStack.size()-1, ' ');
             OS << "} => {\n";
         }
         static void event_end ( const char* name, raw_ostream &OS = getInstance().OS ) {
@@ -191,27 +193,30 @@ class Monitor {
                 OS << "EventStack mismatch: " << getInstance().EventStack.back() << " != " << name << "\n";
                 return;
             }
-            OS << "}\n";
+            OS << std::string(getInstance().EventStack.size()-1, ' ');
+            OS << "} " << name << "\n";
             getInstance().EventStack.pop_back();
         }
         static raw_ostream& event_raw ( raw_ostream &OS = getInstance().OS ) {
-            OS << "  ";
+            OS << std::string(getInstance().EventStack.size(), ' ');
+            OS << "// ";
             return OS;
         }
         static void event_Bytes ( const ArrayRef<uint8_t> Bytes, raw_ostream &OS = getInstance().OS ) {
-            OS << "  ";
+            OS << std::string(getInstance().EventStack.size(), ' ');
             dumpBytes(Bytes, OS);
+            OS << "\n";
         }
         static void event_MCInst ( const MCInst *Inst, raw_ostream &OS = getInstance().OS ) {
-            OS << "  ";
+            OS << std::string(getInstance().EventStack.size(), ' ');
             printMCInst(Inst, true, OS);
         }
         static void event_MachineInstr ( const MachineInstr* MI, raw_ostream &OS = getInstance().OS ) {
-            OS << "  ";
+            OS << std::string(getInstance().EventStack.size(), ' ');
             printMachineInstr(MI, true, OS);
         }
         static void event_Instruction ( const Instruction* Instr, raw_ostream &OS = getInstance().OS ) {
-            OS << "  ";
+            OS << std::string(getInstance().EventStack.size(), ' ');
             printInstruction(Instr, true, OS);
         }
 
