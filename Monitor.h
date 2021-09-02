@@ -21,7 +21,7 @@ using namespace llvm;
 
 class Monitor {
     private:
-        Monitor(raw_ostream &OS) : OS(OS) {}
+        Monitor() : OS(WithColor(dbgs(), HighlightColor::Remark)) {}
 
         const MCInstrInfo *MCII;
         const MCRegisterInfo *MCRI;
@@ -31,7 +31,7 @@ class Monitor {
 
     public:
         static Monitor& getInstance() {
-            static Monitor instance(WithColor(dbgs(), HighlightColor::Remark));
+            static Monitor instance;
             return instance;
         }
         Monitor ( Monitor const& ) = delete;
