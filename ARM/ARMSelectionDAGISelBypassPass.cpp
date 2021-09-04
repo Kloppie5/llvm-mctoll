@@ -33,6 +33,7 @@ bool ARMSelectionDAGISelBypassPass::precondition(MachineFunction *MF, Function *
 
         case ARM::ASRi: // 247
         case ARM::ASRr: // 248
+        case ARM::B: // 249
         case ARM::LSLi: // 292
         case ARM::LSLr: // 293
         case ARM::LSRi: // 294
@@ -325,7 +326,7 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
     ARMCC::CondCodes CC = (ARMCC::CondCodes)MI->getOperand(idx).getImm();
     // Register CPSR = MI->getOperand(idx+1).getReg();
     if (CC != ARMCC::AL) {
-      if (MI->getOpcode() != ARM::Bcc) {
+      if (MI->getOpcode() != ARM::Bcc && MI->getOpcode() != ARM::MOVi) {
       Monitor::ERROR("Condition code not supported");
       //Instruction *Cond = getCond(CC, CPSR, BB, Instrs);
       }
@@ -353,6 +354,11 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
 
       Instruction *Instr = BinaryOperator::Create(Instruction::AShr, Rn, Rm, "ASRr", BB); Monitor::event_Instruction(Instr);
       setOperandValue(MI, 0, Instr);
+    } break;
+    case ARM::B: { // 249 | B <MBB> => Branch(MBB)
+      MachineBasicBlock *TargetMBB = MI->getOperand(0).getMBB();
+      BasicBlock *TargetBB = FuncInfo->getOrCreateBasicBlock(TargetMBB);
+      Instruction *Br = BranchInst::Create(TargetBB, BB); Monitor::event_Instruction(Br);
     } break;
     case ARM::LSLi: { // 292 | LSL{S}<c> <Rd>, <Rn>, #<imm> => Rd = Shl(<Rn>, imm)
       Value *Rn = getOperandValue(MI, 1);
@@ -448,60 +454,39 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
       // Earlier pass changed this to BL #<imm> => call imm
       ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser &>(MR);
 
-      if (MBB->succ_size() >= 2) {
-        BasicBlock *BranchBB = FuncInfo->getOrCreateBasicBlock(*MBB->succ_begin());
-        // The offset is ignored since it was used in an earlier part of the raising process
-        // to determine the successor basic blocks.
-        Monitor::event_raw() << "Branch BB: " << BranchBB->getName() << "\n";
+      Monitor::event_raw() << "Creating call\n";
+      uint64_t imm = (uint64_t) MI->getOperand(0).getImm();
+      Function *CallFunc = MR.getRaisedFunctionAt(imm);
+      if (CallFunc == nullptr)
+        CallFunc = AMR.getSyscallFunc(imm);
+      assert(CallFunc && "No function found for call");
 
-        if (MI->getOperand(2).getReg() == 0) {
-          // Unconditional branch
-          Instruction *Branch = BranchInst::Create(BranchBB, BB); Monitor::event_Instruction(Branch);
-        } else {
-          // Conditional branch
-          BasicBlock *NextBB = FuncInfo->getOrCreateBasicBlock(&*std::next(MBB->getIterator()));
-          Monitor::event_raw() << "Next BB: " << BranchBB->getName() << "\n";
-          Value *Cond = ARMCCToValue(MI->getOperand(1).getImm(), BB);
-          Instruction *Branch = BranchInst::Create(BranchBB, NextBB, Cond, BB); Monitor::event_Instruction(Branch);
+      Monitor::event_raw() << "Call Function: " << CallFunc->getName() << "/" << CallFunc->arg_size() << "(\n";
+
+      std::vector<Value *> ArgVals;
+      for (unsigned i = 0; i < CallFunc->arg_size(); ++i) {
+        Value *ArgVal = nullptr;
+        Type *Ty = CallFunc->getFunctionType()->getParamType(i);
+        if (i == 0) ArgVal = FuncInfo->RegValueMap[ARM::R0];
+        else if (i == 1) ArgVal = FuncInfo->RegValueMap[ARM::R1];
+        else if (i == 2) ArgVal = FuncInfo->RegValueMap[ARM::R2];
+        else if (i == 3) ArgVal = FuncInfo->RegValueMap[ARM::R3];
+        else assert(false && "Too many arguments for register only function call; fixing later.");
+        if (ArgVal->getType() != Ty) {
+          raw_ostream &OS = Monitor::event_raw();
+          OS << "Arg " << i << ": "; ArgVal->getType()->print(OS); OS << " => "; Ty->print(OS); OS << "\n";
+          // Handle special string value to pointer case, should obviously be moved
+          Instruction *Cast = CastInst::Create(CastInst::getCastOpcode(ArgVal, false, Ty, false), ArgVal, Ty, "", BB); Monitor::event_Instruction(Cast);
+          ArgVal = Cast;
         }
-        break;
+        ArgVals.push_back(ArgVal);
       }
 
-      // Calls
-      if (MBB->succ_size() == 0) {
-        uint64_t imm = (uint64_t) MI->getOperand(0).getImm();
-        Function *CallFunc = MR.getRaisedFunctionAt(imm);
-        if (CallFunc == nullptr)
-          CallFunc = AMR.getSyscallFunc(imm);
-        assert(CallFunc && "No function found for call");
-
-        Monitor::event_raw() << "Call Function: " << CallFunc->getName() << "/" << CallFunc->arg_size() << "(\n";
-
-        std::vector<Value *> ArgVals;
-        for (unsigned i = 0; i < CallFunc->arg_size(); ++i) {
-          Value *ArgVal = nullptr;
-          Type *Ty = CallFunc->getFunctionType()->getParamType(i);
-          if (i == 0) ArgVal = FuncInfo->RegValueMap[ARM::R0];
-          else if (i == 1) ArgVal = FuncInfo->RegValueMap[ARM::R1];
-          else if (i == 2) ArgVal = FuncInfo->RegValueMap[ARM::R2];
-          else if (i == 3) ArgVal = FuncInfo->RegValueMap[ARM::R3];
-          else assert(false && "Too many arguments for register only function call; fixing later.");
-          if (ArgVal->getType() != Ty) {
-            raw_ostream &OS = Monitor::event_raw();
-            OS << "Arg " << i << ": "; ArgVal->getType()->print(OS); OS << " => "; Ty->print(OS); OS << "\n";
-            // Handle special string value to pointer case, should obviously be moved
-            Instruction *Cast = CastInst::Create(CastInst::getCastOpcode(ArgVal, false, Ty, false), ArgVal, Ty, "", BB); Monitor::event_Instruction(Cast);
-            ArgVal = Cast;
-          }
-          ArgVals.push_back(ArgVal);
-        }
-
-        Instruction *Instr = CallInst::Create(CallFunc, ArgVals, "", BB); Monitor::event_Instruction(Instr);
-        if (CallFunc->getReturnType()->isVoidTy()) {
-          // FuncInfo->RegValueMap[ARM::R0] = ConstantInt::get(Type::getInt32Ty(BB->getContext()), 0);
-        } else {
-          FuncInfo->RegValueMap[ARM::R0] = Instr;
-        }
+      Instruction *Instr = CallInst::Create(CallFunc, ArgVals, "", BB); Monitor::event_Instruction(Instr);
+      if (CallFunc->getReturnType()->isVoidTy()) {
+        // FuncInfo->RegValueMap[ARM::R0] = ConstantInt::get(Type::getInt32Ty(BB->getContext()), 0);
+      } else {
+        FuncInfo->RegValueMap[ARM::R0] = Instr;
       }
     } break;
     case ARM::BX_RET: { // 718 | BX_RET = BX LR = Return
@@ -515,21 +500,42 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
         assert(false && "Unsupported return type");
     } break;
     case ARM::Bcc: { // 720 | Bcc <label> <cond?> => Branch
-      // Conventional branches
       ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser &>(MR);
 
-      if (MBB->succ_size() >= 2) {
-        BasicBlock *BranchBB = FuncInfo->getOrCreateBasicBlock(*MBB->succ_begin());
+      if (MI->getOperand(0).isMBB()) {
+        MachineBasicBlock *TargetMBB = MI->getOperand(0).getMBB();
+        MachineInstr *NextMI = &*(++MI->getIterator());
+        if (NextMI->getOpcode() == ARM::B) {
+          MachineBasicBlock *NextTargetMBB = NextMI->getOperand(0).getMBB();
+          BasicBlock *NextTargetBB = FuncInfo->getOrCreateBasicBlock(NextTargetMBB);
+          BasicBlock *TargetBB = FuncInfo->getOrCreateBasicBlock(TargetMBB);
+          Value *Cond = ARMCCToValue(MI->getOperand(1).getImm(), BB);
+          Instruction *Branch = BranchInst::Create(TargetBB, NextTargetBB, Cond, BB); Monitor::event_Instruction(Branch);
+          break;
+        }
+        assert(false && "MBB based Bcc only emitted before MBB based B;\nEarlier passes should handle all Imm based branches before fixing this");
+      }
+        
+
+
+      // Imm based
+      MachineBasicBlock::succ_iterator BranchMBBitt = MBB->succ_begin();
+
+      if (BranchMBBitt != MBB->succ_end()) {
+        Monitor::event_raw() << "Using MBB (" << MBB->succ_size() << ") successors\n";
+        BasicBlock *BranchBB = FuncInfo->getOrCreateBasicBlock(*BranchMBBitt++);
         // The offset is ignored since it was used in an earlier part of the raising process
         // to determine the successor basic blocks.
         Monitor::event_raw() << "Branch BB: " << BranchBB->getName() << "\n";
 
         if (MI->getOperand(2).getReg() == 0) {
+          Monitor::event_raw() << "Unconditional\n";
           // Unconditional branch
           Instruction *Branch = BranchInst::Create(BranchBB, BB); Monitor::event_Instruction(Branch);
         } else {
+          Monitor::event_raw() << "Conditional\n";
           // Conditional branch
-          BasicBlock *NextBB = FuncInfo->getOrCreateBasicBlock(&*std::next(MBB->getIterator()));
+          BasicBlock *NextBB = FuncInfo->getOrCreateBasicBlock(*BranchMBBitt++);
           Monitor::event_raw() << "Next BB: " << BranchBB->getName() << "\n";
           Value *Cond = ARMCCToValue(MI->getOperand(1).getImm(), BB);
           Instruction *Branch = BranchInst::Create(BranchBB, NextBB, Cond, BB); Monitor::event_Instruction(Branch);
@@ -537,42 +543,35 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
         break;
       }
 
-      // Calls
-      if (MBB->succ_size() == 0) {
-        uint64_t imm = (uint64_t) MI->getOperand(0).getImm();
-        Function *CallFunc = MR.getRaisedFunctionAt(imm);
-        if (CallFunc == nullptr)
-          CallFunc = AMR.getSyscallFunc(imm);
-        assert(CallFunc && "No function found for call");
+      Monitor::event_raw() << "Creating call\n";
+      uint64_t imm = (uint64_t) MI->getOperand(0).getImm();
+      Function *CallFunc = MR.getRaisedFunctionAt(imm);
+      if (CallFunc == nullptr)
+        CallFunc = AMR.getSyscallFunc(imm);
+      assert(CallFunc && "No function found for call");
 
-        Monitor::event_raw() << "Call Function: " << CallFunc->getName() << "/" << CallFunc->arg_size() << "(\n";
+      Monitor::event_raw() << "Call Function: " << CallFunc->getName() << "/" << CallFunc->arg_size() << "(\n";
 
-        std::vector<Value *> ArgVals;
-        for (unsigned i = 0; i < CallFunc->arg_size(); ++i) {
-          Value *ArgVal = nullptr;
-          Type *Ty = CallFunc->getFunctionType()->getParamType(i);
-          if (i == 0) ArgVal = FuncInfo->RegValueMap[ARM::R0];
-          else if (i == 1) ArgVal = FuncInfo->RegValueMap[ARM::R1];
-          else if (i == 2) ArgVal = FuncInfo->RegValueMap[ARM::R2];
-          else if (i == 3) ArgVal = FuncInfo->RegValueMap[ARM::R3];
-          else assert(false && "Too many arguments for register only function call; fixing later.");
-          if (ArgVal->getType() != Ty) {
-            raw_ostream &OS = Monitor::event_raw();
-            OS << "Arg " << i << ": "; ArgVal->getType()->print(OS); OS << " => "; Ty->print(OS); OS << "\n";
-            // Handle special string value to pointer case, should obviously be moved
-            Instruction *Cast = CastInst::Create(CastInst::getCastOpcode(ArgVal, false, Ty, false), ArgVal, Ty, "", BB); Monitor::event_Instruction(Cast);
-            ArgVal = Cast;
-          }
-          ArgVals.push_back(ArgVal);
+      std::vector<Value *> ArgVals;
+      for (unsigned i = 0; i < CallFunc->arg_size(); ++i) {
+        Value *ArgVal = nullptr;
+        Type *Ty = CallFunc->getFunctionType()->getParamType(i);
+        if (i == 0) ArgVal = FuncInfo->RegValueMap[ARM::R0];
+        else if (i == 1) ArgVal = FuncInfo->RegValueMap[ARM::R1];
+        else if (i == 2) ArgVal = FuncInfo->RegValueMap[ARM::R2];
+        else if (i == 3) ArgVal = FuncInfo->RegValueMap[ARM::R3];
+        else assert(false && "Too many arguments for register only function call; fixing later.");
+        if (ArgVal->getType() != Ty) {
+          raw_ostream &OS = Monitor::event_raw();
+          OS << "Arg " << i << ": "; ArgVal->getType()->print(OS); OS << " => "; Ty->print(OS); OS << "\n";
+          // Handle special string value to pointer case, should obviously be moved
+          Instruction *Cast = CastInst::Create(CastInst::getCastOpcode(ArgVal, false, Ty, false), ArgVal, Ty, "", BB); Monitor::event_Instruction(Cast);
+          ArgVal = Cast;
         }
-
-        Instruction *Instr = CallInst::Create(CallFunc, ArgVals, "", BB); Monitor::event_Instruction(Instr);
-        if (CallFunc->getReturnType()->isVoidTy()) {
-          // FuncInfo->RegValueMap[ARM::R0] = ConstantInt::get(Type::getInt32Ty(BB->getContext()), 0);
-        } else {
-          FuncInfo->RegValueMap[ARM::R0] = Instr;
-        }
+        ArgVals.push_back(ArgVal);
       }
+
+      Instruction *Instr = CallInst::Create(CallFunc, ArgVals, "", BB); Monitor::event_Instruction(Instr);
     } break;
     case ARM::CMNri: { // 755 | CMN{S}<c> <Rn>, #<imm> => Rn + Imm
       assert(false && "ARM::CMNri not yet implemented; requires NZCV flags");
@@ -716,8 +715,8 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
     case ARM::MOVi: { // 872 | MOV<c> <Rd>, #<imm> => Rd = imm + 0
       Type *Ty = Type::getInt32Ty(BB->getContext());
       Value *imm = getOperandValue(MI, 1, Ty);
+      
       Value *zero = ConstantInt::get(Ty, 0);
-      // Uses an Instruction because of other parts of the backend that rely on
       Instruction *Instr = BinaryOperator::Create(Instruction::Add, imm, zero, "MOVi", BB); Monitor::event_Instruction(Instr);
       setOperandValue(MI, 0, Instr);
     } break;
@@ -727,9 +726,6 @@ bool ARMSelectionDAGISelBypassPass::raiseMachineInstr(MachineBasicBlock *MBB, Ma
     case ARM::MOVr: { // 874 | MOV<c> <Rd>, <Rn> => Rd = Rn
       Monitor::event_raw() << "set Rd to Rn\n";
       setOperandValue(MI, 0, getOperandValue(MI, 1));
-    } break;
-    case ARM::MOVsi: { // 876 | MOV<c> <Rd>, #<imm> => Rd = imm
-      assert(false && "ARM::MOVsi not yet implemented");
     } break;
     case ARM::MUL: { // 888 | MUL<c> <Rd>, <Rn>, <Rm> => Rd = Rn * Rm
       Value *Rn = getOperandValue(MI, 1);

@@ -13,6 +13,7 @@
 
 #include "ARMMachineInstructionRaiser.h"
 #include "ARMArgumentRaiser.h"
+#include "ARMConditionalExecutionPass.h"
 #include "ARMCreateJumpTable.h"
 #include "ARMEliminatePrologEpilog.h"
 #include "ARMFrameBuilder.h"
@@ -35,25 +36,36 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   assert(amr != nullptr && "The ARM module raiser is not initialized!");
   ARMModuleRaiser &rmr = const_cast<ARMModuleRaiser &>(*amr);
 
-  // inplace MachineFunction, adds to ModuleRaiser
+  // Focus branches so they target MachineBasicBlocks
+  ARMFocusBranchesPass fbp(rmr);
+  fbp.run(&MF, F);
+
+  // Split conditional execution into branching
+  ARMConditionalExecutionPass cep(rmr);
+  cep.run(&MF, F);
+
+  // Lift pc relative data to global values
   ARMMIRevising mir(rmr, MCIR);
   mir.run(&MF, F);
 
-  // inplace MachineFunction
+  // Eliminate fp and sp adjustments from prolog and epilog
   ARMEliminatePrologEpilog epe(rmr);
   epe.run(&MF, F);
 
-  // inplace MachineFunction, creates jtList
+  // Something jumptable-related
   ARMCreateJumpTable cjt(rmr, MCIR);
   cjt.run(&MF, F);
   cjt.getJTlist(jtList);
 
+  // Lift fp and sp-relative data to frame indices
   ARMFrameBuilder fb(rmr);
   fb.run(&MF, F);
 
+  // Split complicated addressing modes into basic instructions
   ARMInstrSplitter ispl(rmr);
   ispl.run(&MF, F);
 
+  // Everything else
   ARMSelectionDAGISelBypassPass sdis(rmr, jtList, MCIR);
   sdis.run(&MF, F);
 

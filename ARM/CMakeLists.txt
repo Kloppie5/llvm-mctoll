@@ -25,6 +25,7 @@ add_llvm_library(ARMRaiser
   DAG/InstSelector.cpp
   DAG/IREmitter.cpp
   ARMSelectionDAGISel.cpp
+  ARMConditionalExecutionPass.cpp
   ARMSelectionDAGISelBypassPass.cpp
   ARMMachineInstructionRaiser.cpp
 
