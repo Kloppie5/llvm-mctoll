@@ -113,8 +113,6 @@ void MCInstRaiser::buildCFG(MachineFunction &MF, const MCInstrAnalysis *MIA,
       MachineInstr* MI = RaiseMCInst(*MII, MF, Inst, mcInstIndex);
       
       MF.back().push_back(MI);
-      
-      Monitor::event_RaisedMachineInstr(&Inst, MI);
     }
   }
 

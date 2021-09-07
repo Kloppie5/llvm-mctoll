@@ -1367,8 +1367,6 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
           errs() << "\n";
         }
 
-        Monitor::event_ParsedMCInst(Bytes.slice(Index, Size), &Inst);
-
         mcInstRaiser->addMCInstOrData(Index, Inst);
 
         // Find branch target and record it. Call targets are not

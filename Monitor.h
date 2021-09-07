@@ -219,21 +219,6 @@ class Monitor {
             OS << std::string(getInstance().EventStack.size(), ' ');
             printInstruction(Instr, true, OS);
         }
-
-        static void event_ParsedMCInst ( const ArrayRef<uint8_t> Bytes, const MCInst* Inst, raw_ostream &OS = getInstance().OS ) {
-            event_start("Parsed", OS);
-            event_Bytes(Bytes, OS);
-            event_stateswitch(OS);
-            event_MCInst(Inst, OS);
-            event_end("Parsed", OS);
-        }
-        static void event_RaisedMachineInstr ( const MCInst* Inst, const MachineInstr* MI, raw_ostream &OS = getInstance().OS ) {
-            event_start("Raised", OS);
-            event_MCInst(Inst, OS);
-            event_stateswitch(OS);
-            event_MachineInstr(MI, OS);
-            event_end("Raised", OS);
-        }
         static void event_MachineInstrsToMachineInstrs ( const char* prefix, std::vector<MachineInstr *> OldMIs, std::vector<MachineInstr *> NewMIs, raw_ostream &OS = getInstance().OS ) {
             event_start(prefix, OS);
             for (auto MI : OldMIs)
