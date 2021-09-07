@@ -270,10 +270,14 @@ void ARMMIRevising::relocateBranch(MachineInstr &MInst) {
     uint64_t Offset = getMCInstIndex(MInst);
     Monitor::event_raw() << "Offset: " << Offset << "\n";
     const RelocationRef *reloc = AMR.getTextRelocAtOffset(Offset, 4);
-    auto ImmValOrErr = (*reloc->getSymbol()).getValue();
-    assert(ImmValOrErr && "Failed to get immediate value");
-    Monitor::event_raw() << "Relocated: " << *ImmValOrErr << "\n";
-    MInst.getOperand(0).setImm(*ImmValOrErr);
+    if (reloc) {
+      auto ImmValOrErr = (*reloc->getSymbol()).getValue();
+      assert(ImmValOrErr && "Failed to get immediate value");
+      Monitor::event_raw() << "Relocated: " << *ImmValOrErr << "\n";
+      MInst.getOperand(0).setImm(*ImmValOrErr);
+    } else {
+      Monitor::event_raw() << "Failed to relocate\n";
+    }
   }
 
   Monitor::event_MachineInstr(&MInst);
@@ -484,6 +488,10 @@ const GlobalValue *ARMMIRevising::getGlobalValueByOffset(int64_t MCInstOffset,
 
 /// Address PC relative data in function, and create corresponding global value.
 void ARMMIRevising::addressPCRelativeData(MachineInstr &MInst) {
+  Monitor::event_start("ARMMIRevising::addressPCRelativeData");
+  Monitor::event_MachineInstr(&MInst);
+  Monitor::event_stateswitch();
+
   const GlobalValue *GlobVal = nullptr;
   int64_t Imm = 0;
   // To match the pattern: OPCODE Rx, [PC, #IMM]
@@ -499,15 +507,14 @@ void ARMMIRevising::addressPCRelativeData(MachineInstr &MInst) {
 
   assert(GlobVal && "A not addressed pc-relative data!");
 
-  MachineInstr *OldMI = MInst.getParent()->getParent()->CloneMachineInstr(&MInst);
-  MInst.getParent()->insertAfter(MInst.getIterator(), OldMI);
   // Replace PC relative operands to symbol operand.
   // The pattern will be generated.
   // ldr r3, [pc, #20] => ldr r3, @globalvalue
   MInst.getOperand(1).ChangeToGA(GlobVal, 0);
   MInst.getOperand(2).setImm(0);
-  Monitor::event_MachineInstrsToMachineInstrs("Revised", {OldMI}, {&MInst});
-  OldMI->removeFromParent();
+  
+  Monitor::event_MachineInstr(&MInst);
+  Monitor::event_end("ARMMIRevising::addressPCRelativeData");
 }
 
 /// Decode modified immediate constants in some instructions with immediate

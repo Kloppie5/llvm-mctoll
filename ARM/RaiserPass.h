@@ -20,10 +20,11 @@ using namespace llvm;
 
 class RaiserPass {
 protected:
+  LLVMContext &Context;
   ModuleRaiser &MR;
 
   RaiserPass() = delete;
-  RaiserPass(ModuleRaiser &MR) : MR(MR) {}
+  RaiserPass(ModuleRaiser &MR) : Context(MR.getModule()->getContext()), MR(MR) {}
 
   virtual bool precondition (MachineFunction *MF, Function *F) { return true; }
   virtual bool run (MachineFunction *MF, Function *F) = 0;

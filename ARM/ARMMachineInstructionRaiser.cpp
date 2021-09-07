@@ -13,6 +13,7 @@
 
 #include "ARMMachineInstructionRaiser.h"
 #include "ARMArgumentRaiser.h"
+#include "ARMBenchmarker.h"
 #include "ARMCreateJumpTable.h"
 #include "ARMEliminatePrologEpilog.h"
 #include "ARMFrameBuilder.h"
@@ -20,8 +21,7 @@
 #include "ARMInstrSplitter.h"
 #include "ARMMIRevising.h"
 #include "ARMModuleRaiser.h"
-#include "ARMSelectionDAGISel.h"
-#include "ARMSelectionDAGISelBypassPass.h"
+#include "ARMLinearRaiserPass.h"
 
 using namespace llvm;
 
@@ -35,9 +35,12 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   assert(amr != nullptr && "The ARM module raiser is not initialized!");
   ARMModuleRaiser &rmr = const_cast<ARMModuleRaiser &>(*amr);
 
+  ARMBenchmarker bm(rmr);
+  bm.run(&MF, F);
+
   // inplace MachineFunction, adds to ModuleRaiser
-  ARMMIRevising mir(rmr, MCIR);
-  mir.run(&MF, F);
+  // ARMMIRevising mir(rmr, MCIR);
+  // mir.run(&MF, F);
 
   // inplace MachineFunction
   ARMEliminatePrologEpilog epe(rmr);
@@ -48,13 +51,13 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   cjt.run(&MF, F);
   cjt.getJTlist(jtList);
 
-  ARMFrameBuilder fb(rmr);
-  fb.run(&MF, F);
+  // ARMFrameBuilder fb(rmr);
+  // fb.run(&MF, F);
 
-  ARMInstrSplitter ispl(rmr);
-  ispl.run(&MF, F);
+  // ARMInstrSplitter ispl(rmr);
+  // ispl.run(&MF, F);
 
-  ARMSelectionDAGISelBypassPass sdis(rmr, jtList, MCIR);
+  ARMLinearRaiserPass sdis(rmr, jtList, MCIR);
   sdis.run(&MF, F);
 
   return true;

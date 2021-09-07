@@ -29,9 +29,7 @@ class ARMInstrSplitter : public RaiserPass {
 public:
   ARMInstrSplitter(ModuleRaiser &MR) : RaiserPass(MR) {};
 
-  bool precondition(MachineFunction *MF, Function *F) override;
   bool run (MachineFunction *MF, Function *F) override;
-  bool postcondition(MachineFunction *MF, Function *F) override;
   
   bool splitMachineInstr(MachineBasicBlock *MBB, MachineInstr *MI);
   void splitLDRSTR(MachineBasicBlock *MBB, MachineInstr *MI, bool isLoad, bool isSO, bool isPre, bool isPost);

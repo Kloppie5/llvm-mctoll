@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Monitor.h"
 #include "ARMFunctionPrototype.h"
 #include "ARMSubtarget.h"
 #include "llvm/ADT/DepthFirstIterator.h"
@@ -78,8 +79,11 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
                              return OP.isReg() && (OP.getReg() == IReg);
                            });
           if (ResIter != RUses.end()) {
-            maxidx = IReg - ARM::R0;
-            tarr[maxidx] = getDefaultType();
+            int idx = IReg - ARM::R0;
+            tarr[idx] = getDefaultType();
+            if (maxidx < idx)
+              maxidx = idx;
+            Monitor::event_raw() << "Found reg " << idx << "; maxidx = " << maxidx << "\n";
             break;
           }
         }
@@ -121,11 +125,13 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
             if (maxidx < idx)
               maxidx = idx;
             tarr[idx] = getDefaultType();
+            Monitor::event_raw() << "Found stack argument at " << imm << ", " << idxoff << "; maxidx = " << maxidx << "\n";
           }
         }
       }
     }
   }
+  Monitor::event_raw() << "Found " << maxidx+1 << " parameters.\n";
   for (int i = 0; i <= maxidx; ++i) {
     if (tarr[i] == nullptr)
       paramTypes.push_back(getDefaultType());

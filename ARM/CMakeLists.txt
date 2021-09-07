@@ -19,13 +19,8 @@ add_llvm_library(ARMRaiser
   ARMArgumentRaiser.cpp
   ARMFrameBuilder.cpp
   ARMInstrSplitter.cpp
-  DAG/FunctionRaisingInfo.cpp
-  DAG/DAGRaisingInfo.cpp
-  DAG/DAGBuilder.cpp
-  DAG/InstSelector.cpp
-  DAG/IREmitter.cpp
-  ARMSelectionDAGISel.cpp
-  ARMSelectionDAGISelBypassPass.cpp
+  ARMBenchmarker.cpp
+  ARMLinearRaiserPass.cpp
   ARMMachineInstructionRaiser.cpp
 
   DEPENDS

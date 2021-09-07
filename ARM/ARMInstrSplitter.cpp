@@ -24,56 +24,6 @@
 
 using namespace llvm;
 
-bool ARMInstrSplitter::precondition(MachineFunction *MF, Function *F) {
-  for (MachineBasicBlock &MBB : *MF) {
-    for (MachineInstr &MI : MBB) {
-      switch(MI.getOpcode()) {
-        default: {
-          auto OS = WithColor(errs(), HighlightColor::Warning);
-          OS << "ARMInstrSplitter encountered unhandled opcode in instruction ";
-          Monitor::printMachineInstr(&MI, true, OS);
-          assert(false && "ARMInstrSplitter encountered unhandled opcode.");
-          return false;
-        } break;
-
-        // Handled instructions;
-        case ARM::ADDrsi: // 686
-        case ARM::ADDrsr: // 687
-        case ARM::EORrsi: // 777
-        case ARM::LDR_PRE_IMM: // 859
-        case ARM::LDR_PRE_REG: // 860
-        case ARM::LDRrs: // 863
-        case ARM::MOVsi: // 876
-        case ARM::MOVsr: // 877
-        case ARM::STR_PRE_IMM: // 1924
-        case ARM::STR_PRE_REG: // 1925
-        case ARM::STRrs: // 1927
-          break;
-
-        // Ignored instructions;
-        case ARM::ADDri: // 684
-        case ARM::ADDrr: // 685
-        case ARM::ANDri: // 693
-        case ARM::BL: // 711
-        case ARM::BX_RET: // 718
-        case ARM::Bcc: // 720
-        case ARM::CMPri: // 759
-        case ARM::CMPrr: // 760
-        case ARM::LDRBi12: // 831
-        case ARM::LDRi12: // 862
-        case ARM::MOVi: // 872
-        case ARM::MOVr: // 874
-        case ARM::MUL: // 888
-        case ARM::STRBi12: // 1906
-        case ARM::STRi12: // 1926
-        case ARM::SUBri: // 1928
-        case ARM::SUBrr: // 1929
-          break;
-      }
-    }
-  }
-  return true;
-}
 bool ARMInstrSplitter::run(MachineFunction *MF, Function *F) {
   Monitor::event_start("ARMInstrSplitter");
   LLVM_DEBUG(dbgs() << "ARMInstrSplitter start.\n");
@@ -81,9 +31,6 @@ bool ARMInstrSplitter::run(MachineFunction *MF, Function *F) {
   TII = MF->getSubtarget<ARMSubtarget>().getInstrInfo();
   MRI = &MF->getRegInfo();
   CTX = &MR.getModule()->getContext();
-
-  if (!precondition(MF, F))
-    return false;
 
   // Because instructions are added to the blocks,
   // we can run into problems with the iterator.
@@ -99,79 +46,13 @@ bool ARMInstrSplitter::run(MachineFunction *MF, Function *F) {
       if(splitMachineInstr(&MBB, &MI))
         goto ONCE_MORE;
 
-  if (!postcondition(MF, F))
-    return false;
-
   LLVM_DEBUG(MF->dump());
   LLVM_DEBUG(F->dump());
   LLVM_DEBUG(dbgs() << "ARMInstrSplitter end.\n");
   Monitor::event_end("ARMInstrSplitter");
   return true;
 }
-bool ARMInstrSplitter::postcondition(MachineFunction *MF, Function *F) {
-  for (MachineBasicBlock &MBB : *MF) {
-    for (MachineInstr &MI : MBB) {
-      switch(MI.getOpcode()) {
-        default: {
-          auto OS = WithColor(errs(), HighlightColor::Warning);
-          OS << "ARMInstrSplitter emitted unexpected opcode in instruction ";
-          Monitor::printMachineInstr(&MI, true, OS);
-          assert(false && "ARMInstrSplitter emitted unexpected opcode.");
-          return false;
-        } break;
 
-        // Handled instructions;
-        case ARM::ADDrsi: // 686
-        case ARM::ADDrsr: // 687
-        case ARM::EORrsi: // 777
-        case ARM::LDR_PRE_IMM: // 859
-        case ARM::LDR_PRE_REG: // 860
-        case ARM::LDRrs: // 863
-        case ARM::MOVsi: // 876
-        case ARM::MOVsr: // 877
-        case ARM::STR_PRE_IMM: // 1924
-        case ARM::STR_PRE_REG: // 1925 
-        case ARM::STRrs: // 1927
-        { auto OS = WithColor(errs(), HighlightColor::Warning);
-          OS << "ARMInstrSplitter failed to handle instruction ";
-          Monitor::printMachineInstr(&MI, true, OS);
-          return false;
-        } break;
-
-        // Output instructions;
-        case ARM::ASRi: // 247
-        case ARM::ASRr: // 248
-        case ARM::LSLi: // 292
-        case ARM::LSLr: // 293
-        case ARM::LSRi: // 294
-        case ARM::LSRr: // 295
-        case ARM::RORi: // 325
-        case ARM::RORr: // 326
-        case ARM::RRX: // 327
-        case ARM::ADDri: // 684
-        case ARM::ADDrr: // 685
-        case ARM::ANDri: // 693
-        case ARM::BL: // 711
-        case ARM::BX_RET: // 718
-        case ARM::Bcc: // 720
-        case ARM::CMPri: // 759
-        case ARM::CMPrr: // 760
-        case ARM::EORrr: // 776
-        case ARM::LDRBi12: // 831
-        case ARM::LDRi12: // 862
-        case ARM::MOVi: // 872
-        case ARM::MOVr: // 874
-        case ARM::MUL: // 888
-        case ARM::STRBi12: // 1906
-        case ARM::STRi12: // 1926
-        case ARM::SUBri: // 1928
-        case ARM::SUBrr: // 1929
-          break;
-      }
-    }
-  }
-  return true;
-}
 bool ARMInstrSplitter::splitMachineInstr(MachineBasicBlock *MBB, MachineInstr *MI) {
 
   switch (MI->getOpcode()) {
