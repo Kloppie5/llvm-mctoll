@@ -16,8 +16,12 @@ public:
   Function *F;
 
   DenseMap<MachineBasicBlock *, BasicBlock *> MBBBBMap;
+  
   DenseMap<Register, Value*> RegValueMap;
-  DenseMap<int, Argument*> FrameIndexArgMap;
+
+  int stackOffset = 0;
+  DenseMap<int, Value*> StackValueMap;
+  
   // NZCV
   SmallVector<Value*, 4> Flags;
 
@@ -25,9 +29,9 @@ public:
    : RaiserPass(MR), jtList(List), MCIR(MCIR) {}
 
   bool run (MachineFunction *MF, Function *F) override;
-
+  
   Value *ARMCCToValue(int Cond, BasicBlock *BB);
- 
+  BasicBlock *getBasicBlock(MachineBasicBlock *MBB);
   bool raiseMachineInstr(MachineInstr *MI);
 
 private:

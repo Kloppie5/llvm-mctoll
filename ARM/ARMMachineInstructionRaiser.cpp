@@ -43,8 +43,8 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   // mir.run(&MF, F);
 
   // inplace MachineFunction
-  ARMEliminatePrologEpilog epe(rmr);
-  epe.run(&MF, F);
+  // ARMEliminatePrologEpilog epe(rmr);
+  // epe.run(&MF, F);
 
   // inplace MachineFunction, creates jtList
   ARMCreateJumpTable cjt(rmr, MCIR);
