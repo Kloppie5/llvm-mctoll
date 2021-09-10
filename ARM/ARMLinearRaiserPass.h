@@ -18,9 +18,6 @@ public:
   DenseMap<MachineBasicBlock *, BasicBlock *> MBBBBMap;
   
   DenseMap<Register, Value*> RegValueMap;
-
-  int stackOffset = 0;
-  DenseMap<int, Value*> StackValueMap;
   
   // NZCV
   SmallVector<Value*, 4> Flags;
