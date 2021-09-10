@@ -28,8 +28,6 @@ public:
   bool buildFuncArgTypeVector(const std::set<MCPhysReg> &,
                               std::vector<Type *> &) override;
 
-  std::vector<JumpTableInfo> jtList;
-
 private:
   bool raiseMachineFunction();
   // Commonly used LLVM data structures during this phase

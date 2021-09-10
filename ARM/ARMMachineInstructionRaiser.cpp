@@ -12,14 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARMMachineInstructionRaiser.h"
-#include "ARMArgumentRaiser.h"
+#include "MachineFunctionRaiser.h"
 #include "ARMBenchmarker.h"
-#include "ARMCreateJumpTable.h"
-#include "ARMEliminatePrologEpilog.h"
-#include "ARMFrameBuilder.h"
 #include "ARMFunctionPrototype.h"
-#include "ARMInstrSplitter.h"
-#include "ARMMIRevising.h"
 #include "ARMModuleRaiser.h"
 #include "ARMLinearRaiserPass.h"
 
@@ -38,26 +33,7 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   ARMBenchmarker bm(rmr);
   bm.run(&MF, F);
 
-  // inplace MachineFunction, adds to ModuleRaiser
-  // ARMMIRevising mir(rmr, MCIR);
-  // mir.run(&MF, F);
-
-  // inplace MachineFunction
-  // ARMEliminatePrologEpilog epe(rmr);
-  // epe.run(&MF, F);
-
-  // inplace MachineFunction, creates jtList
-  ARMCreateJumpTable cjt(rmr, MCIR);
-  cjt.run(&MF, F);
-  cjt.getJTlist(jtList);
-
-  // ARMFrameBuilder fb(rmr);
-  // fb.run(&MF, F);
-
-  // ARMInstrSplitter ispl(rmr);
-  // ispl.run(&MF, F);
-
-  ARMLinearRaiserPass sdis(rmr, jtList, MCIR);
+  ARMLinearRaiserPass sdis(rmr, MCIR);
   sdis.run(&MF, F);
 
   return true;

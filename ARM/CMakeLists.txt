@@ -13,12 +13,6 @@ endif()
 add_llvm_library(ARMRaiser
   ARMModuleRaiser.cpp
   ARMFunctionPrototype.cpp
-  ARMMIRevising.cpp
-  ARMEliminatePrologEpilog.cpp
-  ARMCreateJumpTable.cpp
-  ARMArgumentRaiser.cpp
-  ARMFrameBuilder.cpp
-  ARMInstrSplitter.cpp
   ARMBenchmarker.cpp
   ARMLinearRaiserPass.cpp
   ARMMachineInstructionRaiser.cpp

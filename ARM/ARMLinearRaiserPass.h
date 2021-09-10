@@ -8,8 +8,6 @@
 
 using namespace llvm;
 
-/// This is responsible for constructing DAG, and does instruction selection on
-/// the DAG, eventually emits SDNodes of the DAG to LLVM IRs.
 class ARMLinearRaiserPass : public RaiserPass {
 public:
   MachineFunction *MF;
@@ -22,8 +20,8 @@ public:
   // NZCV
   SmallVector<Value*, 4> Flags;
 
-  ARMLinearRaiserPass(ModuleRaiser &MR, std::vector<JumpTableInfo> &List, MCInstRaiser *MCIR)
-   : RaiserPass(MR), jtList(List), MCIR(MCIR) {}
+  ARMLinearRaiserPass(ModuleRaiser &MR, MCInstRaiser *MCIR)
+   : RaiserPass(MR), MCIR(MCIR) {}
 
   bool run (MachineFunction *MF, Function *F) override;
   
@@ -32,7 +30,6 @@ public:
   bool raiseMachineInstr(MachineInstr *MI);
 
 private:
-  std::vector<JumpTableInfo> jtList;
   MCInstRaiser *MCIR;
 };
 
