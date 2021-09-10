@@ -101,6 +101,212 @@ bool ARMLinearRaiserPass::run(MachineFunction *MF, Function *F) {
   return true;
 }
 
+// TODO merge with X86MachineInstructionRaiser::createPCRelativeAccesssValue
+GlobalValue *ARMLinearRaiserPass::getGlobalValueByOffset(int64_t MCInstOffset, uint64_t PCOffset) {
+  ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser&>(MR);
+  GlobalValue *GlobVal = nullptr;
+  const ELF32LEObjectFile *ObjFile =
+      dyn_cast<ELF32LEObjectFile>(AMR.getObjectFile());
+  assert(ObjFile != nullptr &&
+         "Only 32-bit ELF binaries supported at present.");
+
+  // Get the text section address
+  int64_t TextSecAddr = AMR.getTextSectionAddress();
+  assert(TextSecAddr >= 0 && "Failed to find text section address");
+
+  uint64_t InstAddr = TextSecAddr + MCInstOffset;
+  uint64_t Offset = InstAddr + PCOffset;
+
+  // Start to search the corresponding symbol.
+  const SymbolRef *Symbol = nullptr;
+  const RelocationRef *DynReloc = AMR.getDynRelocAtOffset(Offset);
+  if (DynReloc && (DynReloc->getType() == ELF::R_ARM_ABS32 ||
+                   DynReloc->getType() == ELF::R_ARM_GLOB_DAT)) {
+    Symbol = &*DynReloc->getSymbol();
+    Monitor::event_raw() << "Found DynReloc offset " << DynReloc->getOffset() << "\n";
+  }
+
+  assert(MCIR != nullptr && "MCInstRaiser was not initialized!");
+  if (Symbol == nullptr) {
+    auto Iter = MCIR->getMCInstAt(Offset - TextSecAddr);
+    uint64_t OffVal = static_cast<uint64_t>((*Iter).second.getData());
+
+    for (auto &Sym : ObjFile->symbols()) {
+      if (Sym.getELFType() == ELF::STT_OBJECT) {
+        auto SymAddr = Sym.getAddress();
+        assert(SymAddr && "Failed to lookup symbol for global address!");
+
+        if (OffVal >= SymAddr.get() &&
+            OffVal < (SymAddr.get() + Sym.getSize())) {
+          Monitor::event_raw() << "Found symbol at " << SymAddr.get() << "-" << (SymAddr.get() + Sym.getSize()) << ": " << OffVal << "\n";
+          Symbol = &Sym;
+          break;
+        }
+      }
+    }
+  }
+
+  LLVMContext &LCTX = MR.getModule()->getContext();
+  if (Symbol != nullptr) {
+    // If the symbol is found.
+    Expected<StringRef> SymNameVal = Symbol->getName();
+    assert(SymNameVal &&
+           "Failed to find symbol associated with dynamic relocation.");
+    auto SymName = SymNameVal.get();
+    Monitor::event_raw() << "Found symbol " << SymName << "\n";
+    GlobVal = MR.getModule()->getGlobalVariable(SymName);
+    if (GlobVal == nullptr) {
+      Monitor::event_raw() << "Symbol is unregistered; creating GlobalValue\n";
+      DataRefImpl SymImpl = Symbol->getRawDataRefImpl();
+      auto SymbOrErr = ObjFile->getSymbol(SymImpl);
+      assert(SymbOrErr && "Failed to find symbol!");
+      auto Symb = SymbOrErr.get();
+      assert((Symb->getType() == ELF::STT_OBJECT) &&
+              "Object symbol type is expected. But not found!");
+      GlobalValue::LinkageTypes Linkage;
+      switch (Symb->getBinding()) {
+        case ELF::STB_GLOBAL:
+          Linkage = GlobalValue::ExternalLinkage;
+          break;
+        default:
+          assert(false && "Unhandled dynamic symbol");
+      }
+      uint64_t SymSz = Symb->st_size;
+      Type *GlobValTy = nullptr;
+      switch (SymSz) {
+        case 4:
+          GlobValTy = Type::getInt32Ty(LCTX);
+          break;
+        case 2:
+          GlobValTy = Type::getInt16Ty(LCTX);
+          break;
+        case 1:
+          GlobValTy = Type::getInt8Ty(LCTX);
+          break;
+        default:
+          GlobValTy = ArrayType::get(Type::getInt8Ty(LCTX), SymSz);
+          break;
+      }
+
+      auto SymOrErr = Symbol->getValue();
+      assert (SymOrErr && "Can not find the symbol!");
+
+      uint64_t SymVirtAddr = *SymOrErr;
+      auto SecOrErr = Symbol->getSection();
+      assert(SecOrErr && "Can not find the section which is the symbol in!");
+
+      section_iterator SecIter = *SecOrErr;
+      Constant *GlobInit = nullptr;
+      if (SecIter->isBSS()) {
+        Monitor::event_raw() << "Symbol in BSS section\n";
+        Linkage = GlobalValue::CommonLinkage;
+        if (ArrayType::classof(GlobValTy))
+          GlobInit = ConstantAggregateZero::get(GlobValTy);
+        else
+          GlobInit = ConstantInt::get(GlobValTy, 0);
+      } else {
+        auto StrOrErr = SecIter->getContents();
+        assert (StrOrErr && "Failed to get the content of section!");
+        StringRef SecData = *StrOrErr;
+        // Currently, Symbol->getValue() is virtual address.
+        unsigned Index = SymVirtAddr - SecIter->getAddress();
+        const unsigned char *Beg = SecData.bytes_begin() + Index;
+        char Shift = 0;
+        uint64_t InitVal = 0;
+        while (SymSz-- > 0) {
+          // We know this is little-endian
+          InitVal = ((*Beg++) << Shift) | InitVal;
+          Shift += 8;
+        }
+        Monitor::event_raw() << "Symbol with default value " << InitVal << "\n";
+        GlobInit = ConstantInt::get(GlobValTy, InitVal);
+      }
+
+      GlobVal = new GlobalVariable(*MR.getModule(), GlobValTy, false /* isConstant */,
+                                        Linkage, GlobInit, SymName);
+    }
+  } else {
+    Monitor::event_raw() << "Failed to find symbol associated with dynamic relocation, reading as ROData.\n";
+    // If can not find the corresponding symbol.
+    const Value *ROVal = AMR.getRODataValueAt(Offset);
+    if (ROVal != nullptr) {
+      GlobVal = const_cast<GlobalVariable*>(dyn_cast<GlobalVariable>(ROVal));
+      Monitor::event_raw() << "Found ROVal " << GlobVal->getName() << "\n";
+      assert(GlobVal && "Failed to cast the value to global variable!");
+    } else {
+      uint64_t Index = Offset - TextSecAddr;
+      if (MCIR->getMCInstAt(Index) == MCIR->const_mcinstr_end()) {
+        Monitor::event_raw() << "Failed to read data at " << Index << "\n";
+        assert(false && "Index out of bounds");
+      }
+      std::string LocalName("ROConst");
+      LocalName.append(std::to_string(Index));
+      // Find if a global value associated with symbol name is already
+      // created
+      StringRef LocalNameRef(LocalName);
+      Monitor::event_raw() << "Looking for " << LocalName << "\n";
+      GlobVal = MR.getModule()->getGlobalVariable(LocalNameRef);
+      if (GlobVal == nullptr) {
+        Monitor::event_raw() << "Creating GlobalValue " << LocalName << "\n";
+        MCInstOrData MD = MCIR->getMCInstAt(Index)->second;
+        uint32_t Data = MD.getData();
+        uint64_t DataAddr = (uint64_t)Data;
+        // Check if this is an address in .rodata
+        for (section_iterator SecIter : ObjFile->sections()) {
+          uint64_t SecStart = SecIter->getAddress();
+          uint64_t SecEnd = SecStart + SecIter->getSize();
+
+          if ((SecStart <= DataAddr) && (SecEnd >= DataAddr)) {
+            if (SecIter->isData()) {
+              auto StrOrErr = SecIter->getContents();
+              assert(StrOrErr && "Failed to get the content of section!");
+              StringRef SecData = *StrOrErr;
+              uint64_t DataOffset = DataAddr - SecStart;
+              const unsigned char *RODataBegin =
+                  SecData.bytes_begin() + DataOffset;
+
+              unsigned char c;
+              uint64_t argNum = 0;
+              const unsigned char *str = RODataBegin;
+              do {
+                c = (unsigned char)*str++;
+                if (c == '%') {
+                  argNum++;
+                }
+              } while (c != '\0');
+              if (argNum != 0) {
+                AMR.collectRodataInstAddr(InstAddr);
+                AMR.fillInstArgMap(InstAddr, argNum + 1);
+              }
+              StringRef ROStringRef(
+                  reinterpret_cast<const char *>(RODataBegin));
+              Constant *StrConstant =
+                  ConstantDataArray::getString(LCTX, ROStringRef);
+              GlobalValue *GlobalStrConstVal = new GlobalVariable(
+                  *MR.getModule(), StrConstant->getType(), /* isConstant */ true,
+                  GlobalValue::PrivateLinkage, StrConstant, "RO-String");
+              // Record the mapping between offset and global value
+              AMR.addRODataValueAt(GlobalStrConstVal, Offset);
+              GlobVal = GlobalStrConstVal;
+              break;
+            }
+          }
+        }
+
+        if (GlobVal == nullptr) {
+          Type *ty = Type::getInt32Ty(LCTX);
+          Constant *GlobInit = ConstantInt::get(ty, Data);
+          GlobVal = new GlobalVariable(*MR.getModule(), ty, /* isConstant */ true,
+                                            GlobalValue::PrivateLinkage,
+                                            GlobInit, LocalNameRef);
+        }
+      }
+    }
+  }
+
+  return GlobVal;
+}
+
 // TODO: Move CC to separate pass.
 Value *ARMLinearRaiserPass::ARMCCToValue(int Cond, BasicBlock *BB) {
   // Why do ICmpInst constructors put &InsertBefore/&InsertAtEnd as the first
@@ -440,6 +646,8 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
     case ARM::BL: { // 711 | BL Imm
       ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser &>(MR);
 
+      Type *Ty32 = Type::getInt32Ty(Context);
+
       int64_t Imm = MI->getOperand(0).getImm();
       int64_t offset = MCIR->getMCInstIndex(*MI);
       uint64_t target = AMR.getTextSectionAddress() + offset + Imm + 8;
@@ -544,12 +752,39 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Monitor::event_raw() << "Call Function: " << CalledFunc->getName() << "/" << ArgCount << "(\n";
 
       std::vector<Value *> ArgVals;
-      // const MachineFrameInfo &MFI = MF->getFrameInfo();
+      const MachineFrameInfo &MFI = MF->getFrameInfo();
       for (unsigned i = 0; i < ArgCount; ++i) {
         Value *ArgVal = nullptr;
         Type *Ty = CalledFunc->getFunctionType()->getParamType(i);
         if (i < 4) ArgVal = RegValueMap[ARM::R0 + i];
-        else assert(false && "Fixing later");
+        else {
+          // Load SP
+          GlobalVariable *SP = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStackTop");
+          assert(SP && "ARM::BL: SP not found");
+          Instruction *LoadSP = new LoadInst(Ty32, SP, "LoadSP", BB);
+          Monitor::event_Instruction(LoadSP);
+
+          // Add offset
+          Constant *Offset = ConstantInt::get(Ty32, (i - 4)*4);
+          Instruction *AddSP = BinaryOperator::Create(Instruction::Add, LoadSP, Offset, "AddSP", BB);
+          Monitor::event_Instruction(AddSP);
+
+          // GEP
+          GlobalVariable *Stack = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStack");
+          assert(Stack && "ARM::BL: Stack not found");
+          Instruction *GEP = GetElementPtrInst::Create(
+            ArrayType::get(Ty32, 1000),
+            Stack,
+            { ConstantInt::get(Ty32, 0), AddSP },
+            "GEP", BB);
+          Monitor::event_Instruction(GEP);
+
+          // Load
+          LoadInst *Load = new LoadInst(Ty32, GEP, "Load", BB);
+          Monitor::event_Instruction(Load);
+
+          ArgVal = Load;
+        };
 
         if (ArgVal->getType() != Ty && i < CalledFunc->arg_size()) { // Skip variadic args
           raw_ostream &OS = Monitor::event_raw();
@@ -693,6 +928,12 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
 
       Value *RnVal = RegValueMap[Rn];
       Value *ImmVal = ConstantInt::get(Ty32, Imm);
+
+      if (RnVal->getType()->isPointerTy()) {
+        Instruction *Cast = new PtrToIntInst(RnVal, Ty32, "CMPriCast", BB);
+        Monitor::event_Instruction(Cast);
+        RnVal = Cast;
+      }
 
       // Negative flag
       Instruction *CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, RnVal, ImmVal, "CMPriNeg", BB);
@@ -848,15 +1089,19 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       );
 
       Value *Ptr;
-
       Ptr = RegValueMap[Rn];
-      assert(Ptr->getType() == Ty32 && "ARM::LDRBi12: expecting i32 type");
+
+      if (Ptr->getType()->isPointerTy()) {
+        Instruction *Cast = new PtrToIntInst(Ptr, Ty32, "LDRBi12CastDown", BB);
+        Monitor::event_Instruction(Cast);
+        Ptr = Cast;
+      }
       if (Imm12 != 0) {
         Instruction *Add = BinaryOperator::Create(Instruction::Add, Ptr, ConstantInt::get(Ty32, Imm12), "LDRBi12Add", BB);
         Monitor::event_Instruction(Add);
         Ptr = Add;
       }
-      Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "LDRBi12Cast", BB);
+      Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "LDRBi12CastUp", BB);
       Monitor::event_Instruction(Cast);
       Ptr = Cast;
 
@@ -934,8 +1179,16 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Value *Ptr;
 
       if (Rn == ARM::PC) {
-        uint64_t offset = MCIR->getMCInstIndex(*MI);
-        Ptr = ConstantInt::get(Ty32, offset+8);
+        Value *GV = getGlobalValueByOffset(MCIR->getMCInstIndex(*MI), Imm12 + 8);
+        Monitor::event_raw() << "Global Value: " << GV->getName() << "\n";
+        Ptr = GV;
+
+        Instruction *Cast = new PtrToIntInst(Ptr, Ty32, "LDRi12Cast", BB);
+        Monitor::event_Instruction(Cast);
+        Ptr = Cast;
+
+        RegValueMap[Rt] = Ptr;
+        break;
       } else if (Rn == ARM::SP) {
         // Load SP
         GlobalVariable *SP = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStackTop");
@@ -1199,7 +1452,8 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::STMDB_UPD: assuming SP for now"
       );
 
-      if (Reg == ARM::R11 && RegValueMap.count(Reg) == 0) {
+      if (RegValueMap.count(Reg) == 0) {
+        Monitor::event_raw() << "ARM::STMDB_UPD: pushing valueless register " << Reg << "\n";
         RegValueMap[Reg] = ConstantInt::get(Ty32, 0);
       }
 

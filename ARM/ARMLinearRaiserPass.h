@@ -25,6 +25,7 @@ public:
 
   bool run (MachineFunction *MF, Function *F) override;
   
+  GlobalValue *getGlobalValueByOffset(int64_t MCInstOffset, uint64_t PCOffset);
   Value *ARMCCToValue(int Cond, BasicBlock *BB);
   BasicBlock *getBasicBlock(MachineBasicBlock *MBB);
   bool raiseMachineInstr(MachineInstr *MI);
