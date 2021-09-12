@@ -573,7 +573,18 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       ARM_AM::ShiftOpc ShiftOpcode = (ARM_AM::ShiftOpc) (Shift & 0x7);
 
       Value *RnVal = RegValueMap[Rn];
+      if (RnVal->getType()->isPointerTy()) {
+        Instruction *Cast = new PtrToIntInst(RnVal, Ty32, "Cast", BB);
+        Monitor::event_Instruction(Cast);
+        RnVal = Cast;
+      }
       Value *RmVal = RegValueMap[Rm];
+
+      if (RmVal->getType()->isPointerTy()) {
+        Instruction *Cast = new PtrToIntInst(RmVal, Ty32, "Cast", BB);
+        Monitor::event_Instruction(Cast);
+        RmVal = Cast;
+      }
 
       Instruction::BinaryOps ShiftOp;
       switch (ShiftOpcode) {
@@ -866,23 +877,33 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       unsigned Bits = Op2 & 0xFF;
       unsigned Rot = (Op2 & 0xF00) >> 7;
       int64_t Imm = static_cast<int64_t>(ARM_AM::rotr32(Bits, Rot));
-      int64_t CC = MI->getOperand(2).getImm();
+      ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
       Register CPSR = MI->getOperand(3).getReg();
 
-      assert(
-        CC == 14 &&
-        CPSR == 0 &&
-        "something something conditional execution"
-      );
+      bool conditional_execution = (CC != ARMCC::AL) && (CC != 0);
+      BasicBlock *MergeBB;
+      if (conditional_execution) {
+        // Split on condition
+        Monitor::event_raw() << "splitting on condition\n";
+        Value *Cond = ARMCCToValue(ARMCC::getOppositeCondition(CC), BB);
+        BasicBlock *CondExecBB = BasicBlock::Create(Context, "CondExec", F);
+        MBBBBMap[MBB].push_back(CondExecBB);
+        MergeBB = BasicBlock::Create(Context, "Merge", F);
+        MBBBBMap[MBB].push_back(MergeBB);
+        Instruction *CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+        Monitor::event_Instruction(CondBranch);
+        Instruction* MergeElse = BranchInst::Create(MergeBB, BB);
+        Monitor::event_Instruction(MergeElse);
+        BB = CondExecBB;
+      }
 
       Value *RnVal = RegValueMap[Rn];
-      Value *ImmVal = ConstantInt::get(Ty32, Imm);
-
       if (RnVal->getType()->isPointerTy()) {
         Instruction *Cast = new PtrToIntInst(RnVal, Ty32, "CMPriCast", BB);
         Monitor::event_Instruction(Cast);
         RnVal = Cast;
       }
+      Value *ImmVal = ConstantInt::get(Ty32, Imm);
 
       // Negative flag
       Instruction *CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, RnVal, ImmVal, "CMPriNeg", BB);
@@ -901,7 +922,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Function *USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Ty32);
       Instruction *CallUSub = CallInst::Create(USub, {RnVal, ImmVal}, "USubInstrinsic", BB);
       Monitor::event_Instruction(CallUSub);
-      Instruction *C_Flag = ExtractValueInst::Create(CallUSub, 1, "CMPCFlag", BB);
+      Instruction *C_Flag = ExtractValueInst::Create(CallUSub, 1, "CMPriCFlag", BB);
       Monitor::event_Instruction(C_Flag);
       Instruction *StoreCarry = new StoreInst(C_Flag, Flags[2], BB);
       Monitor::event_Instruction(StoreCarry);
@@ -911,33 +932,89 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Function *SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Ty32);
       Instruction *CallSSub = CallInst::Create(SSub, {RnVal, ImmVal}, "SSubIntrinsic", BB);
       Monitor::event_Instruction(CallSSub);
-      Instruction *V_Flag = ExtractValueInst::Create(CallSSub, 1, "CMPVFlag", BB);
+      Instruction *V_Flag = ExtractValueInst::Create(CallSSub, 1, "CMPriVFlag", BB);
       Monitor::event_Instruction(V_Flag);
       Instruction *StoreOverflow = new StoreInst(V_Flag, Flags[3], BB);
       Monitor::event_Instruction(StoreOverflow);
+
+      if (conditional_execution) {      
+        Instruction* MergeIf = BranchInst::Create(MergeBB, BB);
+        Monitor::event_Instruction(MergeIf);
+      }
     } break;
-    /*
-    case ARM::CMPrr: { // 760 | CMP{S}<c> <Rn>, <Rm> => Rn - Rm
-      Value *Rn = getOperandValue(MI, 0);
-      Value *Rm = getOperandValue(MI, 1);
+    case ARM::CMPrr: { // 760 | CMP Rn Rm CC CPSR
+      Type *Ty32 = Type::getInt32Ty(Context);
       
+      Register Rn = MI->getOperand(0).getReg();
+      Register Rm = MI->getOperand(1).getReg();
+      ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
+      Register CPSR = MI->getOperand(3).getReg();
+
+      bool conditional_execution = (CC != ARMCC::AL) && (CC != 0);
+      BasicBlock *MergeBB;
+      if (conditional_execution) {
+        // Split on condition
+        Monitor::event_raw() << "splitting on condition\n";
+        Value *Cond = ARMCCToValue(ARMCC::getOppositeCondition(CC), BB);
+        BasicBlock *CondExecBB = BasicBlock::Create(Context, "CondExec", F);
+        MBBBBMap[MBB].push_back(CondExecBB);
+        MergeBB = BasicBlock::Create(Context, "Merge", F);
+        MBBBBMap[MBB].push_back(MergeBB);
+        Instruction *CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+        Monitor::event_Instruction(CondBranch);
+        Instruction* MergeElse = BranchInst::Create(MergeBB, BB);
+        Monitor::event_Instruction(MergeElse);
+        BB = CondExecBB;
+      }
+
+      Value *RnVal = RegValueMap[Rn];
+      if (RnVal->getType()->isPointerTy()) {
+        Instruction *Cast = new PtrToIntInst(RnVal, Ty32, "CMPrrCast", BB);
+        Monitor::event_Instruction(Cast);
+        RnVal = Cast;
+      }
+      Value *RmVal = RegValueMap[Rm];
+      if (RmVal->getType()->isPointerTy()) {
+        Instruction *Cast = new PtrToIntInst(RmVal, Ty32, "CMPrrCast", BB);
+        Monitor::event_Instruction(Cast);
+        RmVal = Cast;
+      }
+
       // Negative flag
-      Instruction *CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, Rn, Rm, "CMPriNeg", BB); Monitor::event_Instruction(CmpNeg);
-      Instruction *StoreNeg = new StoreInst(CmpNeg, Flags[0], BB); Monitor::event_Instruction(StoreNeg);
+      Instruction *CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, RnVal, RmVal, "CMPrrNeg", BB);
+      Monitor::event_Instruction(CmpNeg);
+      Instruction *StoreNeg = new StoreInst(CmpNeg, Flags[0], BB);
+      Monitor::event_Instruction(StoreNeg);
       
       // Zero flag
-      Instruction *CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, Rn, Rm, "CMPriZero", BB); Monitor::event_Instruction(CmpZero);
-      Instruction *StoreZero = new StoreInst(CmpZero, Flags[1], BB); Monitor::event_Instruction(StoreZero);
+      Instruction *CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, RnVal, RmVal, "CMPrrZero", BB);
+      Monitor::event_Instruction(CmpZero);
+      Instruction *StoreZero = new StoreInst(CmpZero, Flags[1], BB);
+      Monitor::event_Instruction(StoreZero);
 
       // Carry flag
-      Instruction *CmpCarry = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SGT, Rn, Rm, "CMPriCarry", BB); Monitor::event_Instruction(CmpCarry);
-      Instruction *StoreCarry = new StoreInst(CmpCarry, Flags[2], BB); Monitor::event_Instruction(StoreCarry);
-      
+      Function *USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Ty32);
+      Instruction *CallUSub = CallInst::Create(USub, {RnVal, RmVal}, "USubInstrinsic", BB);
+      Monitor::event_Instruction(CallUSub);
+      Instruction *C_Flag = ExtractValueInst::Create(CallUSub, 1, "CMPrrCFlag", BB);
+      Monitor::event_Instruction(C_Flag);
+      Instruction *StoreCarry = new StoreInst(C_Flag, Flags[2], BB);
+      Monitor::event_Instruction(StoreCarry);
+
       // Overflow flag
-      Instruction *CmpOverflow = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_UGT, Rn, Rm, "CMPriOverflow", BB); Monitor::event_Instruction(CmpOverflow);
-      Instruction *StoreOverflow = new StoreInst(CmpOverflow, Flags[3], BB); Monitor::event_Instruction(StoreOverflow);
+      Function *SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Ty32);
+      Instruction *CallSSub = CallInst::Create(SSub, {RnVal, RmVal}, "SSubIntrinsic", BB);
+      Monitor::event_Instruction(CallSSub);
+      Instruction *V_Flag = ExtractValueInst::Create(CallSSub, 1, "CMPrrVFlag", BB);
+      Monitor::event_Instruction(V_Flag);
+      Instruction *StoreOverflow = new StoreInst(V_Flag, Flags[3], BB);
+      Monitor::event_Instruction(StoreOverflow);
+
+      if (conditional_execution) {      
+        Instruction* MergeIf = BranchInst::Create(MergeBB, BB);
+        Monitor::event_Instruction(MergeIf);
+      }
     } break;
-    */
     case ARM::DMB: { // 773 | DMB Imm
       // Call ARM DMB intrinsic
       Type *Ty32 = Type::getInt32Ty(Context);
@@ -1001,46 +1078,143 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Monitor::event_raw() << "incrementing SP by 4\n";
       stack_offset += 4;
     } break;
-    case ARM::LDRBi12: { // 831 | LDRB Rt Rn Imm12 CC CPSR
+    case ARM::LDRB_PRE_REG: { // 830 | LDRB_PRE_REG Rt Rn Rs Rm Shift CC CPSR
       Type *Ty8 = Type::getInt8Ty(Context);
       Type *Ty32 = Type::getInt32Ty(Context);
       Type *PtrTy32 = Type::getInt32PtrTy(Context);
 
       Register Rt = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
-      int64_t Imm12 = MI->getOperand(2).getImm();
-      int64_t CC = MI->getOperand(3).getImm();
-      Register CPSR = MI->getOperand(4).getReg();
+      Register Rs = MI->getOperand(2).getReg();
+      assert(Rn == Rs && "ARM::LDRB_PRE_REG: expecting Rn as write-back register");
+      Register Rm = MI->getOperand(3).getReg();
+      int64_t Shift = MI->getOperand(4).getImm();
+      int64_t CC = MI->getOperand(5).getImm();
+      Register CPSR = MI->getOperand(6).getReg();
 
-      if (CC != ARMCC::AL) {
-        // Conditional Execution
-        assert(false && "ARM::LDRBi12: conditional execution not yet implemented");
-      }
+      assert(
+        CC == 14 &&
+        CPSR == 0 &&
+        "ARM::LDRB_PRE_REG: assuming no flags for now"
+      );
 
-      Value *Ptr;
-      Ptr = RegValueMap[Rn];
+      unsigned Imm12 = Shift & 0xFFF;
+      assert(Imm12 == 0 && "ARM::LDRB_PRE_REG: expecting shift == 0");
+      ARM_AM::ShiftOpc ShiftOpcode = (ARM_AM::ShiftOpc) ((Shift >> 13) & 0x7);
+      bool isSub = (Shift >> 12) & 0x1;
+      unsigned IdxMode = Shift >> 16;
+      assert(ShiftOpcode == ARM_AM::lsl && "ARM::LDRB_PRE_REG: expecting no shift opcode");
+      assert(IdxMode == 0 && "ARM::LDRB_PRE_REG: expecting 0 index mode");
 
-      if (Ptr->getType()->isPointerTy()) {
-        Instruction *Cast = new PtrToIntInst(Ptr, Ty32, "LDRBi12CastDown", BB);
+      Value *RnVal = RegValueMap[Rn];
+      if (RnVal->getType()->isPointerTy()) {
+        Instruction *Cast = new PtrToIntInst(RnVal, Ty32, "LDRB_PRE_REGCast", BB);
         Monitor::event_Instruction(Cast);
-        Ptr = Cast;
+        RnVal = Cast;
       }
-      if (Imm12 != 0) {
-        Instruction *Add = BinaryOperator::Create(Instruction::Add, Ptr, ConstantInt::get(Ty32, Imm12), "LDRBi12Add", BB);
-        Monitor::event_Instruction(Add);
-        Ptr = Add;
+      Value *RmVal = RegValueMap[Rm];
+      if (RmVal->getType()->isPointerTy()) {
+        Instruction *Cast = new PtrToIntInst(RmVal, Ty32, "LDRB_PRE_REGCast", BB);
+        Monitor::event_Instruction(Cast);
+        RmVal = Cast;
       }
-      Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "LDRBi12CastUp", BB);
+
+      Value *Ptr = RnVal;
+      // Pre-indexed
+      Instruction *Add = BinaryOperator::Create(Instruction::Add, Ptr, RmVal, "LDRB_PRE_REGAdd", BB);
+      Monitor::event_Instruction(Add);
+      Ptr = Add;
+      RegValueMap[Rn] = Ptr;
+
+      Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "LDRB_PRE_REGCast", BB);
       Monitor::event_Instruction(Cast);
       Ptr = Cast;
 
-      Instruction *Load = new LoadInst(Ty32, Ptr, "LDRBi12", BB);
+      Instruction *Load = new LoadInst(Ty32, Ptr, "LDRB_PRE_REGLoad", BB);
       Monitor::event_Instruction(Load);
-      Instruction *Trunc = new TruncInst(Load, Ty8, "LDRBi12Trunc", BB);
+      Ptr = Load;
+
+      Instruction *Trunc = new TruncInst(Ptr, Ty8, "LDRB_PRE_REGTrunc", BB);
       Monitor::event_Instruction(Trunc);
-      Instruction *ZExt = new ZExtInst(Trunc, Ty32, "LDRBi12ZExt", BB);
+      Ptr = Trunc;
+
+      RegValueMap[Rt] = Ptr;
+    } break;
+    case ARM::LDRBi12: { // 831 | LDRB Rt Rn Imm12 CC CPSR
+      Type *Ty8 = Type::getInt8Ty(Context);
+      Type *PtrTy8 = Type::getInt8PtrTy(Context);
+      Type *Ty32 = Type::getInt32Ty(Context);
+
+      Register Rt = MI->getOperand(0).getReg();
+      Register Rn = MI->getOperand(1).getReg();
+      int64_t Imm12 = MI->getOperand(2).getImm();
+      ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
+      Register CPSR = MI->getOperand(4).getReg();
+
+      bool conditional_execution = (CC != ARMCC::AL) && (CC != 0);
+      BasicBlock *BaseBB;
+      BasicBlock *MergeBB;
+      if (conditional_execution) {
+        // Split on condition
+        Monitor::event_raw() << "splitting on condition\n";
+        Value *Cond = ARMCCToValue(ARMCC::getOppositeCondition(CC), BB);
+        BasicBlock *CondExecBB = BasicBlock::Create(Context, "CondExec", F);
+        MBBBBMap[MBB].push_back(CondExecBB);
+        MergeBB = BasicBlock::Create(Context, "Merge", F);
+        MBBBBMap[MBB].push_back(MergeBB);
+        Instruction *CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+        Monitor::event_Instruction(CondBranch);
+        Instruction* MergeElse = BranchInst::Create(MergeBB, BB);
+        Monitor::event_Instruction(MergeElse);
+        BaseBB = BB;
+        BB = CondExecBB;
+      }
+
+      Value *Ptr = RegValueMap[Rn];
+      auto &OS=Monitor::event_raw(); OS << "Loading type "; Ptr->getType()->print(OS); OS << "\n";
+      // Cast to pointer if necessary
+      if (Ptr->getType() == Ty32) {
+        Instruction *Cast = new IntToPtrInst(Ptr, PtrTy8, "LDRBi12CastUp", BB);
+        Monitor::event_Instruction(Cast);
+        Ptr = Cast;
+      }
+      // Bitcast pointer if necessary
+      if (Ptr->getType() != Ty8) {
+        Instruction *Bitcast = new BitCastInst(Ptr, PtrTy8, "LDRHBitcast", BB);
+        Monitor::event_Instruction(Bitcast);
+        Ptr = Bitcast;
+      }
+      // GEP if there is an offset
+      if (Imm12 != 0) {
+        Instruction *GEP = GetElementPtrInst::Create(Ty8, Ptr, { ConstantInt::get(Ty32, Imm12) }, "LDRBi12GEP", BB);
+        Monitor::event_Instruction(GEP);
+        Ptr = GEP;
+      }
+      // Load
+      Instruction *Load = new LoadInst(Ty8, Ptr, "LDRBi12", BB);
+      Monitor::event_Instruction(Load);
+      Ptr = Load;
+      // Truncate if necessary
+      if (Ptr->getType() != Ty8) {
+        Instruction *Trunc = new TruncInst(Ptr, Ty8, "LDRBi12Trunc", BB);
+        Monitor::event_Instruction(Trunc);
+        Ptr = Trunc;
+      }
+      // Zero extend
+      Instruction *ZExt = new ZExtInst(Ptr, Ty32, "LDRBi12ZExt", BB);
       Monitor::event_Instruction(ZExt);
-      RegValueMap[Rt] = ZExt;
+      Ptr = ZExt;
+      
+      if (conditional_execution) {      
+        Instruction* MergeIf = BranchInst::Create(MergeBB, BB);
+        Monitor::event_Instruction(MergeIf);
+        PHINode *phi = PHINode::Create(Ty32, 2, "LDRBi12Phi", MergeBB);
+        phi->addIncoming(RegValueMap[Rt], BaseBB);
+        phi->addIncoming(Ptr, BB);
+        Ptr = phi;
+      }
+
+      RegValueMap[Rt] = Ptr;
     } break;
     case ARM::LDREX: { // 836 | LDREX Rt Rn CC CPSR
       Type *PtrTy32 = Type::getInt32PtrTy(Context);
@@ -1070,10 +1244,84 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
 
       RegValueMap[Rt] = Instr;
     } break;
-    /*
-    case ARM::LDRH: { // 840 | LDRH<c> <Rt>, [<Rn>, #<imm>] => Rt = *(Rn + imm)
-      assert(false && "ARM::LDRH not yet implemented");
+    case ARM::LDRH: { // 840 | LDRH Rt Rn - Imm12 CC CPSR
+      Type *Ty16 = Type::getInt16Ty(Context);
+      Type *PtrTy16 = Type::getInt16PtrTy(Context);
+      Type *Ty32 = Type::getInt32Ty(Context);
+
+      Register Rt = MI->getOperand(0).getReg();
+      Register Rn = MI->getOperand(1).getReg();
+      assert(MI->getOperand(2).getReg() == 0 && "ARM::LDRH: expecting no secondary register");
+      int64_t Imm12 = MI->getOperand(3).getImm();
+      ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(4).getImm();
+      Register CPSR = MI->getOperand(5).getReg();
+
+      bool conditional_execution = (CC != ARMCC::AL) && (CC != 0);
+      BasicBlock *BaseBB;
+      BasicBlock *MergeBB;
+      if (conditional_execution) {
+        // Split on condition
+        Monitor::event_raw() << "splitting on condition\n";
+        Value *Cond = ARMCCToValue(ARMCC::getOppositeCondition(CC), BB);
+        BasicBlock *CondExecBB = BasicBlock::Create(Context, "CondExec", F);
+        MBBBBMap[MBB].push_back(CondExecBB);
+        MergeBB = BasicBlock::Create(Context, "Merge", F);
+        MBBBBMap[MBB].push_back(MergeBB);
+        Instruction *CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+        Monitor::event_Instruction(CondBranch);
+        Instruction* MergeElse = BranchInst::Create(MergeBB, BB);
+        Monitor::event_Instruction(MergeElse);
+        BaseBB = BB;
+        BB = CondExecBB;
+      }
+
+      Value *Ptr = RegValueMap[Rn];
+      auto &OS=Monitor::event_raw(); OS << "Loading type "; Ptr->getType()->print(OS); OS << "\n";
+      // Cast to pointer if necessary
+      if (Ptr->getType() == Ty32) {
+        Instruction *Cast = new IntToPtrInst(Ptr, PtrTy16, "LDRHCastUp", BB);
+        Monitor::event_Instruction(Cast);
+        Ptr = Cast;
+      }
+      // Bitcast pointer if necessary
+      if (Ptr->getType() != Ty16) {
+        Instruction *Bitcast = new BitCastInst(Ptr, PtrTy16, "LDRHBitcast", BB);
+        Monitor::event_Instruction(Bitcast);
+        Ptr = Bitcast;
+      }
+      // GEP if there is an offset
+      if (Imm12 != 0) {
+        Instruction *GEP = GetElementPtrInst::Create(Ty16, Ptr, { ConstantInt::get(Ty32, Imm12) }, "LDRHGEP", BB);
+        Monitor::event_Instruction(GEP);
+        Ptr = GEP;
+      }
+      // Load
+      Instruction *Load = new LoadInst(Ty16, Ptr, "LDRH", BB);
+      Monitor::event_Instruction(Load);
+      Ptr = Load;
+      // Truncate if necessary
+      if (Ptr->getType() != Ty16) {
+        Instruction *Trunc = new TruncInst(Ptr, Ty16, "LDRHTrunc", BB);
+        Monitor::event_Instruction(Trunc);
+        Ptr = Trunc;
+      }
+      // Zero extend
+      Instruction *ZExt = new ZExtInst(Ptr, Ty32, "LDRHZExt", BB);
+      Monitor::event_Instruction(ZExt);
+      Ptr = ZExt;
+      
+      if (conditional_execution) {      
+        Instruction* MergeIf = BranchInst::Create(MergeBB, BB);
+        Monitor::event_Instruction(MergeIf);
+        PHINode *phi = PHINode::Create(Ty32, 2, "LDRHPhi", MergeBB);
+        phi->addIncoming(RegValueMap[Rt], BaseBB);
+        phi->addIncoming(Ptr, BB);
+        Ptr = phi;
+      }
+
+      RegValueMap[Rt] = Ptr;
     } break;
+    /*
     case ARM::LDRSB: { // 845 | LDR{type}{cond} Rt, [Rn {, #offset}]
       // SB | Load Signed Byte; Sign extend to 32 bits
       Type *Ty8 = Type::getInt8Ty(Context);
@@ -1394,6 +1642,46 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       assert(false && "ARM::SMLAL not yet implemented");
     } break;
     */
+    case ARM::SMULL: { // 1849 | SMULL RdLo RdHi Rn Rm CC CPSR S
+      Type *Ty32 = Type::getInt32Ty(Context);
+      Type *Ty64 = Type::getInt64Ty(Context);
+
+      Register RdLo = MI->getOperand(0).getReg();
+      Register RdHi = MI->getOperand(1).getReg();
+      Register Rn = MI->getOperand(2).getReg();
+      Register Rm = MI->getOperand(3).getReg();
+      int64_t CC = MI->getOperand(4).getImm();
+      Register CPSR = MI->getOperand(5).getReg();
+      Register S = MI->getOperand(6).getReg();
+
+      assert(
+        CC == 14 &&
+        CPSR == 0 &&
+        S == 0 &&
+        "ARM::SMULL: assuming no flags for now"
+      );
+
+      Value *RnVal = RegValueMap[Rn];
+      Value *RmVal = RegValueMap[Rm];
+
+      Instruction *RnExt = new SExtInst(RnVal, Ty64, "SMULLRnExt", BB);
+      Monitor::event_Instruction(RnExt);
+      Instruction *RmExt = new SExtInst(RmVal, Ty64, "SMULLRmExt", BB);
+      Monitor::event_Instruction(RmExt);
+
+      Instruction *Mul = BinaryOperator::Create(Instruction::Mul, RnExt, RmExt, "SMULL", BB);
+      Monitor::event_Instruction(Mul);
+
+      Instruction *Lo = new TruncInst(Mul, Ty32, "SMULLLo", BB);
+      Monitor::event_Instruction(Lo);
+      Instruction *Hi = BinaryOperator::Create(Instruction::LShr, Mul, ConstantInt::get(Ty64, 32), "SMULLHi", BB);
+      Monitor::event_Instruction(Hi);
+      Instruction *CastHi = new TruncInst(Hi, Ty32, "SMULLHiCast", BB);
+      Monitor::event_Instruction(CastHi);
+
+      RegValueMap[RdLo] = Lo;
+      RegValueMap[RdHi] = CastHi;
+    } break;
     case ARM::STMDB_UPD: { // 1895 | STMDB Rn Rn CC CPSR Reg
       Type *Ty32 = Type::getInt32Ty(Context);
 
@@ -1661,14 +1949,29 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         Monitor::event_Instruction(StoreOverflow);
       }
     } break;
-    /*
-    case ARM::SUBrr: { // 1929 | SUB<c> <Rd>, <Rn>, <Rm> => Rd = Rn - Rm
-      Value *Rn = getOperandValue(MI, 1);
-      Value *Rm = getOperandValue(MI, 2);
+    case ARM::SUBrr: { // 1929 | SUB Rd Rn Rm CC CPSR S
+      Register Rd = MI->getOperand(0).getReg();
+      Register Rn = MI->getOperand(1).getReg();
+      Register Rm = MI->getOperand(2).getReg();
+      ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
+      Register CPSR = MI->getOperand(4).getReg();
+      Register S = MI->getOperand(5).getReg();
 
-      Instruction *Instr = BinaryOperator::Create(Instruction::Sub, Rn, Rm, "SUBrr", BB); Monitor::event_Instruction(Instr);
-      setOperandValue(MI, 0, Instr);
+      assert(
+        CC == ARMCC::AL &&
+        CPSR == 0 &&
+        S == 0 &&
+        "ARM::SUBrr: assuming no conditional flags for now"
+      );
+
+      Value *RnVal = RegValueMap[Rn];
+      Value *RmVal = RegValueMap[Rm];
+
+      Instruction *Instr = BinaryOperator::Create(Instruction::Sub, RnVal, RmVal, "ADDrr", BB);
+      Monitor::event_Instruction(Instr);
+      RegValueMap[Rd] = Instr;
     } break;
+    /*
     case ARM::SVC: { // 1932 | SVC<c> #<imm>
       assert(false && "ARM::SVC not yet implemented");
     } break;
