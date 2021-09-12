@@ -13,9 +13,12 @@ public:
   MachineFunction *MF;
   Function *F;
 
-  DenseMap<MachineBasicBlock *, BasicBlock *> MBBBBMap;
+  DenseMap<MachineBasicBlock *, std::vector<BasicBlock *>> MBBBBMap;
   
   DenseMap<Register, Value*> RegValueMap;
+
+  int64_t stack_offset;
+  std::map<int64_t, Value*> stack_map;
   
   // NZCV
   SmallVector<Value*, 4> Flags;
@@ -27,7 +30,7 @@ public:
   
   GlobalValue *getGlobalValueByOffset(int64_t MCInstOffset, uint64_t PCOffset);
   Value *ARMCCToValue(int Cond, BasicBlock *BB);
-  BasicBlock *getBasicBlock(MachineBasicBlock *MBB);
+  std::vector<BasicBlock *> getBasicBlocks(MachineBasicBlock *MBB);
   bool raiseMachineInstr(MachineInstr *MI);
 
 private:

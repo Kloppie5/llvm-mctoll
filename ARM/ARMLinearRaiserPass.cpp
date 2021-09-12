@@ -22,35 +22,12 @@ bool ARMLinearRaiserPass::run(MachineFunction *MF, Function *F) {
   this->MF = MF;
   this->F = F;
 
-  // Add GlobalStack if it does not exist.
-  // @GlobalStack = global [1000 x i32] zeroinitializer
-  if (MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStack") == nullptr) {
-    new GlobalVariable(
-      *MR.getModule(),
-      ArrayType::get(Type::getInt32Ty(Context), 1000),
-      false,
-      GlobalValue::ExternalLinkage,
-      ConstantAggregateZero::get(ArrayType::get(Type::getInt32Ty(Context), 1000)),
-      "llvmmctoll__GlobalStack"
-    );
-  }
-  // Add GlobalStackTop if it does not exist.
-  // @GlobalStackTop = global i32 0
-  if (MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStackTop") == nullptr) {
-    new GlobalVariable(
-      *MR.getModule(),
-      Type::getInt32Ty(Context),
-      false,
-      GlobalValue::ExternalLinkage,
-      ConstantInt::get(Type::getInt32Ty(Context), 0),
-      "llvmmctoll__GlobalStackTop"
-    );
-  }
+  stack_offset = 0;
 
   // Set up entry block.
   BasicBlock *EBB = &F->getEntryBlock();
   MachineBasicBlock *MBB = &MF->front();
-  MBBBBMap[MBB] = EBB;
+  MBBBBMap[MBB].push_back(EBB);
   EBB->setName("entry");
 
   // Allocate NZCV flags.
@@ -79,11 +56,12 @@ bool ARMLinearRaiserPass::run(MachineFunction *MF, Function *F) {
   Flags.push_back(AllocV);
 
   // Add arguments to RegValueMap
-  if (F->arg_size() > 0) RegValueMap[ARM::R0] = F->getArg(0);
-  if (F->arg_size() > 1) RegValueMap[ARM::R1] = F->getArg(1);
-  if (F->arg_size() > 2) RegValueMap[ARM::R2] = F->getArg(2);
-  if (F->arg_size() > 3) RegValueMap[ARM::R3] = F->getArg(3);
-  // TODO variadic arguments
+  for (unsigned i = 0; i < 4 && i < F->arg_size(); ++i)
+    RegValueMap[ARM::R0 + i] = F->arg_begin() + i;
+  
+  // Add excess arguments to StackArgMap
+  for (unsigned i = 4; i < F->arg_size(); ++i) // TODO: check variadic functions
+    stack_map[(i-4)*4] = F->arg_begin() + i;
 
   std::vector<MachineInstr *> Worklist;
   for (MachineBasicBlock &MBB : *MF)
@@ -406,15 +384,15 @@ Value *ARMLinearRaiserPass::ARMCCToValue(int Cond, BasicBlock *BB) {
   }
 }
 
-BasicBlock *ARMLinearRaiserPass::getBasicBlock(MachineBasicBlock *MBB) {
-  DenseMapIterator<MachineBasicBlock*, BasicBlock *> I = MBBBBMap.find(MBB);
+std::vector<BasicBlock *> ARMLinearRaiserPass::getBasicBlocks(MachineBasicBlock *MBB) {
+  auto I = MBBBBMap.find(MBB);
   if (I != MBBBBMap.end())
     return I->second;
   
   BasicBlock *BB = BasicBlock::Create(Context, "bb." + Twine(MBB->getNumber()), F);
   Monitor::event_raw() << "Created BB: " << BB->getName() << " in function " << F->getName() << "\n";
-  MBBBBMap[MBB] = BB;
-  return BB;
+  MBBBBMap[MBB].push_back(BB);
+  return MBBBBMap[MBB];
 }
 
 bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
@@ -423,7 +401,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
   Monitor::event_stateswitch();
 
   MachineBasicBlock *MBB = MI->getParent();
-  BasicBlock *BB = getBasicBlock(MBB);
+  BasicBlock *BB = getBasicBlocks(MBB).back();
 
   switch (MI->getOpcode()) {
     default: {
@@ -515,7 +493,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
 
       Register Rd = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
-       int64_t Op2 = MI->getOperand(2).getImm();
+      int64_t Op2 = MI->getOperand(2).getImm();
       unsigned Bits = Op2 & 0xFF;
       unsigned Rot = (Op2 & 0xF00) >> 7;
       int64_t Imm = static_cast<int64_t>(ARM_AM::rotr32(Bits, Rot));
@@ -530,38 +508,25 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "you know"
       );
 
-      Value *Val;
-
       if (Rn == ARM::SP) {
-        // Load SP
-        GlobalVariable *SP = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStackTop");
-        assert(SP && "ARM::Addri: SP not found");
-        Instruction *LoadSP = new LoadInst(Ty32, SP, "LoadSP", BB);
-        Monitor::event_Instruction(LoadSP);
-        Val = LoadSP;
-      } else {
-        Val = RegValueMap[Rn];
+        auto I = stack_map.find(stack_offset + Imm);
+        if (I == stack_map.end()) {
+          Monitor::event_raw() << "stack_map[" << stack_offset + Imm << "] is null, creating new Value\n";
+          Instruction *Alloca = new AllocaInst(Ty32, 0, "", BB);
+          Monitor::event_Instruction(Alloca);
+          stack_map[stack_offset + Imm] = Alloca;
+        }
+        Monitor::event_raw() << "Reg " << Rd << " = stack[" << (stack_offset + Imm) << "]\n";
+        RegValueMap[Rd] = stack_map[stack_offset + Imm];
+        break;
       }
 
+      Value *Val = RegValueMap[Rn];
       if (Imm != 0) {
         Instruction *Add = BinaryOperator::Create(Instruction::Add, Val, ConstantInt::get(Ty32, Imm), "Add", BB);
         Monitor::event_Instruction(Add);
         Val = Add;
       }
-
-      if (Rn == ARM::SP || Rn == ARM::R11) {
-        // GEP
-        GlobalVariable *Stack = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStack");
-        assert(Stack && "ARM::Addri: Stack not found");
-        Instruction *GEP = GetElementPtrInst::Create(
-          ArrayType::get(Ty32, 1000),
-          Stack,
-          { ConstantInt::get(Ty32, 0), Val },
-          "GEP", BB);
-        Monitor::event_Instruction(GEP);
-        Val = GEP;
-      }
-
       RegValueMap[Rd] = Val;
     } break;
     case ARM::ADDrr: { // 685 | ADD Rd Rn Rm CC CPSR S      
@@ -752,37 +717,21 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Monitor::event_raw() << "Call Function: " << CalledFunc->getName() << "/" << ArgCount << "(\n";
 
       std::vector<Value *> ArgVals;
-      const MachineFrameInfo &MFI = MF->getFrameInfo();
       for (unsigned i = 0; i < ArgCount; ++i) {
         Value *ArgVal = nullptr;
         Type *Ty = CalledFunc->getFunctionType()->getParamType(i);
         if (i < 4) ArgVal = RegValueMap[ARM::R0 + i];
         else {
-          // Load SP
-          GlobalVariable *SP = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStackTop");
-          assert(SP && "ARM::BL: SP not found");
-          Instruction *LoadSP = new LoadInst(Ty32, SP, "LoadSP", BB);
-          Monitor::event_Instruction(LoadSP);
-
-          // Add offset
-          Constant *Offset = ConstantInt::get(Ty32, (i - 4)*4);
-          Instruction *AddSP = BinaryOperator::Create(Instruction::Add, LoadSP, Offset, "AddSP", BB);
-          Monitor::event_Instruction(AddSP);
-
-          // GEP
-          GlobalVariable *Stack = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStack");
-          assert(Stack && "ARM::BL: Stack not found");
-          Instruction *GEP = GetElementPtrInst::Create(
-            ArrayType::get(Ty32, 1000),
-            Stack,
-            { ConstantInt::get(Ty32, 0), AddSP },
-            "GEP", BB);
-          Monitor::event_Instruction(GEP);
-
-          // Load
-          LoadInst *Load = new LoadInst(Ty32, GEP, "Load", BB);
+          auto I = stack_map.find((i - 4) * 4);
+          if (I == stack_map.end()) {
+            Monitor::event_raw() << "Failed to find stack value for " << i << ", creating new Value\n";
+            Instruction *Alloca = new AllocaInst(Ty, 0, "", BB);
+            Monitor::event_Instruction(Alloca);
+            stack_map[(i - 4) * 4] = Alloca;
+          }
+          ArgVal = stack_map[(i - 4) * 4];
+          LoadInst *Load = new LoadInst(Ty32, ArgVal, "Load", BB);
           Monitor::event_Instruction(Load);
-
           ArgVal = Load;
         };
 
@@ -836,7 +785,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
           "Bcc: assuming normal unconditional branch for now"
         );
         auto succ_itt = MBB->succ_begin();
-        BasicBlock *BranchBB = getBasicBlock(*succ_itt);
+        BasicBlock *BranchBB = getBasicBlocks(*succ_itt).front();
         Monitor::event_raw() << "Branch BB: " << BranchBB->getName() << "\n";
         Instruction *Instr = BranchInst::Create(BranchBB, BB);
         Monitor::event_Instruction(Instr);
@@ -849,9 +798,9 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         Value *CCVal = ARMCCToValue(CC, BB);
         
         auto succ_itt = MBB->succ_begin();
-        BasicBlock *BranchBB = getBasicBlock(*succ_itt);
+        BasicBlock *BranchBB = getBasicBlocks(*succ_itt).front();
         Monitor::event_raw() << "Branch BB: " << BranchBB->getName() << "\n";
-        BasicBlock *NextBB = getBasicBlock(*++succ_itt);
+        BasicBlock *NextBB = getBasicBlocks(*++succ_itt).front();
         Monitor::event_raw() << "Next BB: " << NextBB->getName() << "\n";          
         Instruction *Branch = BranchInst::Create(BranchBB, NextBB, CCVal, BB);
         Monitor::event_Instruction(Branch);
@@ -1044,32 +993,13 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::LDMIA_UPD: assuming SP for now"
       );
 
-      // Load SP
-      GlobalVariable *SP = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStackTop");
-      assert(SP && "ARM::LDMIA_UPD: SP not found");
-      Instruction *LoadSP = new LoadInst(Ty32, SP, "LoadSP", BB);
-      Monitor::event_Instruction(LoadSP);
 
-      // GEP
-      GlobalVariable *Stack = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStack");
-      assert(Stack && "ARM::LDMIA_UPD: Stack not found");
-      Instruction *GEP = GetElementPtrInst::Create(
-        ArrayType::get(Ty32, 1000),
-        Stack,
-        { ConstantInt::get(Ty32, 0), LoadSP },
-        "GEP", BB);
-      Monitor::event_Instruction(GEP);
-      
-      // Load
-      Instruction *Load = new LoadInst(Ty32, GEP, "Load", BB);
-      Monitor::event_Instruction(Load);
-      RegValueMap[Reg] = Load;
+      Monitor::event_raw() << "Reg " << Reg << " = stack[" << stack_offset << "]\n";
+      RegValueMap[Reg] = stack_map[stack_offset];
 
       // Increment SP
-      Instruction *AddSP = BinaryOperator::Create(Instruction::Add, LoadSP, ConstantInt::get(Ty32, 4), "AddSP", BB);
-      Monitor::event_Instruction(AddSP);
-      Instruction *StoreSP = new StoreInst(AddSP, SP, BB);
-      Monitor::event_Instruction(StoreSP);
+      Monitor::event_raw() << "incrementing SP by 4\n";
+      stack_offset += 4;
     } break;
     case ARM::LDRBi12: { // 831 | LDRB Rt Rn Imm12 CC CPSR
       Type *Ty8 = Type::getInt8Ty(Context);
@@ -1082,11 +1012,10 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       int64_t CC = MI->getOperand(3).getImm();
       Register CPSR = MI->getOperand(4).getReg();
 
-      assert(
-        CC == 14 &&
-        CPSR == 0 &&
-        "ARM::LDRBi12: assuming no flags for now"
-      );
+      if (CC != ARMCC::AL) {
+        // Conditional Execution
+        assert(false && "ARM::LDRBi12: conditional execution not yet implemented");
+      }
 
       Value *Ptr;
       Ptr = RegValueMap[Rn];
@@ -1176,56 +1105,91 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::LDRi12: assuming no flags for now"
       );
 
-      Value *Ptr;
-
-      if (Rn == ARM::PC) {
+      if (Rn == ARM::PC) { // Load PC-relative GlobalValue
         Value *GV = getGlobalValueByOffset(MCIR->getMCInstIndex(*MI), Imm12 + 8);
         Monitor::event_raw() << "Global Value: " << GV->getName() << "\n";
-        Ptr = GV;
-
-        Instruction *Cast = new PtrToIntInst(Ptr, Ty32, "LDRi12Cast", BB);
-        Monitor::event_Instruction(Cast);
-        Ptr = Cast;
-
-        RegValueMap[Rt] = Ptr;
+        Instruction *Cast = new PtrToIntInst(GV, Ty32, "LDRi12CastDown", BB);
+        Monitor::event_Instruction(Cast); 
+        RegValueMap[Rt] = Cast;
         break;
-      } else if (Rn == ARM::SP) {
-        // Load SP
-        GlobalVariable *SP = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStackTop");
-        assert(SP && "ARM::LDRi12: SP not found");
-        Instruction *LoadSP = new LoadInst(Ty32, SP, "LoadSP", BB);
-        Monitor::event_Instruction(LoadSP);
-        Ptr = LoadSP;
-      } else {
-        Ptr = RegValueMap[Rn];
       }
+      
+      if (Rn == ARM::SP) { // Load top relative StackValue
+        auto I = stack_map.find(stack_offset + Imm12);
+        if (I != stack_map.end()) {
+          Instruction *Load = new LoadInst(Ty32, I->second, "LDRi12Load", BB);
+          Monitor::event_Instruction(Load);
+          RegValueMap[Rt] = Load;
+          break;
+        }
+
+        // Match closest stack value
+        I = --stack_map.lower_bound(stack_offset + Imm12);
+        Monitor::event_raw() << "Can't find StackValue directly; using offset from value at " << I->first << "\n";
+
+        int64_t diff = stack_offset + Imm12 - I->first;
+        Value *StackValue = I->second;
+        if (!StackValue->getType()->isPointerTy()) {
+          Instruction *Cast = new IntToPtrInst(StackValue, PtrTy32, "LDRi12CastUp", BB);
+          Monitor::event_Instruction(Cast);
+          StackValue = Cast;
+        }
+        Instruction *GEP = GetElementPtrInst::Create(Ty32, StackValue, ConstantInt::get(Ty32, diff), "LDRi12GEP", BB);
+        Monitor::event_Instruction(GEP);
+        Instruction *Load = new LoadInst(Ty32, GEP, "LDRi12Load", BB);
+        Monitor::event_Instruction(Load);
+        RegValueMap[Rt] = Load;
+        break;
+      }
+
+      if (Rn == ARM::R11) { // Load bottom relative StackValue
+        auto I = stack_map.find(Imm12);
+        if (I != stack_map.end()) {
+          Instruction *Load = new LoadInst(Ty32, I->second, "LDRi12Load", BB);
+          Monitor::event_Instruction(Load);
+          RegValueMap[Rt] = Load;
+          break;
+        }
+
+        // Match closest stack value
+        I = --stack_map.lower_bound(Imm12);
+        Monitor::event_raw() << "Can't find StackValue directly; using offset from value at " << I->first << "\n";
+        
+        int64_t diff = Imm12 - I->first;
+        Value *StackValue = I->second;
+        if (!StackValue->getType()->isPointerTy()) {
+          Instruction *Cast = new IntToPtrInst(StackValue, PtrTy32, "LDRi12CastUp", BB);
+          Monitor::event_Instruction(Cast);
+          StackValue = Cast;
+        }
+        Instruction *GEP = GetElementPtrInst::Create(Ty32, StackValue, ConstantInt::get(Ty32, diff), "LDRi12GEP", BB);
+        Monitor::event_Instruction(GEP);
+        Instruction *Load = new LoadInst(Ty32, GEP, "LDRi12Load", BB);
+        Monitor::event_Instruction(Load);
+        RegValueMap[Rt] = Load;
+        break;
+      }
+      
+      Value *Ptr = RegValueMap[Rn];
 
       // Offset
       if (Imm12 != 0) {
-        Instruction *Add = BinaryOperator::Create(Instruction::Add, Ptr, ConstantInt::get(Ty32, Imm12), "PtrAdd", BB);
+        if (Ptr->getType()->isPointerTy()) {
+          Instruction *Cast = new PtrToIntInst(Ptr, Ty32, "LDRi12CastDown", BB);
+          Monitor::event_Instruction(Cast);
+          Ptr = Cast;
+        }
+        Instruction *Add = BinaryOperator::Create(Instruction::Add, Ptr, ConstantInt::get(Ty32, Imm12), "LDRi12Add", BB);
         Monitor::event_Instruction(Add);
         Ptr = Add;
       }
       
-      if (Rn == ARM::SP || Rn == ARM::R11) {
-        // GEP
-        GlobalVariable *Stack = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStack");
-        assert(Stack && "ARM::LDRi12: Stack not found");
-        Instruction *GEP = GetElementPtrInst::Create(
-          ArrayType::get(Ty32, 1000),
-          Stack,
-          { ConstantInt::get(Ty32, 0), Ptr },
-          "GEP", BB);
-        Monitor::event_Instruction(GEP);
-        Ptr = GEP;
-      } else {
-        // Ptr cast
-        Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "PtrCast", BB);
-        Monitor::event_Instruction(Cast);
-        Ptr = Cast;
-      }
+      // Ptr cast
+      Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "LDRi12CastUp", BB);
+      Monitor::event_Instruction(Cast);
+      Ptr = Cast;
 
-      Instruction *Instr = new LoadInst(Ty32, Ptr, "LDRi12", BB);
+      Instruction *Instr = new LoadInst(Ty32, Ptr, "LDRi12Load", BB);
       Monitor::event_Instruction(Instr);
       
       RegValueMap[Rt] = Instr;
@@ -1310,6 +1274,8 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Monitor::event_raw() << "Reg " << Rd << " <= " << Imm16 << "\n";
     } break;
     case ARM::MOVr: { // 874 | MOV Rd Rn CC CPSR
+      Type *Ty32 = Type::getInt32Ty(Context);
+
       Register Rd = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       int64_t CC = MI->getOperand(2).getImm();
@@ -1322,16 +1288,12 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       );
 
       if (Rn == ARM::SP) {
-        // Load SP
-        GlobalValue *SP = MR.getModule()->getNamedGlobal("llvmmctoll__GlobalStackTop");
-        assert(SP && "ARM::MOVr: SP not found");
-        Instruction *LoadSP = new LoadInst(Type::getInt32Ty(Context), SP, "LoadSP", BB);
-        Monitor::event_Instruction(LoadSP);
-        RegValueMap[Rd] = LoadSP;
-      } else {
-        RegValueMap[Rd] = RegValueMap[Rn];
-        Monitor::event_raw() << "Reg " << Rd << " <= " << Rn << "\n";
+        assert(false && "ARM::MOVr: SP not yet implemented, Rn != SP");
+        break;
       }
+      
+      RegValueMap[Rd] = RegValueMap[Rn];
+      Monitor::event_raw() << "Reg " << Rd << " <= " << Rn << "\n";
     } break;
     case ARM::MOVsi: { // 876 | MOV Rd Rm Shift CC CPSR S
       Type *Ty32 = Type::getInt32Ty(Context);
@@ -1453,35 +1415,17 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       );
 
       if (RegValueMap.count(Reg) == 0) {
-        Monitor::event_raw() << "ARM::STMDB_UPD: pushing valueless register " << Reg << "\n";
+        Monitor::event_raw() << "ARM::STMDB_UPD: encountered valueless register " << Reg << "\n";
         RegValueMap[Reg] = ConstantInt::get(Ty32, 0);
       }
 
-      // Load SP
-      GlobalVariable *SP = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStackTop");
-      assert(SP && "ARM::STMDB_UPD: SP not found");
-      Instruction *LoadSP = new LoadInst(Ty32, SP, "LoadSP", BB);
-      Monitor::event_Instruction(LoadSP);
+      // Decrement SP by 4
+      Monitor::event_raw() << "ARM::STMDB_UPD: decrementing SP by 4\n";
+      stack_offset -= 4;
 
-      // Decrement SP
-      Instruction *SubSP = BinaryOperator::Create(Instruction::Sub, LoadSP, ConstantInt::get(Type::getInt32Ty(Context), 4), "SubSP", BB);
-      Monitor::event_Instruction(SubSP);
-      Instruction *StoreSP = new StoreInst(SubSP, SP, false, BB);
-      Monitor::event_Instruction(StoreSP);
-
-      // GEP
-      GlobalVariable *Stack = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStack");
-      assert(Stack && "ARM::STMDB_UPD: Stack not found");
-      Instruction *GEP = GetElementPtrInst::Create(
-        ArrayType::get(Ty32, 1000),
-        Stack,
-        { ConstantInt::get(Ty32, 0), SubSP },
-        "GEP", BB);
-      Monitor::event_Instruction(GEP);
+      Monitor::event_raw() << "stack[" << stack_offset << "] = Reg " << Reg << "]\n";
+      stack_map[stack_offset] = RegValueMap[Reg];
       
-      // Store Reg
-      Instruction *StoreReg = new StoreInst(RegValueMap[Reg], GEP, false, BB);
-      Monitor::event_Instruction(StoreReg);
     } break;
     /*
     case ARM::STMIA: { // 1896 | STMIA<c> <Rn>{!}, <registers>
@@ -1606,48 +1550,49 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::STRi12: assuming no flags for now"
       );
 
-      Value *Ptr;
-
-    // STRi12 (1926) { Reg:$R0 Reg:$R11 Imm:-4 Imm:14 Reg:$ }
-      if (Rn == ARM::SP) {
-        // Load SP
-        GlobalVariable *SP = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStackTop");
-        assert(SP && "ARM::STRi12: SP not found");
-        Instruction *LoadSP = new LoadInst(Ty32, SP, "LoadSP", BB);
-        Monitor::event_Instruction(LoadSP);
-        Ptr = LoadSP;
-      } else {
-        Ptr = RegValueMap[Rn];
-        Monitor::event_raw() << "STRi12: Rn = " << Rn << "\n";
-        Monitor::event_raw() << "STRi12: Ptr = " << *Ptr << "\n";
+      if (Rn == ARM::SP) { // Store top relative StackValue
+        auto I = stack_map.find(stack_offset + Imm12);
+        if (I == stack_map.end()) {
+          Instruction *Alloca = new AllocaInst(Ty32, 0, "STRi12Alloca", BB);
+          Monitor::event_Instruction(Alloca);
+          stack_map[stack_offset + Imm12] = Alloca;
+        }
+        Instruction *Store = new StoreInst(RegValueMap[Rt], stack_map[stack_offset + Imm12], false, BB);
+        Monitor::event_Instruction(Store);
+        break;
       }
+
+      if (Rn == ARM::R11) { // Store bottom relative StackValue
+        auto I = stack_map.find(Imm12);
+        if (I == stack_map.end()) {
+          Instruction *Alloca = new AllocaInst(Ty32, 0, "STRi12Alloca", BB);
+          Monitor::event_Instruction(Alloca);
+          stack_map[Imm12] = Alloca;
+        }
+        Instruction *Store = new StoreInst(RegValueMap[Rt], stack_map[Imm12], false, BB);
+        Monitor::event_Instruction(Store);
+        break;
+      }
+
+      Value *Ptr = RegValueMap[Rn];
 
       // Offset
       if (Imm12 != 0) {
-        Instruction *Add = BinaryOperator::Create(Instruction::Add, Ptr, ConstantInt::get(Ty32, Imm12), "PtrAdd", BB);
+        if (Ptr->getType()->isPointerTy()) {
+          Instruction *Cast = new PtrToIntInst(Ptr, Ty32, "STRi12PtrCast", BB);
+          Monitor::event_Instruction(Cast);
+          Ptr = Cast;
+        }
+        Instruction *Add = BinaryOperator::Create(Instruction::Add, Ptr, ConstantInt::get(Ty32, Imm12), "STRi12Add", BB);
         Monitor::event_Instruction(Add);
         Ptr = Add;
       }
       
-      if (Rn == ARM::SP || Rn == ARM::R11) {
-        // GEP
-        GlobalVariable *Stack = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStack");
-        assert(Stack && "ARM::STRi12: Stack not found");
-        Instruction *GEP = GetElementPtrInst::Create(
-          ArrayType::get(Ty32, 1000),
-          Stack,
-          { ConstantInt::get(Ty32, 0), Ptr },
-          "GEP", BB);
-        Monitor::event_Instruction(GEP);
-        Ptr = GEP;
-      } else {
-        // Ptr cast
-        Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "PtrCast", BB);
-        Monitor::event_Instruction(Cast);
-        Ptr = Cast;
-      }
+      // Ptr cast
+      Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "STRi12PtrCastUP", BB);
+      Monitor::event_Instruction(Cast);
+      Ptr = Cast;
 
-      assert(Ptr->getType() == PtrTy32 && "ARM::STRi12: expecting i32* type");
       Instruction *Instr = new StoreInst(RegValueMap[Rt], Ptr, false, BB);
       Monitor::event_Instruction(Instr);
     } break;
@@ -1672,20 +1617,8 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       );
 
       if (Rd == ARM::SP && Rn == ARM::SP) {
-        assert(S == 0 && "ARM::SUBri: expecting S == 0 for SP");
-        // Load SP
-        GlobalVariable *SP = MR.getModule()->getGlobalVariable("llvmmctoll__GlobalStackTop");
-        assert(SP && "ARM::SUBri: SP not found");
-        Instruction *LoadSP = new LoadInst(Ty32, SP, "LoadSP", BB);
-        Monitor::event_Instruction(LoadSP);
-
-        // Sub SP
-        Instruction *SubSP = BinaryOperator::Create(Instruction::Sub, LoadSP, ConstantInt::get(Ty32, Imm), "SubSP", BB);
-        Monitor::event_Instruction(SubSP);
-
-        // Store SP
-        Instruction *StoreSP = new StoreInst(SubSP, SP, false, BB);
-        Monitor::event_Instruction(StoreSP);
+        Monitor::event_raw() << "decrementing SP by " << Imm << "\n";
+        stack_offset -= Imm;
         break;
       }
     
