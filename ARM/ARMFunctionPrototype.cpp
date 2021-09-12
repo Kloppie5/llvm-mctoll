@@ -91,46 +91,84 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
       }
     }
   }
-  // The rest of function arguments are from stack.
-  for (MachineFunction::const_iterator mbbi = MF->begin(), mbbe = MF->end();
-       mbbi != mbbe; ++mbbi) {
-    const MachineBasicBlock &mbb = *mbbi;
-    for (MachineBasicBlock::const_iterator mii = mbb.begin(), mie = mbb.end();
-         mii != mie; ++mii) {
-      const MachineInstr &mi = *mii;
-      // Match pattern like ldr r1, [fp, #8].
-      if (mi.getOpcode() == ARM::LDRi12 && mi.getNumOperands() > 2) {
-        const MachineOperand &mo = mi.getOperand(1);
-        const MachineOperand &mc = mi.getOperand(2);
-        if (mo.isReg() && mo.getReg() == ARM::R11 && mc.isImm()) {
-          // TODO: Need to check the imm is larger than 0 and it is align
-          // by 4(32 bit).
-          int imm = mc.getImm();
-          if (imm >= 0) {
-            // The start index of arguments on stack. If the library was
-            // compiled by clang, it starts from 2. If the library was compiled
-            // by GNU cross compiler, it starts from 1.
-            // FIXME: For now, we only treat that the library was complied by
-            // clang. We will enable the 'if condition' after we are able to
-            // identify the library was compiled by which compiler.
-            int idxoff = 2;
-            if (true /* clang */)
-              idxoff = 2;
-            else /* gnu */
-              idxoff = 1;
 
-            int idx = imm / 4 - idxoff + 4; // Plus 4 is to guarantee the first
-                                            // stack argument index is after all
-                                            // of register arguments' indices.
-            if (maxidx < idx)
-              maxidx = idx;
-            tarr[idx] = getDefaultType();
-            Monitor::event_raw() << "Found stack argument at " << imm << ", " << idxoff << "; maxidx = " << maxidx << "\n";
-          }
-        }
+  // Because stack accesses are non-trivial, the only way to determine
+  // stack arguments beforehand is via symbolic execution.
+  // A better approach would be to adapt the function prototype on
+  // the fly, but this is not feasible for now.
+  
+  // A somewhat stable way is to symbolically execute the stack access
+  // related instructions and hope that no stack accesses are missed.
+  int64_t stack_offset = 0;
+  std::set<int64_t> stack_offsets;
+  for (MachineBasicBlock &MBB : *MF) {
+    for (MachineInstr &MI : MBB) {
+      switch(MI.getOpcode()) {
+        default:
+          for (MachineOperand &MO : MI.operands()) {
+            if (MO.isReg() && MO.isUse() && !MO.isImplicit() && MO.getReg() == ARM::SP) {
+              Monitor::event_MachineInstr(&MI);
+              assert(false && "SP used in unchecked operation during function prototype discovery");
+            }
+          } break;
+        case ARM::ADDri: // 684
+          if (MI.getOperand(0).isReg() && MI.getOperand(0).getReg() == ARM::SP
+           && MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP) {
+            int64_t Op2 = MI.getOperand(2).getImm();
+            unsigned Bits = Op2 & 0xFF;
+            unsigned Rot = (Op2 & 0xF00) >> 7;
+            int64_t Imm = static_cast<int64_t>(ARM_AM::rotr32(Bits, Rot));
+            Monitor::event_raw() << "Incrementing stack offset: " << Imm << " to " << (stack_offset+Imm) << "\n";
+            stack_offset += Imm;
+          } break;
+        case ARM::LDMIA_UPD: // 822
+          Monitor::event_raw() << "Incrementing stack offset: 4 to " << (stack_offset+4) << "\n";
+          stack_offset += 4;
+          break;
+        case ARM::LDRi12: // 862
+          if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
+            stack_offsets.insert(stack_offset + MI.getOperand(2).getImm());
+          } break;
+        case ARM::STMDB_UPD: // 1895
+          Monitor::event_raw() << "Decrementing stack offset: 4 to " << (stack_offset-4) << "\n";
+          stack_offset -= 4;
+          break;
+        case ARM::STRi12: // 1926
+          if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
+            stack_offsets.insert(stack_offset + MI.getOperand(2).getImm());
+          } break;
+        case ARM::SUBri: // 1928
+          if (MI.getOperand(0).isReg() && MI.getOperand(0).getReg() == ARM::SP
+           && MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP) {
+            int64_t Op2 = MI.getOperand(2).getImm();
+            unsigned Bits = Op2 & 0xFF;
+            unsigned Rot = (Op2 & 0xF00) >> 7;
+            int64_t Imm = static_cast<int64_t>(ARM_AM::rotr32(Bits, Rot));
+            Monitor::event_raw() << "Decrementing stack offset: " << Imm << " to " << (stack_offset-Imm) << "\n";
+            stack_offset -= Imm;
+          } break;
       }
     }
   }
+
+  // Add parameters on the stack to the function prototype
+  for (int64_t offset : stack_offsets) {
+    if (offset < 0)
+      continue;
+    int idx = offset / 4 + 4;
+
+    if (idx > 127) {
+      Monitor::ERROR("Stack index exceeds 127, assumed to be accessing pass by value struct");
+      continue;
+    }
+
+    if (idx > maxidx)
+      maxidx = idx;
+    tarr[idx] = getDefaultType();
+  }
+
   Monitor::event_raw() << "Found " << maxidx+1 << " parameters.\n";
   for (int i = 0; i <= maxidx; ++i) {
     if (tarr[i] == nullptr)
