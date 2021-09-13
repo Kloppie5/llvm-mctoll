@@ -1,5 +1,5 @@
 // RUN: clang -O3 -target arm-linux-gnueabi -mfloat-abi=soft -o %t.o %s -I %S/../
-// RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I /usr/include/fcntl.h -I /usr/include/stdio.h -I /usr/include/string.h -I /usr/include/sys/mman.h -I /usr/include/sys/stat.h
+// RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I /usr/include/fcntl.h -I /usr/include/stdio.h -I /usr/include/string.h -I /usr/include/sys/mman.h -I /usr/include/sys/stat.h -I /usr/include/sys/unistd.h
 // RUN: clang -o %t-res %t-dis.ll
 // RUN: %t-res 2>&1 | FileCheck %s
 

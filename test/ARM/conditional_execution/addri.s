@@ -1,6 +1,7 @@
 ;# RUN: clang -O3 -c -target arm -mfloat-abi=soft -o %t.o %s
 ;# RUN: llvm-mctoll -d -debug  %t.o 2>&1 | FileCheck %s
 
+;# Currently only checks whether decompilation is successful.
 ;# CHECK: ARMLinearRaiserPass end.
 
   .text

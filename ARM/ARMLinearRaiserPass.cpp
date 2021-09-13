@@ -105,13 +105,52 @@ void ARMLinearRaiserPass::setRegValue(Register Reg, Value *V, BasicBlock *BB) {
   RegValueMap[Reg] = V;
 }
 
+Value *ARMLinearRaiserPass::getStackValue(Register Reg, int64_t Offset, BasicBlock *BB) {
+  if (Reg == ARM::SP)
+    return getStackValue(stack_offset + Offset, BB);
+  if (Reg == ARM::R11)
+    return getStackValue(Offset, BB);
+  
+  assert(false && "getStackValue: only stack registers are allowed");
+}
 Value *ARMLinearRaiserPass::getStackValue(int64_t offset, BasicBlock *BB) {
-  return nullptr;
+  Monitor::event_raw() << "getStackValue: offset " << offset << "\n";
+  auto I = stack_map.find(offset);
+  if (I != stack_map.end())
+    return I->second;
+
+  // Match closest stack value
+  I = --stack_map.lower_bound(offset);
+  Monitor::event_raw() << "Can't find StackValue directly; using offset from value at " << I->first << "\n";
+  dbgs() << "getStackValue: "; I->second->getType()->print(dbgs()); dbgs() << " at offset " << offset << "\n";
+  int64_t diff = offset - I->first;
+  Value *StackValue = I->second;
+  if (!StackValue->getType()->isPointerTy()) {
+    Instruction *Cast = new IntToPtrInst(StackValue, Type::getInt32PtrTy(Context), "CastUp", BB);
+    Monitor::event_Instruction(Cast);
+    StackValue = Cast;
+  }
+  Instruction *GEP = GetElementPtrInst::Create(Type::getInt32Ty(Context), StackValue, ConstantInt::get(Type::getInt32Ty(Context), diff), "GEP", BB);
+  Monitor::event_Instruction(GEP);
+  return GEP;
 }
 void ARMLinearRaiserPass::setStackValue(int64_t offset, Value *V, BasicBlock *BB) {
 
 }
 
+Value *ARMLinearRaiserPass::toPtr(Value *Addr, Type *Ty, BasicBlock *BB) {
+  assert((Addr->getType() == Type::getInt32Ty(Context) || Addr->getType()->isPointerTy())
+         && "toPtr: Addr must be an address or pointer");
+  if (Addr->getType() == Type::getInt32Ty(Context)) {
+    Instruction *Cast = new IntToPtrInst(Addr, Ty, "CastUp", BB);
+    Monitor::event_Instruction(Cast);
+    return Cast;
+  }
+
+  Instruction *BitCast = new BitCastInst(Addr, Ty, "BitCast", BB);
+  Monitor::event_Instruction(BitCast);
+  return BitCast;
+}
 Value *ARMLinearRaiserPass::resolveAM2Shift(Register Rn, Register Rm, int64_t AM2Shift, BasicBlock *BB) {
   unsigned Imm12 = AM2Shift & 0xFFF;
   ARM_AM::ShiftOpc ShiftOpcode = (ARM_AM::ShiftOpc) ((AM2Shift >> 13) & 0x7);
@@ -121,9 +160,9 @@ Value *ARMLinearRaiserPass::resolveAM2Shift(Register Rn, Register Rm, int64_t AM
 
   Instruction::BinaryOps ShiftOp;
   switch (ShiftOpcode) {
-    case ARM_AM::lsr:
-      ShiftOp = Instruction::LShr;
-      break;
+    case ARM_AM::asr: ShiftOp = Instruction::AShr; break;
+    case ARM_AM::lsl: ShiftOp = Instruction::Shl; break;
+    case ARM_AM::lsr: ShiftOp = Instruction::LShr; break;
     default:
       assert(false && "assuming default shift for now");
   }
@@ -590,28 +629,8 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       }
       RegValueMap[Rd] = Val;
     } break;
-    case ARM::ADDrr: { // 685 | ADD Rd Rn Rm CC CPSR S      
-      Register Rd = MI->getOperand(0).getReg();
-      Register Rn = MI->getOperand(1).getReg();
-      Register Rm = MI->getOperand(2).getReg();
-      int64_t CC = MI->getOperand(3).getImm();
-      Register CPSR = MI->getOperand(4).getReg();
-      Register S = MI->getOperand(5).getReg();
-
-      assert(
-        CC == 14 &&
-        CPSR == 0 &&
-        S == 0 &&
-        "ADDrr: assuming no flags for now"
-      );
-
-      Value *RnVal = RegValueMap[Rn];
-      Value *RmVal = RegValueMap[Rm];
-
-      Instruction *Instr = BinaryOperator::Create(Instruction::Add, RnVal, RmVal, "ADDrr", BB);
-      Monitor::event_Instruction(Instr);
-      RegValueMap[Rd] = Instr;
-    } break;
+    case ARM::ADDrr: // 685 | ADD Rd Rn Rm CC CPSR S      
+      raiseBINOPrr(MI, Instruction::Add); break;
     case ARM::ADDrsi: { // 686 | ADD Rd Rn Rm Shift CC CPSR S
       Type *Ty32 = Type::getInt32Ty(Context);
 
@@ -670,6 +689,10 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Instruction *Instr = BinaryOperator::Create(Instruction::And, Rn, imm, "ANDri", BB); Monitor::event_Instruction(Instr);
       setOperandValue(MI, 0, Instr);
     } break;
+    */
+    case ARM::ANDrr: // 694 | AND Rd Rn Rm CC CPSR S
+      raiseBINOPrr(MI, Instruction::And); break;
+    /*
     case ARM::BICri: { // 706 | BIC{S}<c> <Rd>, <Rn>, #<imm> => Rd = Rn & (0 - Imm)
       Value *Rn = getOperandValue(MI, 1);
       Value *imm = ConstantInt::get(Rn->getType(), MI->getOperand(2).getImm());
@@ -939,7 +962,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
       Register CPSR = MI->getOperand(3).getReg();
 
-      bool conditional_execution = (CC != ARMCC::AL) && (CC != 0);
+      bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
       BasicBlock *MergeBB;
       if (conditional_execution) {
         // Split on condition
@@ -1009,7 +1032,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
       Register CPSR = MI->getOperand(3).getReg();
 
-      bool conditional_execution = (CC != ARMCC::AL) && (CC != 0);
+      bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
       BasicBlock *MergeBB;
       if (conditional_execution) {
         // Split on condition
@@ -1095,13 +1118,10 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Instruction *Instr = BinaryOperator::Create(Instruction::Xor, Rn, imm, "EORri", BB); Monitor::event_Instruction(Instr);
       setOperandValue(MI, 0, Instr);
     } break;
-    case ARM::EORrr: { // 776 | EOR{S}<c> <Rd>, <Rn>, <Rm> => Rd = Rn ^ Rm
-      Value *Rn = getOperandValue(MI, 1);
-      Value *Rm = getOperandValue(MI, 2);
-
-      Instruction *Instr = BinaryOperator::Create(Instruction::Xor, Rn, Rm, "EORrr", BB); Monitor::event_Instruction(Instr);
-      setOperandValue(MI, 0, Instr);
-    } break;
+    */
+    case ARM::EORrr: // 776 | EOR{S}<c> <Rd>, <Rn>, <Rm> => Rd = Rn ^ Rm
+      raiseBINOPrr(MI, Instruction::Xor); break;
+    /*
     case ARM::ISB: { // 793 | ISB <option> => UNDEF
       assert(false && "ARM::ISB not yet implemented; fence");
     } break;
@@ -1182,7 +1202,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
       Register CPSR = MI->getOperand(4).getReg();
 
-      bool conditional_execution = (CC != ARMCC::AL) && (CC != 0);
+      bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
       BasicBlock *BaseBB;
       BasicBlock *MergeBB;
       if (conditional_execution) {
@@ -1287,7 +1307,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(4).getImm();
       Register CPSR = MI->getOperand(5).getReg();
 
-      bool conditional_execution = (CC != ARMCC::AL) && (CC != 0);
+      bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
       BasicBlock *BaseBB;
       BasicBlock *MergeBB;
       if (conditional_execution) {
@@ -1394,28 +1414,13 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       }
       
       if (Rn == ARM::SP) { // Load top relative StackValue
-        auto I = stack_map.find(stack_offset + Imm12);
-        if (I != stack_map.end()) {
-          Instruction *Load = new LoadInst(Ty32, I->second, "LDRi12Load", BB);
-          Monitor::event_Instruction(Load);
-          RegValueMap[Rt] = Load;
-          break;
-        }
-
-        // Match closest stack value
-        I = --stack_map.lower_bound(stack_offset + Imm12);
-        Monitor::event_raw() << "Can't find StackValue directly; using offset from value at " << I->first << "\n";
-
-        int64_t diff = stack_offset + Imm12 - I->first;
-        Value *StackValue = I->second;
+        Value *StackValue = getStackValue(Rn, Imm12, BB);
         if (!StackValue->getType()->isPointerTy()) {
           Instruction *Cast = new IntToPtrInst(StackValue, PtrTy32, "LDRi12CastUp", BB);
           Monitor::event_Instruction(Cast);
           StackValue = Cast;
         }
-        Instruction *GEP = GetElementPtrInst::Create(Ty32, StackValue, ConstantInt::get(Ty32, diff), "LDRi12GEP", BB);
-        Monitor::event_Instruction(GEP);
-        Instruction *Load = new LoadInst(Ty32, GEP, "LDRi12Load", BB);
+        Instruction *Load = new LoadInst(Ty32, StackValue, "LDRi12Load", BB);
         Monitor::event_Instruction(Load);
         RegValueMap[Rt] = Load;
         break;
@@ -1498,10 +1503,8 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       );
       
       Value *Addr = resolveAM2Shift(Rn, Rm, AM2Shift, BB);
-      
-      Instruction *Cast = new IntToPtrInst(Addr, Type::getInt32PtrTy(Context), "LDRrsCastUp", BB);
-      Monitor::event_Instruction(Cast);
-      Instruction *Load = new LoadInst(Type::getInt32Ty(Context), Cast, "LDRrsLoad", BB);
+      Value *Ptr = toPtr(Addr, Type::getInt32PtrTy(Context), BB);
+      Instruction *Load = new LoadInst(Type::getInt32Ty(Context), Ptr, "LDRrsLoad", BB);
       Monitor::event_Instruction(Load);
 
       setRegValue(Rt, Load, BB);
@@ -1697,13 +1700,10 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Instruction *Instr = BinaryOperator::Create(Instruction::Or, Rn, imm, "ORRri", BB); Monitor::event_Instruction(Instr);
       setOperandValue(MI, 0, Instr);
     } break;
-    case ARM::ORRrr: { // 1749 | ORR<c> <Rd>, <Rn>, <Rm> => Rd = Rn OR Rm
-      Value *Rn = getOperandValue(MI, 1);
-      Value *Rm = getOperandValue(MI, 2);
-
-      Instruction *Instr = BinaryOperator::Create(Instruction::Or, Rn, Rm, "ORRrr", BB); Monitor::event_Instruction(Instr);
-      setOperandValue(MI, 0, Instr);
-    } break;
+    */
+    case ARM::ORRrr: // 1749 | ORR Rd Rn Rm CC CPSR S
+      raiseBINOPrr(MI, Instruction::Or); break;
+    /*
     case ARM::SBCri: { // 1794 | SBC<c> <Rd>, <Rn>, #<imm> => Rd = Rn - imm - C
       assert(false && "ARM::SBCri not yet implemented; requires Carry flag");
     } break;
@@ -1956,6 +1956,26 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Instruction *Instr = new StoreInst(RegValueMap[Rt], Ptr, false, BB);
       Monitor::event_Instruction(Instr);
     } break;
+    case ARM::STRrs: { // 1927 | STR Rt Rn Rm AM2Shift CC CPSR
+      Register Rt = MI->getOperand(0).getReg();
+      Register Rn = MI->getOperand(1).getReg();
+      Register Rm = MI->getOperand(2).getReg();
+      int64_t AM2Shift = MI->getOperand(3).getImm();
+      int64_t CC = MI->getOperand(4).getImm();
+      Register CPSR = MI->getOperand(5).getReg();
+
+      assert(
+        CC == 14 &&
+        CPSR == 0 &&
+        "ARM::LDRrs: assuming no flags for now"
+      );
+      
+      Value *Addr = resolveAM2Shift(Rn, Rm, AM2Shift, BB);
+      Value *Ptr = toPtr(Addr, Type::getInt32PtrTy(Context), BB);
+      Value *RtVal = getRegValue(Rt, BB);
+      Instruction *Store = new StoreInst(RtVal, Ptr, false, BB);
+      Monitor::event_Instruction(Store);
+    } break;
     case ARM::SUBri: { // 1928 | SUB Rd Rn Op2 CC CPSR S
       Type *Ty32 = Type::getInt32Ty(Context);
 
@@ -2021,28 +2041,8 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         Monitor::event_Instruction(StoreOverflow);
       }
     } break;
-    case ARM::SUBrr: { // 1929 | SUB Rd Rn Rm CC CPSR S
-      Register Rd = MI->getOperand(0).getReg();
-      Register Rn = MI->getOperand(1).getReg();
-      Register Rm = MI->getOperand(2).getReg();
-      ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
-      Register CPSR = MI->getOperand(4).getReg();
-      Register S = MI->getOperand(5).getReg();
-
-      assert(
-        CC == ARMCC::AL &&
-        CPSR == 0 &&
-        S == 0 &&
-        "ARM::SUBrr: assuming no conditional flags for now"
-      );
-
-      Value *RnVal = RegValueMap[Rn];
-      Value *RmVal = RegValueMap[Rm];
-
-      Instruction *Instr = BinaryOperator::Create(Instruction::Sub, RnVal, RmVal, "ADDrr", BB);
-      Monitor::event_Instruction(Instr);
-      RegValueMap[Rd] = Instr;
-    } break;
+    case ARM::SUBrr: // 1929 | SUB Rd Rn Rm CC CPSR S
+      raiseBINOPrr(MI, Instruction::Sub); break;
     /*
     case ARM::SVC: { // 1932 | SVC<c> #<imm>
       assert(false && "ARM::SVC not yet implemented");
@@ -2051,6 +2051,57 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
   }
   Monitor::event_end("ARMLinearRaiserPass::RaiseMachineInstr");
   return true;
+}
+
+void ARMLinearRaiserPass::raiseBINOPrr(MachineInstr *MI, Instruction::BinaryOps Opcode) {
+  MachineBasicBlock *MBB = MI->getParent();
+  BasicBlock *BB = getBasicBlocks(MBB).back();
+
+  Register Rd = MI->getOperand(0).getReg();
+  Register Rn = MI->getOperand(1).getReg();
+  Register Rm = MI->getOperand(2).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
+  Register CPSR = MI->getOperand(4).getReg();
+  Register S = MI->getOperand(5).getReg();
+  assert(S == 0 && "ARM::BINOPrr: assuming no NZCV flags for now");
+
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+  Value *RdVal;
+  BasicBlock *BaseBB;
+  BasicBlock *MergeBB;
+  if (conditional_execution) {
+    // Split on condition
+    Monitor::event_raw() << "splitting on condition\n";
+    Value *Cond = ARMCCToValue(ARMCC::getOppositeCondition(CC), BB);
+    BasicBlock *CondExecBB = BasicBlock::Create(Context, "CondExec", F);
+    MBBBBMap[MBB].push_back(CondExecBB);
+    MergeBB = BasicBlock::Create(Context, "Merge", F);
+    MBBBBMap[MBB].push_back(MergeBB);
+    RdVal = getRegValue(Rd, BB);
+    Instruction *CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    Instruction* MergeElse = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(MergeElse);
+    BaseBB = BB;
+    BB = CondExecBB;
+  }
+
+  Value *RnVal = getRegValue(Rn, BB);
+  Value *RmVal = getRegValue(Rm, BB);
+
+  Instruction *Instr = BinaryOperator::Create(Opcode, RnVal, RmVal, "BINOPrr", BB);
+  Monitor::event_Instruction(Instr);
+
+  if (conditional_execution) {      
+    Instruction* MergeIf = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(MergeIf);
+    PHINode *phi = PHINode::Create(Type::getInt32Ty(Context), 2, "Phi", MergeBB);
+    phi->addIncoming(RdVal, BaseBB);
+    phi->addIncoming(Instr, BB);
+    setRegValue(Rd, phi, MergeBB);
+  } else {
+    setRegValue(Rd, Instr, BB);
+  }
 }
 
 #undef DEBUG_TYPE

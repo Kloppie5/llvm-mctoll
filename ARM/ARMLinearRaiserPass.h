@@ -29,15 +29,20 @@ public:
 
   int64_t stack_offset;
   std::map<int64_t, Value*> stack_map;
+  Value *getStackValue(Register Reg, int64_t offset, BasicBlock *BB);
   Value *getStackValue(int64_t offset, BasicBlock *BB);
+  void setStackValue(Register Reg, int64_t offset, Value *V, BasicBlock *BB);
   void setStackValue(int64_t offset, Value *V, BasicBlock *BB);
   
+  Value *toPtr(Value *Addr, Type *Ty, BasicBlock *BB);
   Value *resolveAM2Shift(Register Rn, Register Rm, int64_t AM2Shift, BasicBlock *BB);
 
   GlobalValue *getGlobalValueByOffset(int64_t MCInstOffset, uint64_t PCOffset);
   Value *ARMCCToValue(int Cond, BasicBlock *BB);
   std::vector<BasicBlock *> getBasicBlocks(MachineBasicBlock *MBB);
   bool raiseMachineInstr(MachineInstr *MI);
+
+  void raiseBINOPrr(MachineInstr *MI, Instruction::BinaryOps Opcode);
 
 private:
   MCInstRaiser *MCIR;
