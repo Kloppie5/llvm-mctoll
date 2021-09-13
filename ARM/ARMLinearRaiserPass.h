@@ -14,12 +14,7 @@ public:
   Function *F;
 
   DenseMap<MachineBasicBlock *, std::vector<BasicBlock *>> MBBBBMap;
-  
-  DenseMap<Register, Value*> RegValueMap;
 
-  int64_t stack_offset;
-  std::map<int64_t, Value*> stack_map;
-  
   // NZCV
   SmallVector<Value*, 4> Flags;
 
@@ -28,6 +23,17 @@ public:
 
   bool run (MachineFunction *MF, Function *F) override;
   
+  DenseMap<Register, Value*> RegValueMap;
+  Value *getRegValue(Register Reg, BasicBlock *BB);
+  void setRegValue(Register Reg, Value *V, BasicBlock *BB);
+
+  int64_t stack_offset;
+  std::map<int64_t, Value*> stack_map;
+  Value *getStackValue(int64_t offset, BasicBlock *BB);
+  void setStackValue(int64_t offset, Value *V, BasicBlock *BB);
+  
+  Value *resolveAM2Shift(Register Rn, Register Rm, int64_t AM2Shift, BasicBlock *BB);
+
   GlobalValue *getGlobalValueByOffset(int64_t MCInstOffset, uint64_t PCOffset);
   Value *ARMCCToValue(int Cond, BasicBlock *BB);
   std::vector<BasicBlock *> getBasicBlocks(MachineBasicBlock *MBB);

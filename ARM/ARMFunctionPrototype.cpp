@@ -30,66 +30,31 @@ ARMFunctionPrototype::ARMFunctionPrototype() : MachineFunctionPass(ID) {}
 ARMFunctionPrototype::~ARMFunctionPrototype() {}
 
 /// Check the first reference of the reg is USE.
-bool ARMFunctionPrototype::isUsedRegiser(unsigned reg,
-                                         const MachineBasicBlock &mbb) {
-  for (MachineBasicBlock::const_iterator ii = mbb.begin(), ie = mbb.end();
-       ii != ie; ++ii) {
-    const MachineInstr &mi = *ii;
-    for (MachineInstr::const_mop_iterator oi = mi.operands_begin(),
-                                          oe = mi.operands_end();
-         oi != oe; oi++) {
-      const MachineOperand &mo = *oi;
-      if (mo.isReg() && (mo.getReg() == reg))
-        return mo.isUse();
-    }
-  }
-
+bool ARMFunctionPrototype::isUsedRegister(unsigned reg, MachineFunction *MF) {
+  for (MachineBasicBlock &MBB : *MF)
+    for (MachineInstr &MI : MBB)
+      for (MachineOperand &MO : MI.operands())
+        if (MO.isReg() && MO.getReg() == reg) // Find first reference of reg
+          return MO.isUse(); // Return true if it is a use
   return false;
 }
 
 /// Check the first reference of the reg is DEF.
 void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
   assert(!MF->empty() && "The function body is empty!!!");
-  MF->getRegInfo().freezeReservedRegs(*MF);
-  LivePhysRegs liveInPhysRegs;
-  for (MachineBasicBlock &EMBB : *MF)
-    computeAndAddLiveIns(liveInPhysRegs, EMBB);
-  // Walk the CFG DFS to discover first register usage
-  df_iterator_default_set<const MachineBasicBlock *, 16> Visited;
-  DenseMap<unsigned, bool> ArgObtain;
-  ArgObtain[ARM::R0] = false;
-  ArgObtain[ARM::R1] = false;
-  ArgObtain[ARM::R2] = false;
-  ArgObtain[ARM::R3] = false;
-  const MachineBasicBlock &fmbb = MF->front();
-  DenseMap<int, Type *> tarr;
+  DenseMap<int, Type *> tarr; // assuming the number of parameters tends to be around 50?
   int maxidx = -1; // When the maxidx is -1, means there is no argument.
-  // Track register liveness on CFG.
-  for (const MachineBasicBlock *Mbb : depth_first_ext(&fmbb, Visited)) {
-    for (unsigned IReg = ARM::R0; IReg < ARM::R4; IReg++) {
-      if (!ArgObtain[IReg] && Mbb->isLiveIn(IReg)) {
-        for (MachineBasicBlock::const_iterator ii = Mbb->begin(),
-                                               ie = Mbb->end();
-             ii != ie; ++ii) {
-          const MachineInstr &LMI = *ii;
-          auto RUses = LMI.uses();
-          auto ResIter =
-              std::find_if(RUses.begin(), RUses.end(),
-                           [IReg](const MachineOperand &OP) -> bool {
-                             return OP.isReg() && (OP.getReg() == IReg);
-                           });
-          if (ResIter != RUses.end()) {
-            int idx = IReg - ARM::R0;
-            tarr[idx] = getDefaultType();
-            if (maxidx < idx)
-              maxidx = idx;
-            Monitor::event_raw() << "Found reg " << idx << "; maxidx = " << maxidx << "\n";
-            break;
-          }
-        }
-        ArgObtain[IReg] = true;
-      }
-    }
+  // Check register liveness at the beginning of the function.
+  for (unsigned IReg = ARM::R0; IReg < ARM::R4; IReg++) {
+    if (!isUsedRegister(IReg, MF))
+      continue;
+    
+    int idx = IReg - ARM::R0;
+    if (idx > maxidx)
+      maxidx = idx;
+    
+    tarr[idx] = getDefaultType();
+    Monitor::event_raw() << "Found reg " << idx << "; maxidx = " << maxidx << "\n";
   }
 
   // Because stack accesses are non-trivial, the only way to determine

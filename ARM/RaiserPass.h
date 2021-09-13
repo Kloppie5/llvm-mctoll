@@ -27,7 +27,9 @@ protected:
   RaiserPass(ModuleRaiser &MR) : Context(MR.getModule()->getContext()), MR(MR) {}
 
   virtual bool precondition (MachineFunction *MF, Function *F) { return true; }
-  virtual bool run (MachineFunction *MF, Function *F) = 0;
+  virtual bool run (MachineFunction *MF) { return false; }
+  virtual bool run (MachineFunction *MF, Function *F) { return false; }
+  virtual bool run (Function *F) { return false;}
   virtual bool postcondition (MachineFunction *MF, Function *F) { return true; }
 };
 

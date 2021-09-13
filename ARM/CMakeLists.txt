@@ -15,6 +15,7 @@ add_llvm_library(ARMRaiser
   ARMFunctionPrototype.cpp
   ARMBenchmarker.cpp
   ARMLinearRaiserPass.cpp
+  ARMConcurrencyPatternMatcher.cpp
   ARMMachineInstructionRaiser.cpp
 
   DEPENDS

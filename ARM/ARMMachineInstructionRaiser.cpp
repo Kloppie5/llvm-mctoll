@@ -13,10 +13,12 @@
 
 #include "ARMMachineInstructionRaiser.h"
 #include "MachineFunctionRaiser.h"
-#include "ARMBenchmarker.h"
-#include "ARMFunctionPrototype.h"
 #include "ARMModuleRaiser.h"
+#include "ARMFunctionPrototype.h"
+
+#include "ARMBenchmarker.h"
 #include "ARMLinearRaiserPass.h"
+#include "ARMConcurrencyPatternMatcher.h"
 
 using namespace llvm;
 
@@ -34,7 +36,10 @@ bool ARMMachineInstructionRaiser::raiseMachineFunction() {
   bm.run(&MF, F);
 
   ARMLinearRaiserPass sdis(rmr, MCIR);
-  sdis.run(&MF, F);
+  sdis.run(&MF, F); 
+
+  ARMConcurrencyPatternMatcher cpm(rmr);
+  cpm.run(F);
 
   return true;
 }
