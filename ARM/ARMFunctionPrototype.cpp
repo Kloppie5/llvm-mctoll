@@ -90,6 +90,20 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
           Monitor::event_raw() << "Incrementing stack offset: 4 to " << (stack_offset+4) << "\n";
           stack_offset += 4;
           break;
+        case ARM::LDR_POST_IMM: // 857 { Reg:$R0 Reg:$SP Reg:$SP Reg:$ Imm:147460 Imm:14 Reg:$ }
+          if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP
+           && MI.getOperand(2).isReg() && MI.getOperand(2).getReg() == ARM::SP) {
+            int64_t AM2Shift = MI.getOperand(4).getImm();
+            unsigned Imm12 = AM2Shift & 0xFFF;
+            bool isSub = (AM2Shift >> 12) & 0x1;
+            Monitor::event_raw() << "Found stack access: " << stack_offset << "\n";
+            stack_offsets.insert(stack_offset);
+            if (isSub)
+              stack_offset -= Imm12;
+            else
+              stack_offset += Imm12;
+            Monitor::event_raw() << "Changing stack offset: " << Imm12 << " to " << stack_offset << "\n";
+          } break;
         case ARM::LDRi12: // 862
           if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP) {
             Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
@@ -99,6 +113,17 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
           Monitor::event_raw() << "Decrementing stack offset: 4 to " << (stack_offset-4) << "\n";
           stack_offset -= 4;
           break;
+        case ARM::STMIA: // 1896
+          // Why does this exist?
+          stack_offsets.insert(stack_offset);
+          Monitor::event_raw() << "Found stack access: " << stack_offset << "\n";
+          break;
+        case ARM::STR_PRE_IMM: // 1924) { Reg:$SP Reg:$R12 Reg:$SP Imm:-4 Imm:14 Reg:$ }
+          if (MI.getOperand(2).isReg() && MI.getOperand(2).getReg() == ARM::SP) {
+            stack_offset += MI.getOperand(3).getImm();
+            stack_offsets.insert(stack_offset);
+            Monitor::event_raw() << "Found stack access: " << stack_offset << "\n";
+          } break;
         case ARM::STRi12: // 1926
           if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP) {
             Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";

@@ -31,26 +31,25 @@ bool ARMLinearRaiserPass::run(MachineFunction *MF, Function *F) {
   EBB->setName("entry");
 
   // Allocate NZCV flags.
-  Type *Ty = Type::getInt1Ty(Context);
   Monitor::event_raw() << "Allocate NZCV flags for " << F->getName() << "\n";
   Align MALG(32);
   
-  Instruction *AllocN = new AllocaInst(Ty, 0, nullptr, MALG, "", EBB);
+  Instruction *AllocN = new AllocaInst(Type::getInt1Ty(Context), 0, nullptr, MALG, "", EBB);
   AllocN->setName("N_flag");
   Monitor::event_Instruction(AllocN);
   Flags.push_back(AllocN);
   
-  Instruction *AllocZ = new AllocaInst(Ty, 0, nullptr, MALG, "", EBB);
+  Instruction *AllocZ = new AllocaInst(Type::getInt1Ty(Context), 0, nullptr, MALG, "", EBB);
   AllocZ->setName("Z_flag");
   Monitor::event_Instruction(AllocZ);
   Flags.push_back(AllocZ);
   
-  Instruction *AllocC = new AllocaInst(Ty, 0, nullptr, MALG, "", EBB);
+  Instruction *AllocC = new AllocaInst(Type::getInt1Ty(Context), 0, nullptr, MALG, "", EBB);
   AllocC->setName("C_flag");
   Monitor::event_Instruction(AllocC);
   Flags.push_back(AllocC);
 
-  Instruction *AllocV = new AllocaInst(Ty, 0, nullptr, MALG, "", EBB);
+  Instruction *AllocV = new AllocaInst(Type::getInt1Ty(Context), 0, nullptr, MALG, "", EBB);
   AllocV->setName("V_flag");
   Monitor::event_Instruction(AllocV);
   Flags.push_back(AllocV);
@@ -83,41 +82,73 @@ bool ARMLinearRaiserPass::run(MachineFunction *MF, Function *F) {
   return true;
 }
 
-Value *ARMLinearRaiserPass::getRegValue(Register Reg, BasicBlock *BB) {
-  assert(Reg != ARM::SP && Reg != ARM::R11 && "getRegValue: stack registers are not allowed");
+Value *ARMLinearRaiserPass::getRegValue(Register Reg, Type *Ty, BasicBlock *BB) {
+  assert(Reg != ARM::SP && "getRegValue: SP is not allowed");
   assert(Reg != ARM::PC && "getRegValue: PC is not allowed");
   if (RegValueMap.find(Reg) == RegValueMap.end())
     assert(false && "Register not found in RegValueMap");
   
   Value *V = RegValueMap[Reg];
-  if (V->getType()->isPointerTy()) {
-    Instruction *Cast = new PtrToIntInst(V, Type::getInt32Ty(Context), "AM2Shift", BB);
+  if (V->getType() == Ty)
+    return V;
+  if (V->getType() == Type::getInt32Ty(Context) && Ty->isPointerTy()) {
+    Instruction *Cast = new IntToPtrInst(V, Ty, "Cast", BB);
     Monitor::event_Instruction(Cast);
-    V = Cast;
+    return Cast;
   }
-  return V;
+  if (V->getType()->isPointerTy() && Ty->isIntegerTy()) {
+    Instruction *Cast = new PtrToIntInst(V, Ty, "Cast", BB);
+    Monitor::event_Instruction(Cast);
+    return Cast;
+  }
+  
+  Instruction *Cast = new BitCastInst(V, Ty, "Cast", BB);
+  Monitor::event_Instruction(Cast);
+  return Cast;
 }
 void ARMLinearRaiserPass::setRegValue(Register Reg, Value *V, BasicBlock *BB) {
-  assert(Reg != ARM::SP && Reg != ARM::R11 && "getRegValue: stack registers are not allowed");
+  assert(Reg != ARM::SP && "getRegValue: SP is not allowed");
   assert(Reg != ARM::PC && "getRegValue: PC is not allowed");
   assert((V->getType() == Type::getInt32Ty(Context) || V->getType()->isPointerTy())
          && "Value must be of type i32 or x*");
+  if (Reg == ARM::R11) FP_valid = false;
   RegValueMap[Reg] = V;
 }
 
-Value *ARMLinearRaiserPass::getStackValue(Register Reg, int64_t Offset, BasicBlock *BB) {
+Value *ARMLinearRaiserPass::getStackValue(Register Reg, int64_t Offset, Type *Ty, BasicBlock *BB) {
   if (Reg == ARM::SP)
-    return getStackValue(stack_offset + Offset, BB);
-  if (Reg == ARM::R11)
-    return getStackValue(Offset, BB);
+    return getStackValue(stack_offset + Offset, Ty, BB);
+  if (Reg == ARM::R11 && FP_valid)
+    return getStackValue(Offset, Ty, BB);
+  if (Reg == ARM::R11 && !FP_valid)
+    assert(false && "getStackValue: R11 was used after being invalidated");
   
   assert(false && "getStackValue: only stack registers are allowed");
 }
-Value *ARMLinearRaiserPass::getStackValue(int64_t offset, BasicBlock *BB) {
+Value *ARMLinearRaiserPass::getStackValue(int64_t offset, Type *Ty, BasicBlock *BB) {
   Monitor::event_raw() << "getStackValue: offset " << offset << "\n";
   auto I = stack_map.find(offset);
-  if (I != stack_map.end())
-    return I->second;
+  if (I != stack_map.end()) {
+    Value *V = I->second;
+    dbgs() << "getStackValue: "; I->second->getType()->print(dbgs()); dbgs() << " at offset " << offset << "\n";
+    if (V->getType() == Ty)
+      return V;
+    if (V->getType() == Type::getInt32Ty(Context) && Ty->isPointerTy()) {
+      Instruction *Cast = new IntToPtrInst(V, Ty, "Cast", BB);
+      Monitor::event_Instruction(Cast);
+      return Cast;
+    }
+    if (V->getType()->isPointerTy() && Ty->isIntegerTy()) {
+      Instruction *Cast = new PtrToIntInst(V, Ty, "Cast", BB);
+      Monitor::event_Instruction(Cast);
+      return Cast;
+    }
+
+    Instruction *Cast = new BitCastInst(V, Ty, "Cast", BB);
+    Monitor::event_Instruction(Cast);
+    return Cast;
+  }
+
 
   // Match closest stack value
   I = --stack_map.lower_bound(offset);
@@ -134,29 +165,64 @@ Value *ARMLinearRaiserPass::getStackValue(int64_t offset, BasicBlock *BB) {
   Monitor::event_Instruction(GEP);
   return GEP;
 }
-void ARMLinearRaiserPass::setStackValue(int64_t offset, Value *V, BasicBlock *BB) {
-
+Value *ARMLinearRaiserPass::getOrCreateStackValue(Register Reg, int64_t Offset, Type *Ty, BasicBlock *BB) {
+  if (Reg == ARM::SP)
+    return getOrCreateStackValue(stack_offset + Offset, Ty, BB);
+  if (Reg == ARM::R11 && FP_valid)
+    return getOrCreateStackValue(Offset, Ty, BB);
+  if (Reg == ARM::R11 && !FP_valid)
+    assert(false && "getOrCreateStackValue: R11 was used after being invalidated");
+  
+  assert(false && "getOrCreateStackValue: only stack registers are allowed");
 }
+Value *ARMLinearRaiserPass::getOrCreateStackValue(int64_t offset, Type *Ty, BasicBlock *BB) {
+  Monitor::event_raw() << "getOrCreateStackValue: offset " << offset << "\n";
+  auto I = stack_map.find(offset);
+  if (I != stack_map.end()) {
+    Value *V = I->second;
+    dbgs() << "getOrCreateStackValue: "; I->second->getType()->print(dbgs()); dbgs() << " at offset " << offset << "\n";
+    if (V->getType() == Ty)
+      return V;
+    if (V->getType() == Type::getInt32Ty(Context) && Ty->isPointerTy()) {
+      Instruction *Cast = new IntToPtrInst(V, Ty, "Cast", BB);
+      Monitor::event_Instruction(Cast);
+      return Cast;
+    }
+    if (V->getType()->isPointerTy() && Ty->isIntegerTy()) {
+      Instruction *Cast = new PtrToIntInst(V, Ty, "Cast", BB);
+      Monitor::event_Instruction(Cast);
+      return Cast;
+    }
 
-Value *ARMLinearRaiserPass::toPtr(Value *Addr, Type *Ty, BasicBlock *BB) {
-  assert((Addr->getType() == Type::getInt32Ty(Context) || Addr->getType()->isPointerTy())
-         && "toPtr: Addr must be an address or pointer");
-  if (Addr->getType() == Type::getInt32Ty(Context)) {
-    Instruction *Cast = new IntToPtrInst(Addr, Ty, "CastUp", BB);
+    Instruction *Cast = new BitCastInst(V, Ty, "Cast", BB);
     Monitor::event_Instruction(Cast);
     return Cast;
   }
 
-  Instruction *BitCast = new BitCastInst(Addr, Ty, "BitCast", BB);
-  Monitor::event_Instruction(BitCast);
-  return BitCast;
+  // Create new stack value
+  Type *AllocTy = Ty->isPointerTy() ? Ty->getPointerElementType() : Ty;
+
+  Instruction *Alloca = new AllocaInst(AllocTy, 0, "StackAlloca", BB);
+  Monitor::event_Instruction(Alloca);
+  stack_map[offset] = Alloca;
+
+  if (Ty == Type::getInt32Ty(Context)) {
+    Instruction *Cast = new PtrToIntInst(Alloca, Ty, "Cast", BB);
+    Monitor::event_Instruction(Cast);
+    return Cast;
+  }
+
+  return Alloca;
 }
-Value *ARMLinearRaiserPass::resolveAM2Shift(Register Rn, Register Rm, int64_t AM2Shift, BasicBlock *BB) {
+void ARMLinearRaiserPass::setStackValue(int64_t offset, Value *V, BasicBlock *BB) {
+  assert(false && "NYI");
+}
+
+Value *ARMLinearRaiserPass::resolveAM2Shift(Register Rn, Register Rs, Register Rm, int64_t AM2Shift, BasicBlock *BB) {
   unsigned Imm12 = AM2Shift & 0xFFF;
   ARM_AM::ShiftOpc ShiftOpcode = (ARM_AM::ShiftOpc) ((AM2Shift >> 13) & 0x7);
   bool isSub = (AM2Shift >> 12) & 0x1;
-  unsigned IdxMode = AM2Shift >> 16;
-  assert(IdxMode == 0 && "AM2Shift with index mode not supported");
+  ARMII::IndexMode IdxMode = (ARMII::IndexMode) (AM2Shift >> 16);
 
   Instruction::BinaryOps ShiftOp;
   switch (ShiftOpcode) {
@@ -167,15 +233,32 @@ Value *ARMLinearRaiserPass::resolveAM2Shift(Register Rn, Register Rm, int64_t AM
       assert(false && "assuming default shift for now");
   }
 
-  Value *RnVal = getRegValue(Rn, BB);
-  Value *RmVal = getRegValue(Rm, BB);
+  Value *Val = getRegValue(Rn, Type::getInt32Ty(Context),BB);
+  Value *Offset;
 
-  Instruction *Shift = BinaryOperator::Create(ShiftOp, RmVal, ConstantInt::get(Type::getInt32Ty(Context), Imm12), "AM2Shift", BB);
-  Monitor::event_Instruction(Shift);
-  Instruction *Add = BinaryOperator::Create(isSub ? Instruction::Sub : Instruction::Add, RnVal, Shift, "AM2Shift", BB);
+  if (Rm != 0) {
+    Offset = getRegValue(Rm, Type::getInt32Ty(Context), BB);
+    if (!(ShiftOpcode == ARM_AM::lsr && Imm12 == 0)) {
+      Instruction *Shift = BinaryOperator::Create(ShiftOp, Offset, ConstantInt::get(Type::getInt32Ty(Context), Imm12), "AM2Shift", BB);
+      Monitor::event_Instruction(Shift);
+      Offset = Shift;
+    }
+  } else {
+    Offset = ConstantInt::get(Type::getInt32Ty(Context), Imm12);
+  }
+
+  Instruction *Add = BinaryOperator::Create(isSub ? Instruction::Sub : Instruction::Add, Val, Offset, "AM2Shift", BB);
   Monitor::event_Instruction(Add);
+  
+  if (Rs != 0)
+    setRegValue(Rs, Add, BB);
+    
+  if (IdxMode == ARMII::IndexModeNone || IdxMode == ARMII::IndexModePre)
+    return Add;
+  if (IdxMode == ARMII::IndexModePost)
+    return Val;
 
-  return Add;
+  assert(false && "AM2Shift: invalid index mode");
 }
 
 
@@ -588,9 +671,6 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
     } break;
     */
     case ARM::ADDri: { // 684 | ADD Rd Rn Op2 CC CPSR S
-      Type *Ty32 = Type::getInt32Ty(Context);
-      Type *PtrTy32 = Type::getInt32PtrTy(Context);
-
       Register Rd = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       int64_t Op2 = MI->getOperand(2).getImm();
@@ -612,7 +692,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         auto I = stack_map.find(stack_offset + Imm);
         if (I == stack_map.end()) {
           Monitor::event_raw() << "stack_map[" << stack_offset + Imm << "] is null, creating new Value\n";
-          Instruction *Alloca = new AllocaInst(Ty32, 0, "", BB);
+          Instruction *Alloca = new AllocaInst(Type::getInt32Ty(Context), 0, "", BB);
           Monitor::event_Instruction(Alloca);
           stack_map[stack_offset + Imm] = Alloca;
         }
@@ -623,7 +703,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
 
       Value *Val = RegValueMap[Rn];
       if (Imm != 0) {
-        Instruction *Add = BinaryOperator::Create(Instruction::Add, Val, ConstantInt::get(Ty32, Imm), "Add", BB);
+        Instruction *Add = BinaryOperator::Create(Instruction::Add, Val, ConstantInt::get(Type::getInt32Ty(Context), Imm), "Add", BB);
         Monitor::event_Instruction(Add);
         Val = Add;
       }
@@ -632,8 +712,6 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
     case ARM::ADDrr: // 685 | ADD Rd Rn Rm CC CPSR S      
       raiseBINOPrr(MI, Instruction::Add); break;
     case ARM::ADDrsi: { // 686 | ADD Rd Rn Rm Shift CC CPSR S
-      Type *Ty32 = Type::getInt32Ty(Context);
-
       Register Rd = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       Register Rm = MI->getOperand(2).getReg();
@@ -652,34 +730,23 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       int64_t ShiftAmount = Shift >> 3;
       ARM_AM::ShiftOpc ShiftOpcode = (ARM_AM::ShiftOpc) (Shift & 0x7);
 
-      Value *RnVal = RegValueMap[Rn];
-      if (RnVal->getType()->isPointerTy()) {
-        Instruction *Cast = new PtrToIntInst(RnVal, Ty32, "Cast", BB);
-        Monitor::event_Instruction(Cast);
-        RnVal = Cast;
-      }
-      Value *RmVal = RegValueMap[Rm];
-
-      if (RmVal->getType()->isPointerTy()) {
-        Instruction *Cast = new PtrToIntInst(RmVal, Ty32, "Cast", BB);
-        Monitor::event_Instruction(Cast);
-        RmVal = Cast;
-      }
+      Value *RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+      Value *RmVal = getRegValue(Rm, Type::getInt32Ty(Context), BB);
 
       Instruction::BinaryOps ShiftOp;
       switch (ShiftOpcode) {
-        case ARM_AM::lsr:
-          ShiftOp = Instruction::LShr;
-          break;
+        case ARM_AM::asr: ShiftOp = Instruction::AShr; break;
+        case ARM_AM::lsl: ShiftOp = Instruction::Shl; break;
+        case ARM_AM::lsr: ShiftOp = Instruction::LShr; break;
         default:
           assert(false && "ADDrsi: unknown shift opcode");
       }
 
-      Instruction *ShiftInstr = BinaryOperator::Create(ShiftOp, RmVal, ConstantInt::get(Ty32, ShiftAmount), "ADDrsiShift", BB);
+      Instruction *ShiftInstr = BinaryOperator::Create(ShiftOp, RmVal, ConstantInt::get(Type::getInt32Ty(Context), ShiftAmount), "ADDrsiShift", BB);
       Monitor::event_Instruction(ShiftInstr);
       Instruction *Instr = BinaryOperator::Create(Instruction::Add, RnVal, ShiftInstr, "ADDrsi", BB);
       Monitor::event_Instruction(Instr);
-      RegValueMap[Rd] = Instr;
+      setRegValue(Rd, Instr, BB);
     } break;
     /*
     case ARM::ANDri: { // 693 | AND{S}<c> <Rd>, <Rn>, #<imm> => Rd = Rn & Imm
@@ -692,21 +759,32 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
     */
     case ARM::ANDrr: // 694 | AND Rd Rn Rm CC CPSR S
       raiseBINOPrr(MI, Instruction::And); break;
-    /*
-    case ARM::BICri: { // 706 | BIC{S}<c> <Rd>, <Rn>, #<imm> => Rd = Rn & (0 - Imm)
-      Value *Rn = getOperandValue(MI, 1);
-      Value *imm = ConstantInt::get(Rn->getType(), MI->getOperand(2).getImm());
-      Value *zero = ConstantInt::get(Rn->getType(), 0);
+    case ARM::BICri: { // 706 | BIC Rd Rn Op2 CC CPSR S
+      Register Rd = MI->getOperand(0).getReg();
+      Register Rn = MI->getOperand(1).getReg();
+      int64_t Op2 = MI->getOperand(2).getImm();
+      unsigned Bits = Op2 & 0xFF;
+      unsigned Rot = (Op2 & 0xF00) >> 7;
+      int64_t Imm = static_cast<int64_t>(ARM_AM::rotr32(Bits, Rot));
+      int64_t CC = MI->getOperand(3).getImm();
+      Register CPSR = MI->getOperand(4).getReg();
+      Register S = MI->getOperand(5).getReg();
 
-      Instruction *Sub = BinaryOperator::Create(Instruction::Sub, zero, imm, "BICriSub", BB); Monitor::event_Instruction(Sub);
-      Instruction *Instr = BinaryOperator::Create(Instruction::And, Rn, Sub, "BICriAnd", BB); Monitor::event_Instruction(Instr);
-      setOperandValue(MI, 0, Instr);
+      assert(
+        CC == 14 &&
+        CPSR == 0 &&
+        S == 0 &&
+        "you know"
+      );
+
+      Value *RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+      Value *ImmVal = ConstantInt::get(Type::getInt32Ty(Context), -Imm);
+      Instruction *Instr = BinaryOperator::Create(Instruction::And, RnVal, ImmVal, "BICri", BB);
+      Monitor::event_Instruction(Instr);
+      setRegValue(Rd, Instr, BB);
     } break;
-    */
     case ARM::BL: { // 711 | BL Imm
       ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser &>(MR);
-
-      Type *Ty32 = Type::getInt32Ty(Context);
 
       int64_t Imm = MI->getOperand(0).getImm();
       int64_t offset = MCIR->getMCInstIndex(*MI);
@@ -872,7 +950,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       int64_t CC = MI->getOperand(1).getImm();
       Register CPSR = MI->getOperand(2).getReg();
     
-      if (CC == ARMCC::AL) {
+      if (CC == ARMCC::AL && CPSR == 0) {
         assert(
           MBB->succ_size() == 1 &&
           "Bcc: assuming normal unconditional branch for now"
@@ -900,8 +978,6 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       }
     } break;
     case ARM::CMNri: { // 755 | CMN Rn Op2 CC CPSR
-      Type *Ty32 = Type::getInt32Ty(Context);
-      
       Register Rn = MI->getOperand(0).getReg();
       int64_t Op2 = MI->getOperand(1).getImm();
       unsigned Bits = Op2 & 0xFF;
@@ -917,8 +993,8 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       );
 
       Value *RnVal = RegValueMap[Rn];
-      Value *ImmVal = ConstantInt::get(Ty32, Imm);
-      Value *NImmVal = ConstantInt::get(Ty32, -Imm);
+      Value *ImmVal = ConstantInt::get(Type::getInt32Ty(Context), Imm);
+      Value *NImmVal = ConstantInt::get(Type::getInt32Ty(Context), -Imm);
       // Not entirely correct, but negative zero compares shouldnt be emitted by compilers anyways
 
       // Negative flag
@@ -934,7 +1010,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Monitor::event_Instruction(StoreZero);
 
       // Carry flag
-      Function *UAdd = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::uadd_with_overflow, Ty32);
+      Function *UAdd = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::uadd_with_overflow, Type::getInt32Ty(Context));
       Instruction *CallUAdd = CallInst::Create(UAdd, {RnVal, ImmVal}, "UAddInstrinsic", BB);
       Monitor::event_Instruction(CallUAdd);
       Instruction *C_Flag = ExtractValueInst::Create(CallUAdd, 1, "CMNCFlag", BB);
@@ -943,7 +1019,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Monitor::event_Instruction(StoreCarry);
 
       // Overflow flag
-      Function *SAdd = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::sadd_with_overflow, Ty32);
+      Function *SAdd = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::sadd_with_overflow, Type::getInt32Ty(Context));
       Instruction *CallSAdd = CallInst::Create(SAdd, {RnVal, ImmVal}, "SAddIntrinsic", BB);
       Monitor::event_Instruction(CallSAdd);
       Instruction *V_Flag = ExtractValueInst::Create(CallSAdd, 1, "CMNVFlag", BB);
@@ -952,8 +1028,6 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Monitor::event_Instruction(StoreOverflow);
     } break;
     case ARM::CMPri: { // 759 | CMP Rn Op2 CC CPSR
-      Type *Ty32 = Type::getInt32Ty(Context);
-      
       Register Rn = MI->getOperand(0).getReg();
       int64_t Op2 = MI->getOperand(1).getImm();
       unsigned Bits = Op2 & 0xFF;
@@ -981,11 +1055,11 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
 
       Value *RnVal = RegValueMap[Rn];
       if (RnVal->getType()->isPointerTy()) {
-        Instruction *Cast = new PtrToIntInst(RnVal, Ty32, "CMPriCast", BB);
+        Instruction *Cast = new PtrToIntInst(RnVal, Type::getInt32Ty(Context), "CMPriCast", BB);
         Monitor::event_Instruction(Cast);
         RnVal = Cast;
       }
-      Value *ImmVal = ConstantInt::get(Ty32, Imm);
+      Value *ImmVal = ConstantInt::get(Type::getInt32Ty(Context), Imm);
 
       // Negative flag
       Instruction *CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, RnVal, ImmVal, "CMPriNeg", BB);
@@ -1001,7 +1075,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
 
       // Carry flag
       //Instruction *CmpCarry = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SGT, Rn, imm, "CMPriCarry", BB); Monitor::event_Instruction(CmpCarry);
-      Function *USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Ty32);
+      Function *USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Type::getInt32Ty(Context));
       Instruction *CallUSub = CallInst::Create(USub, {RnVal, ImmVal}, "USubInstrinsic", BB);
       Monitor::event_Instruction(CallUSub);
       Instruction *C_Flag = ExtractValueInst::Create(CallUSub, 1, "CMPriCFlag", BB);
@@ -1011,7 +1085,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
 
       // Overflow flag
       //Instruction *CmpOverflow = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_UGT, Rn, imm, "CMPriOverflow", BB); Monitor::event_Instruction(CmpOverflow);
-      Function *SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Ty32);
+      Function *SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Type::getInt32Ty(Context));
       Instruction *CallSSub = CallInst::Create(SSub, {RnVal, ImmVal}, "SSubIntrinsic", BB);
       Monitor::event_Instruction(CallSSub);
       Instruction *V_Flag = ExtractValueInst::Create(CallSSub, 1, "CMPriVFlag", BB);
@@ -1025,8 +1099,6 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       }
     } break;
     case ARM::CMPrr: { // 760 | CMP Rn Rm CC CPSR
-      Type *Ty32 = Type::getInt32Ty(Context);
-      
       Register Rn = MI->getOperand(0).getReg();
       Register Rm = MI->getOperand(1).getReg();
       ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
@@ -1049,18 +1121,8 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         BB = CondExecBB;
       }
 
-      Value *RnVal = RegValueMap[Rn];
-      if (RnVal->getType()->isPointerTy()) {
-        Instruction *Cast = new PtrToIntInst(RnVal, Ty32, "CMPrrCast", BB);
-        Monitor::event_Instruction(Cast);
-        RnVal = Cast;
-      }
-      Value *RmVal = RegValueMap[Rm];
-      if (RmVal->getType()->isPointerTy()) {
-        Instruction *Cast = new PtrToIntInst(RmVal, Ty32, "CMPrrCast", BB);
-        Monitor::event_Instruction(Cast);
-        RmVal = Cast;
-      }
+      Value *RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+      Value *RmVal = getRegValue(Rm, Type::getInt32Ty(Context), BB);
 
       // Negative flag
       Instruction *CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, RnVal, RmVal, "CMPrrNeg", BB);
@@ -1075,7 +1137,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Monitor::event_Instruction(StoreZero);
 
       // Carry flag
-      Function *USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Ty32);
+      Function *USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Type::getInt32Ty(Context));
       Instruction *CallUSub = CallInst::Create(USub, {RnVal, RmVal}, "USubInstrinsic", BB);
       Monitor::event_Instruction(CallUSub);
       Instruction *C_Flag = ExtractValueInst::Create(CallUSub, 1, "CMPrrCFlag", BB);
@@ -1084,7 +1146,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Monitor::event_Instruction(StoreCarry);
 
       // Overflow flag
-      Function *SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Ty32);
+      Function *SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Type::getInt32Ty(Context));
       Instruction *CallSSub = CallInst::Create(SSub, {RnVal, RmVal}, "SSubIntrinsic", BB);
       Monitor::event_Instruction(CallSSub);
       Instruction *V_Flag = ExtractValueInst::Create(CallSSub, 1, "CMPrrVFlag", BB);
@@ -1099,12 +1161,11 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
     } break;
     case ARM::DMB: { // 773 | DMB Imm
       // Call ARM DMB intrinsic
-      Type *Ty32 = Type::getInt32Ty(Context);
 
       int64_t Imm = MI->getOperand(0).getImm();
 
       Function *DMB = Intrinsic::getDeclaration(MR.getModule(),Intrinsic::arm_dmb);
-      Instruction *Instr = CallInst::Create(DMB, { ConstantInt::get(Ty32, Imm) }, "", BB);
+      Instruction *Instr = CallInst::Create(DMB, { ConstantInt::get(Type::getInt32Ty(Context), Imm) }, "", BB);
       Monitor::event_Instruction(Instr);
     } break;
     /*
@@ -1130,8 +1191,6 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
     } break;
     */
     case ARM::LDMIA_UPD: { // 822 | LDMIA Rn Rn CC CPSR Reg
-      Type *Ty32 = Type::getInt32Ty(Context);
-
       Register Rn = MI->getOperand(0).getReg();
       assert(MI->getOperand(1).getReg() == Rn && "ARM::LDMIA_UPD: expecting doubled Rn");
       int64_t CC = MI->getOperand(2).getImm();
@@ -1173,8 +1232,8 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::LDRB_PRE_REG: assuming no flags for now"
       );
 
-      Value *RnVal = getRegValue(Rn, BB);
-      Value *RmVal = getRegValue(Rm, BB);
+      Value *RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+      Value *RmVal = getRegValue(Rm, Type::getInt32Ty(Context), BB);
 
       Instruction *Add = BinaryOperator::Create(Instruction::Add, RnVal, RmVal, "LDRB_PRE_REGAdd", BB);
       Monitor::event_Instruction(Add);
@@ -1192,10 +1251,6 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       setRegValue(Rt, ZExt, BB);
     } break;
     case ARM::LDRBi12: { // 831 | LDRB Rt Rn Imm12 CC CPSR
-      Type *Ty8 = Type::getInt8Ty(Context);
-      Type *PtrTy8 = Type::getInt8PtrTy(Context);
-      Type *Ty32 = Type::getInt32Ty(Context);
-
       Register Rt = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       int64_t Imm12 = MI->getOperand(2).getImm();
@@ -1221,55 +1276,34 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         BB = CondExecBB;
       }
 
-      Value *Ptr = RegValueMap[Rn];
-      auto &OS=Monitor::event_raw(); OS << "Loading type "; Ptr->getType()->print(OS); OS << "\n";
-      // Cast to pointer if necessary
-      if (Ptr->getType() == Ty32) {
-        Instruction *Cast = new IntToPtrInst(Ptr, PtrTy8, "LDRBi12CastUp", BB);
-        Monitor::event_Instruction(Cast);
-        Ptr = Cast;
-      }
-      // Bitcast pointer if necessary
-      if (Ptr->getType() != Ty8) {
-        Instruction *Bitcast = new BitCastInst(Ptr, PtrTy8, "LDRHBitcast", BB);
-        Monitor::event_Instruction(Bitcast);
-        Ptr = Bitcast;
-      }
+      Value *Ptr = getRegValue(Rn, Type::getInt8PtrTy(Context), BB);
       // GEP if there is an offset
       if (Imm12 != 0) {
-        Instruction *GEP = GetElementPtrInst::Create(Ty8, Ptr, { ConstantInt::get(Ty32, Imm12) }, "LDRBi12GEP", BB);
+        Instruction *GEP = GetElementPtrInst::Create(Type::getInt8Ty(Context), Ptr, { ConstantInt::get(Type::getInt32Ty(Context), Imm12) }, "LDRBi12GEP", BB);
         Monitor::event_Instruction(GEP);
         Ptr = GEP;
       }
       // Load
-      Instruction *Load = new LoadInst(Ty8, Ptr, "LDRBi12", BB);
+      Instruction *Load = new LoadInst(Type::getInt8Ty(Context), Ptr, "LDRBi12", BB);
       Monitor::event_Instruction(Load);
       Ptr = Load;
-      // Truncate if necessary
-      if (Ptr->getType() != Ty8) {
-        Instruction *Trunc = new TruncInst(Ptr, Ty8, "LDRBi12Trunc", BB);
-        Monitor::event_Instruction(Trunc);
-        Ptr = Trunc;
-      }
       // Zero extend
-      Instruction *ZExt = new ZExtInst(Ptr, Ty32, "LDRBi12ZExt", BB);
+      Instruction *ZExt = new ZExtInst(Ptr, Type::getInt32Ty(Context), "LDRBi12ZExt", BB);
       Monitor::event_Instruction(ZExt);
       Ptr = ZExt;
       
       if (conditional_execution) {      
         Instruction* MergeIf = BranchInst::Create(MergeBB, BB);
         Monitor::event_Instruction(MergeIf);
-        PHINode *phi = PHINode::Create(Ty32, 2, "LDRBi12Phi", MergeBB);
+        PHINode *phi = PHINode::Create(Type::getInt32Ty(Context), 2, "LDRBi12Phi", MergeBB);
         phi->addIncoming(RegValueMap[Rt], BaseBB);
         phi->addIncoming(Ptr, BB);
         Ptr = phi;
       }
 
-      RegValueMap[Rt] = Ptr;
+      setRegValue(Rt, Ptr, BB);
     } break;
     case ARM::LDREX: { // 836 | LDREX Rt Rn CC CPSR
-      Type *PtrTy32 = Type::getInt32PtrTy(Context);
-
       Register Rt = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       int64_t CC = MI->getOperand(2).getImm();
@@ -1283,23 +1317,19 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
 
       Value *Ptr = RegValueMap[Rn];
 
-      if (Ptr->getType() != PtrTy32) {
-        Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "LDREXPtrCast", BB);
+      if (Ptr->getType() != Type::getInt32PtrTy(Context)) {
+        Instruction *Cast = new IntToPtrInst(Ptr, Type::getInt32PtrTy(Context), "LDREXPtrCast", BB);
         Monitor::event_Instruction(Cast);
         Ptr = Cast;
       }
 
-      Function *LDREX = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::arm_ldrex, {PtrTy32});
+      Function *LDREX = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::arm_ldrex, {Type::getInt32PtrTy(Context)});
       Instruction *Instr = CallInst::Create(LDREX, { Ptr }, "LDREX", BB);
       Monitor::event_Instruction(Instr);
 
       RegValueMap[Rt] = Instr;
     } break;
     case ARM::LDRH: { // 840 | LDRH Rt Rn - Imm12 CC CPSR
-      Type *Ty16 = Type::getInt16Ty(Context);
-      Type *PtrTy16 = Type::getInt16PtrTy(Context);
-      Type *Ty32 = Type::getInt32Ty(Context);
-
       Register Rt = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       assert(MI->getOperand(2).getReg() == 0 && "ARM::LDRH: expecting no secondary register");
@@ -1326,45 +1356,26 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         BB = CondExecBB;
       }
 
-      Value *Ptr = RegValueMap[Rn];
-      auto &OS=Monitor::event_raw(); OS << "Loading type "; Ptr->getType()->print(OS); OS << "\n";
-      // Cast to pointer if necessary
-      if (Ptr->getType() == Ty32) {
-        Instruction *Cast = new IntToPtrInst(Ptr, PtrTy16, "LDRHCastUp", BB);
-        Monitor::event_Instruction(Cast);
-        Ptr = Cast;
-      }
-      // Bitcast pointer if necessary
-      if (Ptr->getType() != Ty16) {
-        Instruction *Bitcast = new BitCastInst(Ptr, PtrTy16, "LDRHBitcast", BB);
-        Monitor::event_Instruction(Bitcast);
-        Ptr = Bitcast;
-      }
+      Value *Ptr = getRegValue(Rn, Type::getInt16PtrTy(Context), BB);
       // GEP if there is an offset
       if (Imm12 != 0) {
-        Instruction *GEP = GetElementPtrInst::Create(Ty16, Ptr, { ConstantInt::get(Ty32, Imm12) }, "LDRHGEP", BB);
+        Instruction *GEP = GetElementPtrInst::Create(Type::getInt16Ty(Context), Ptr, { ConstantInt::get(Type::getInt32Ty(Context), Imm12) }, "LDRHGEP", BB);
         Monitor::event_Instruction(GEP);
         Ptr = GEP;
       }
       // Load
-      Instruction *Load = new LoadInst(Ty16, Ptr, "LDRH", BB);
+      Instruction *Load = new LoadInst(Type::getInt16Ty(Context), Ptr, "LDRH", BB);
       Monitor::event_Instruction(Load);
       Ptr = Load;
-      // Truncate if necessary
-      if (Ptr->getType() != Ty16) {
-        Instruction *Trunc = new TruncInst(Ptr, Ty16, "LDRHTrunc", BB);
-        Monitor::event_Instruction(Trunc);
-        Ptr = Trunc;
-      }
       // Zero extend
-      Instruction *ZExt = new ZExtInst(Ptr, Ty32, "LDRHZExt", BB);
+      Instruction *ZExt = new ZExtInst(Ptr, Type::getInt32Ty(Context), "LDRHZExt", BB);
       Monitor::event_Instruction(ZExt);
       Ptr = ZExt;
       
       if (conditional_execution) {      
         Instruction* MergeIf = BranchInst::Create(MergeBB, BB);
         Monitor::event_Instruction(MergeIf);
-        PHINode *phi = PHINode::Create(Ty32, 2, "LDRHPhi", MergeBB);
+        PHINode *phi = PHINode::Create(Type::getInt32Ty(Context), 2, "LDRHPhi", MergeBB);
         phi->addIncoming(RegValueMap[Rt], BaseBB);
         phi->addIncoming(Ptr, BB);
         Ptr = phi;
@@ -1375,23 +1386,38 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
     /*
     case ARM::LDRSB: { // 845 | LDR{type}{cond} Rt, [Rn {, #offset}]
       // SB | Load Signed Byte; Sign extend to 32 bits
-      Type *Ty8 = Type::getInt8Ty(Context);
-      Type *Ty32 = Type::getInt32Ty(Context);
+
       Value *Rn = getOperandValue(MI, 1);
       assert(MI->getOperand(2).getReg() == 0 && MI->getOperand(3).getImm() == 0
         && "ARM::LDRSB: assuming zero offsets for now");
 
       Instruction *Cast = new IntToPtrInst(Rn, Ty32->getPointerTo(), "LDRSBPtrCast", BB); Monitor::event_Instruction(Cast);
-      Instruction *Instr = new LoadInst(Ty32, Cast, "LDRSBLoad", BB); Monitor::event_Instruction(Instr);
-      Instruction *Trunc = new TruncInst(Instr, Ty8, "LDRSBTrunc", BB); Monitor::event_Instruction(Trunc);
-      Instruction *SExt = new SExtInst(Trunc, Ty32, "LDRSBSExt", BB); Monitor::event_Instruction(SExt);
+      Instruction *Instr = new LoadInst(Type::getInt32Ty(Context), Cast, "LDRSBLoad", BB); Monitor::event_Instruction(Instr);
+      Instruction *Trunc = new TruncInst(Instr, Type::getInt8Ty(Context), "LDRSBTrunc", BB); Monitor::event_Instruction(Trunc);
+      Instruction *SExt = new SExtInst(Trunc, Type::getInt32Ty(Context), "LDRSBSExt", BB); Monitor::event_Instruction(SExt);
       setOperandValue(MI, 0, SExt);
     } break;
     */
-    case ARM::LDRi12: { // 862 | LDR Rt Rn Imm12 CC CPSR
-      Type *Ty32 = Type::getInt32Ty(Context);
-      Type *PtrTy32 = Type::getInt32PtrTy(Context);
+    case ARM::LDR_POST_IMM: { // 857 | LDR_POST_IMM Rd Rn Rs Rm=0 AM2Shift CC CPSR
+      Register Rt = MI->getOperand(0).getReg();
+      Register Rn = MI->getOperand(1).getReg();
+      Register Rs = MI->getOperand(2).getReg();
+      Register Rm = MI->getOperand(3).getReg();
+      int64_t AM2Shift = MI->getOperand(4).getImm();
+      ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(5).getImm();
+      Register CPSR = MI->getOperand(6).getReg();
 
+      bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+      assert(!conditional_execution && "ARM::LDR_POST_IMM: conditional execution not supported");
+
+      Value *Addr = resolveAM2Shift(Rn, Rs, Rm, AM2Shift, BB);
+      Instruction *Cast = new IntToPtrInst(Addr, Type::getInt32PtrTy(Context), "LDR_POST_IMMCast", BB);
+      Monitor::event_Instruction(Cast);
+      Instruction *Load = new LoadInst(Type::getInt32Ty(Context), Cast, "LDR_POST_IMM", BB);
+      Monitor::event_Instruction(Load);
+      setRegValue(Rt, Load, BB);
+    } break;
+    case ARM::LDRi12: { // 862 | LDR Rt Rn Imm12 CC CPSR
       Register Rt = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       int64_t Imm12 = MI->getOperand(2).getImm();
@@ -1407,86 +1433,33 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       if (Rn == ARM::PC) { // Load PC-relative GlobalValue
         Value *GV = getGlobalValueByOffset(MCIR->getMCInstIndex(*MI), Imm12 + 8);
         Monitor::event_raw() << "Global Value: " << GV->getName() << "\n";
-        Instruction *Cast = new PtrToIntInst(GV, Ty32, "LDRi12CastDown", BB);
+        Instruction *Cast = new PtrToIntInst(GV, Type::getInt32Ty(Context), "LDRi12CastDown", BB);
         Monitor::event_Instruction(Cast); 
-        RegValueMap[Rt] = Cast;
+        setRegValue(Rt, Cast, BB);
         break;
       }
       
-      if (Rn == ARM::SP) { // Load top relative StackValue
-        Value *StackValue = getStackValue(Rn, Imm12, BB);
-        if (!StackValue->getType()->isPointerTy()) {
-          Instruction *Cast = new IntToPtrInst(StackValue, PtrTy32, "LDRi12CastUp", BB);
-          Monitor::event_Instruction(Cast);
-          StackValue = Cast;
-        }
-        Instruction *Load = new LoadInst(Ty32, StackValue, "LDRi12Load", BB);
+      if (Rn == ARM::SP || (Rn == ARM::R11 && FP_valid)) { // Load StackValue
+        Value *StackValue = getStackValue(Rn, Imm12, Type::getInt32PtrTy(Context), BB);
+        Instruction *Load = new LoadInst(Type::getInt32Ty(Context), StackValue, "LDRi12Load", BB);
         Monitor::event_Instruction(Load);
-        RegValueMap[Rt] = Load;
+        setRegValue(Rt, Load, BB);
         break;
       }
 
-      if (Rn == ARM::R11) { // Load bottom relative StackValue
-        auto I = stack_map.find(Imm12);
-        if (I != stack_map.end()) {
-          {auto &OS = Monitor::event_raw();
-            OS << "Found StackValue directly at " << I->first << "\n";
-            OS << "StackValue: " << *I->second << " (type: ";I->second->getType()->print(OS); OS << ")\n";
-          }
-          Value *StackValue = I->second;
-          if (!StackValue->getType()->isPointerTy()) {
-            Instruction *Cast = new IntToPtrInst(StackValue, PtrTy32, "LDRi12CastUp", BB);
-            Monitor::event_Instruction(Cast);
-            StackValue = Cast;
-          }
-          Instruction *Load = new LoadInst(Ty32, StackValue, "LDRi12Load", BB);
-          Monitor::event_Instruction(Load);
-          RegValueMap[Rt] = Load;
-          break;
-        }
+      Value *Ptr = getRegValue(Rn, Type::getInt32PtrTy(Context), BB);
 
-        // Match closest stack value
-        I = --stack_map.lower_bound(Imm12);
-        Monitor::event_raw() << "Can't find StackValue directly; using offset from value at " << I->first << "\n";
-        
-        int64_t diff = Imm12 - I->first;
-        Value *StackValue = I->second;
-        if (!StackValue->getType()->isPointerTy()) {
-          Instruction *Cast = new IntToPtrInst(StackValue, PtrTy32, "LDRi12CastUp", BB);
-          Monitor::event_Instruction(Cast);
-          StackValue = Cast;
-        }
-        Instruction *GEP = GetElementPtrInst::Create(Ty32, StackValue, ConstantInt::get(Ty32, diff), "LDRi12GEP", BB);
-        Monitor::event_Instruction(GEP);
-        Instruction *Load = new LoadInst(Ty32, GEP, "LDRi12Load", BB);
-        Monitor::event_Instruction(Load);
-        RegValueMap[Rt] = Load;
-        break;
-      }
-      
-      Value *Ptr = RegValueMap[Rn];
-
-      // Offset
+      // GEP if there is an offset
       if (Imm12 != 0) {
-        if (Ptr->getType()->isPointerTy()) {
-          Instruction *Cast = new PtrToIntInst(Ptr, Ty32, "LDRi12CastDown", BB);
-          Monitor::event_Instruction(Cast);
-          Ptr = Cast;
-        }
-        Instruction *Add = BinaryOperator::Create(Instruction::Add, Ptr, ConstantInt::get(Ty32, Imm12), "LDRi12Add", BB);
-        Monitor::event_Instruction(Add);
-        Ptr = Add;
+        Instruction *GEP = GetElementPtrInst::Create(Type::getInt32Ty(Context), Ptr, { ConstantInt::get(Type::getInt32Ty(Context), Imm12) }, "LDRi12GEP", BB);
+        Monitor::event_Instruction(GEP);
+        Ptr = GEP;
       }
-      
-      // Ptr cast
-      Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "LDRi12CastUp", BB);
-      Monitor::event_Instruction(Cast);
-      Ptr = Cast;
 
-      Instruction *Instr = new LoadInst(Ty32, Ptr, "LDRi12Load", BB);
-      Monitor::event_Instruction(Instr);
+      Instruction *Load = new LoadInst(Type::getInt32Ty(Context), Ptr, "LDRi12Load", BB);
+      Monitor::event_Instruction(Load);
       
-      RegValueMap[Rt] = Instr;
+      setRegValue(Rt, Load, BB);
     } break;
     case ARM::LDRrs: { // 863 | LDR Rt Rn Rm AM2Shift CC CPSR
       Register Rt = MI->getOperand(0).getReg();
@@ -1502,17 +1475,41 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::LDRrs: assuming no flags for now"
       );
       
-      Value *Addr = resolveAM2Shift(Rn, Rm, AM2Shift, BB);
-      Value *Ptr = toPtr(Addr, Type::getInt32PtrTy(Context), BB);
-      Instruction *Load = new LoadInst(Type::getInt32Ty(Context), Ptr, "LDRrsLoad", BB);
+      Value *Addr = resolveAM2Shift(Rn, 0, Rm, AM2Shift, BB);
+      Instruction *Cast = new IntToPtrInst(Addr, Type::getInt32PtrTy(Context), "LDRrsCast", BB);
+      Monitor::event_Instruction(Cast);
+      Instruction *Load = new LoadInst(Type::getInt32Ty(Context), Cast, "LDRrsLoad", BB);
       Monitor::event_Instruction(Load);
 
       setRegValue(Rt, Load, BB);
     } break;
-    /*
-    case ARM::MLA: { // 868 | MLA<c> <Rd>, <Rn>, <Rm>, <Ra> => Rd = Rn * Ra + Rm
-      assert(false && "ARM::MLA not yet implemented");
+    case ARM::MLA: { // 868 | MLA Rd Rn Rm Ra CC CPSR S
+      Register Rd = MI->getOperand(0).getReg();
+      Register Rn = MI->getOperand(1).getReg();
+      Register Rm = MI->getOperand(2).getReg();
+      Register Ra = MI->getOperand(3).getReg();
+      int64_t CC = MI->getOperand(4).getImm();
+      Register CPSR = MI->getOperand(5).getReg();
+      Register S = MI->getOperand(6).getReg();
+
+      assert(
+        CC == 14 &&
+        CPSR == 0 &&
+        S == 0 &&
+        "ARM::MLA: assuming no flags for now"
+      );
+      
+      Value *RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+      Value *RmVal = getRegValue(Rm, Type::getInt32Ty(Context), BB);
+      Value *RaVal = getRegValue(Ra, Type::getInt32Ty(Context), BB);
+
+      Instruction *Mul = BinaryOperator::Create(Instruction::Mul, RnVal, RmVal, "MLA", BB);
+      Monitor::event_Instruction(Mul);
+      Instruction *Add = BinaryOperator::Create(Instruction::Add, Mul, RaVal, "MLA", BB);
+      Monitor::event_Instruction(Add);
+      setRegValue(Rd, Add, BB);
     } break;
+    /*
     case ARM::MOVPCLR: { // 870 | MOV<c> PC, LR => PC = LR
       Type *RetTy = FuncInfo->Fn->getReturnType();
 
@@ -1525,9 +1522,6 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
     } break;
     */
     case ARM::MOVTi16: { // 871 |  Rd Rd Imm16 CC CPSR
-      Type *Ty16 = Type::getInt16Ty(Context);
-      Type *Ty32 = Type::getInt32Ty(Context);
-
       Register Rd = MI->getOperand(0).getReg();
       assert(MI->getOperand(1).getReg() == Rd && "ARM::MOVTi16: expecting doubled Rd entry");
       int64_t Imm16 = MI->getOperand(2).getImm();
@@ -1540,26 +1534,24 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::MOVTi16: assuming no flags for now"
       );
 
-      Value *Val = RegValueMap[Rd];
+      Value *Val = getRegValue(Rd, Type::getInt32Ty(Context), BB);
       
-      Instruction *Trunc = new TruncInst(Val, Ty16, "MOVTi16Trunc", BB);
+      Instruction *Trunc = new TruncInst(Val, Type::getInt16Ty(Context), "MOVTi16Trunc", BB);
       Monitor::event_Instruction(Trunc);
       Val = Trunc;
 
-      Instruction *ZExt = new ZExtInst(Val, Ty32, "MOVTi16ZExt", BB);
+      Instruction *ZExt = new ZExtInst(Val, Type::getInt32Ty(Context), "MOVTi16ZExt", BB);
       Monitor::event_Instruction(ZExt);
       Val = ZExt;
 
-      Instruction *Add = BinaryOperator::Create(Instruction::Add, Val, ConstantInt::get(Ty32, Imm16 << 16), "MOVTi16Add", BB);
+      Instruction *Add = BinaryOperator::Create(Instruction::Add, Val, ConstantInt::get(Type::getInt32Ty(Context), Imm16 << 16), "MOVTi16Add", BB);
       Monitor::event_Instruction(Add);
       Val = Add;
 
-      assert(Val->getType() == Ty32 && "ARM::MOVTi16: expecting output type to be Ty32");
+      assert(Val->getType() == Type::getInt32Ty(Context) && "ARM::MOVTi16: expecting output type to be Ty32");
       RegValueMap[Rd] = Val;
     } break;
     case ARM::MOVi: { // 872 | MOV Rt Op2 CC CPSR S
-      Type *Ty32 = Type::getInt32Ty(Context);
-
       Register Rt = MI->getOperand(0).getReg();
       int64_t Op2 = MI->getOperand(1).getImm();
       unsigned Bits = Op2 & 0xFF;
@@ -1576,12 +1568,10 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::MOVi: assuming no flags for now"
       );
 
-      RegValueMap[Rt] = ConstantInt::get(Ty32, Imm);
+      RegValueMap[Rt] = ConstantInt::get(Type::getInt32Ty(Context), Imm);
       Monitor::event_raw() << "Reg " << Rt << " <= " << Imm << "\n";
     } break;
     case ARM::MOVi16: { // 873 | MOV Rd Imm16 CC CPSR
-      Type *Ty32 = Type::getInt32Ty(Context);
-
       Register Rd = MI->getOperand(0).getReg();
       int64_t Imm16 = MI->getOperand(1).getImm();
       int64_t CC = MI->getOperand(2).getImm();
@@ -1593,12 +1583,9 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::MOVi16: assuming no flags for now"
       );
 
-      setRegValue(Rd, ConstantInt::get(Ty32, Imm16), BB);
-
+      setRegValue(Rd, ConstantInt::get(Type::getInt32Ty(Context), Imm16), BB);
     } break;
     case ARM::MOVr: { // 874 | MOV Rd Rn CC CPSR
-      Type *Ty32 = Type::getInt32Ty(Context);
-
       Register Rd = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       int64_t CC = MI->getOperand(2).getImm();
@@ -1615,12 +1602,10 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         break;
       }
       
-      RegValueMap[Rd] = RegValueMap[Rn];
+      setRegValue(Rd, getRegValue(Rn, Type::getInt32Ty(Context), BB), BB);
       Monitor::event_raw() << "Reg " << Rd << " <= " << Rn << "\n";
     } break;
     case ARM::MOVsi: { // 876 | MOV Rd Rm Shift CC CPSR S
-      Type *Ty32 = Type::getInt32Ty(Context);
-
       Register Rd = MI->getOperand(0).getReg();
       Register Rm = MI->getOperand(1).getReg();
       int64_t Shift = MI->getOperand(2).getImm();
@@ -1638,7 +1623,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       int64_t ShiftAmount = Shift >> 3;
       ARM_AM::ShiftOpc ShiftOpcode = (ARM_AM::ShiftOpc) (Shift & 0x7);
 
-      Value *RmVal = RegValueMap[Rm];
+      Value *RmVal = getRegValue(Rm, Type::getInt32Ty(Context), BB);
 
       Instruction::BinaryOps ShiftOp;
       switch (ShiftOpcode) {
@@ -1646,16 +1631,14 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         case ARM_AM::lsl: ShiftOp = Instruction::Shl; break;
         case ARM_AM::lsr: ShiftOp = Instruction::LShr; break;
         default:
-          assert(false && "ADDrsi: unknown shift opcode");
+          assert(false && "MOVsi: unknown shift opcode");
       }
 
-      Instruction *ShiftInstr = BinaryOperator::Create(ShiftOp, RmVal, ConstantInt::get(Ty32, ShiftAmount), "MOVsiShift", BB);
+      Instruction *ShiftInstr = BinaryOperator::Create(ShiftOp, RmVal, ConstantInt::get(Type::getInt32Ty(Context), ShiftAmount), "MOVsiShift", BB);
       Monitor::event_Instruction(ShiftInstr);
-      RegValueMap[Rd] = ShiftInstr;
+      setRegValue(Rd, ShiftInstr, BB);
     } break;
     case ARM::MUL: { // 888 | MUL Rd Rn Rm CC CPSR S
-      Type *Ty32 = Type::getInt32Ty(Context);
-      
       Register Rd = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       Register Rm = MI->getOperand(2).getReg();
@@ -1670,12 +1653,12 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::MUL: assuming no flags for now"
       );
 
-      Value *RnVal = RegValueMap[Rn];
-      Value *RmVal = RegValueMap[Rm];
+      Value *RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+      Value *RmVal = getRegValue(Rm, Type::getInt32Ty(Context), BB);
 
       Instruction *Mul = BinaryOperator::Create(Instruction::Mul, RnVal, RmVal, "MUL", BB);
       Monitor::event_Instruction(Mul);
-      RegValueMap[Rd] = Mul;
+      setRegValue(Rd, Mul, BB);
     } break;
     /*
     case ARM::MVNi: { // 1736 | MVN<c> <Rd>, #<imm> => Rd = 0 - imm
@@ -1715,9 +1698,6 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
     } break;
     */
     case ARM::SMULL: { // 1849 | SMULL RdLo RdHi Rn Rm CC CPSR S
-      Type *Ty32 = Type::getInt32Ty(Context);
-      Type *Ty64 = Type::getInt64Ty(Context);
-
       Register RdLo = MI->getOperand(0).getReg();
       Register RdHi = MI->getOperand(1).getReg();
       Register Rn = MI->getOperand(2).getReg();
@@ -1736,27 +1716,25 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       Value *RnVal = RegValueMap[Rn];
       Value *RmVal = RegValueMap[Rm];
 
-      Instruction *RnExt = new SExtInst(RnVal, Ty64, "SMULLRnExt", BB);
+      Instruction *RnExt = new SExtInst(RnVal, Type::getInt64Ty(Context), "SMULLRnExt", BB);
       Monitor::event_Instruction(RnExt);
-      Instruction *RmExt = new SExtInst(RmVal, Ty64, "SMULLRmExt", BB);
+      Instruction *RmExt = new SExtInst(RmVal, Type::getInt64Ty(Context), "SMULLRmExt", BB);
       Monitor::event_Instruction(RmExt);
 
       Instruction *Mul = BinaryOperator::Create(Instruction::Mul, RnExt, RmExt, "SMULL", BB);
       Monitor::event_Instruction(Mul);
 
-      Instruction *Lo = new TruncInst(Mul, Ty32, "SMULLLo", BB);
+      Instruction *Lo = new TruncInst(Mul, Type::getInt32Ty(Context), "SMULLLo", BB);
       Monitor::event_Instruction(Lo);
-      Instruction *Hi = BinaryOperator::Create(Instruction::LShr, Mul, ConstantInt::get(Ty64, 32), "SMULLHi", BB);
+      Instruction *Hi = BinaryOperator::Create(Instruction::LShr, Mul, ConstantInt::get(Type::getInt64Ty(Context), 32), "SMULLHi", BB);
       Monitor::event_Instruction(Hi);
-      Instruction *CastHi = new TruncInst(Hi, Ty32, "SMULLHiCast", BB);
+      Instruction *CastHi = new TruncInst(Hi, Type::getInt32Ty(Context), "SMULLHiCast", BB);
       Monitor::event_Instruction(CastHi);
 
-      RegValueMap[RdLo] = Lo;
-      RegValueMap[RdHi] = CastHi;
+      setRegValue(RdLo, Lo, BB);
+      setRegValue(RdHi, CastHi, BB);
     } break;
     case ARM::STMDB_UPD: { // 1895 | STMDB Rn Rn CC CPSR Reg
-      Type *Ty32 = Type::getInt32Ty(Context);
-
       Register Rn = MI->getOperand(0).getReg();
       assert(MI->getOperand(1).getReg() == Rn && "ARM::STMDB_UPD: expecting doubled Rn");
       int64_t CC = MI->getOperand(2).getImm();
@@ -1776,14 +1754,14 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
 
       if (RegValueMap.count(Reg) == 0) {
         Monitor::event_raw() << "ARM::STMDB_UPD: encountered valueless register " << Reg << "\n";
-        RegValueMap[Reg] = ConstantInt::get(Ty32, 0);
+        RegValueMap[Reg] = ConstantInt::get(Type::getInt32Ty(Context), 0);
       }
 
       // Decrement SP by 4
       Monitor::event_raw() << "ARM::STMDB_UPD: decrementing SP by 4\n";
       stack_offset -= 4;
 
-      Monitor::event_raw() << "stack[" << stack_offset << "] = Reg " << Reg << "]\n";
+      Monitor::event_raw() << "stack[" << stack_offset << "] = Reg " << Reg << "\n";
       stack_map[stack_offset] = RegValueMap[Reg];
       
     } break;
@@ -1798,17 +1776,12 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       assert(false && "ARM::STMIB not yet implemented");
     } break;
     */
-    case ARM::STRB_POST_IMM: { // 1902 | STRB Rt Rn Rs - Shift CC CPSR
-      Type *Ty8 = Type::getInt8Ty(Context);
-      Type *Ty32 = Type::getInt32Ty(Context);
-      Type *PtrTy8 = Type::getInt8PtrTy(Context);
-
+    case ARM::STRB_POST_IMM: { // 1902 | STRB Rt Rn Rs Rm=0 AM2Shift CC CPSR
       Register Rt = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       Register Rs = MI->getOperand(2).getReg();
-      assert(Rt == Rs && "ARM::STRB_POST_IMM: expecting Rt == Rs");
-      assert(MI->getOperand(3).getReg() == 0 && "ARM::STRB_POST_IMM: expecting no secondary register");
-      int64_t Shift = MI->getOperand(4).getImm();
+      Register Rm = MI->getOperand(3).getReg();
+      int64_t AM2Shift = MI->getOperand(4).getImm();
       int64_t CC = MI->getOperand(5).getImm();
       Register CPSR = MI->getOperand(6).getReg();
 
@@ -1818,33 +1791,16 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::STRB_POST_IMM: assuming no flags for now"
       );
 
-      unsigned Imm12 = Shift & 0xFFF;
-      ARM_AM::ShiftOpc ShiftOpcode = (ARM_AM::ShiftOpc) ((Shift >> 13) & 0x7);
-      bool isSub = (Shift >> 12) & 0x1;
-      unsigned IdxMode = Shift >> 16;
-      assert(ShiftOpcode == ARM_AM::lsl && "ARM::STRB_POST_IMM: expecting no shift opcode");
-      assert(IdxMode == 2 && "ARM::STRB_POST_IMM: expecting post-increment mode");
+      Value *Addr = resolveAM2Shift(Rn, Rs, Rm, AM2Shift, BB);
+      Instruction *Cast = new IntToPtrInst(Addr, Type::getInt8PtrTy(Context), "STRB_POST_IMMCast", BB);
+      Monitor::event_Instruction(Cast);
 
-      // 10 010 1 0000 0000 0001
-
-      Instruction *Trunc = new TruncInst(RegValueMap[Rs], Ty8, "STRB_POST_IMMValTrunc", BB);
+      Value *Val = getRegValue(Rt, Type::getInt32Ty(Context), BB);
+      Instruction *Trunc = new TruncInst(Val, Type::getInt8Ty(Context), "STRB_POST_IMMValTrunc", BB);
       Monitor::event_Instruction(Trunc);
 
-      Value *Ptr = RegValueMap[Rn];
-      if (Ptr->getType() != PtrTy8) {
-        Instruction *Cast = new IntToPtrInst(Ptr, PtrTy8, "STRB_POST_IMMPtrCast", BB);
-        Monitor::event_Instruction(Cast);
-        Ptr = Cast;
-      }
-
-      assert(Trunc->getType() == Ty8 && "ARM::STRB_POST_IMM: expecting i8 type value");
-      assert(Ptr->getType() == PtrTy8 && "ARM::STRB_POST_IMM: expecting i8* type ptr");
-      Instruction *Instr = new StoreInst(Trunc, Ptr, false, BB);
+      Instruction *Instr = new StoreInst(Trunc, Cast, false, BB);
       Monitor::event_Instruction(Instr);
-
-      Instruction *PostInc = BinaryOperator::Create(isSub ? Instruction::Sub : Instruction::Add, RegValueMap[Rs], ConstantInt::get(Ty32, Imm12), "STRB_POST_IMMPostInc", BB);
-      Monitor::event_Instruction(PostInc);
-      RegValueMap[Rt] = PostInc;
     } break; 
     /*
     case ARM::STRBi12: { // 1906 | STRB<c> <Rt>, [<Rn>, #-<imm>]!
@@ -1852,9 +1808,6 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
     } break;
     */
     case ARM::STREX: { // 1911 | STREX Rd Rt Rn CC CPSR
-      Type *Ty32 = Type::getInt32Ty(Context);
-      Type *PtrTy32 = Type::getInt32PtrTy(Context);
-
       Register Rd = MI->getOperand(0).getReg();
       Register Rt = MI->getOperand(1).getReg();
       Register Rn = MI->getOperand(2).getReg();
@@ -1867,27 +1820,14 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "STREX: assuming no flags for now"
       );
 
-      Value *Ptr = RegValueMap[Rt];
-      Value *RnVal = RegValueMap[Rn];
+      Value *Ptr = getRegValue(Rt, Type::getInt32PtrTy(Context), BB);
+      Value *RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
 
-      if (Ptr->getType() != PtrTy32) {
-        Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "STREXPtrCast", BB);
-        Monitor::event_Instruction(Cast);
-        Ptr = Cast;
-      }
-
-      if (RnVal->getType() != Ty32) {
-        Instruction *Cast = new SExtInst(RnVal, Ty32, "STREXRnCast", BB);
-        Monitor::event_Instruction(Cast);
-        RnVal = Cast;
-      }
-
-      Function *STREX = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::arm_strex, {PtrTy32});
+      Function *STREX = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::arm_strex, {Type::getInt32PtrTy(Context)});
       Instruction *Instr = CallInst::Create(STREX, { RnVal, Ptr }, "STREX", BB);
       Monitor::event_Instruction(Instr);
 
-      RegValueMap[Rd] = Instr;
-
+      setRegValue(Rd, Instr, BB);
     } break;
    /*
     case ARM::STRH: { // 1915 | STRH<c> <Rt>, [<Rn>, #<imm>]!
@@ -1895,9 +1835,6 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
     } break;
     */
     case ARM::STRi12: { // 1926 | STR Rt Rn Imm12 CC CPSR
-      Type *Ty32 = Type::getInt32Ty(Context);
-      Type *PtrTy32 = Type::getInt32PtrTy(Context);
-
       Register Rt = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       int64_t Imm12 = MI->getOperand(2).getImm();
@@ -1910,50 +1847,21 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         "ARM::STRi12: assuming no flags for now"
       );
 
-      if (Rn == ARM::SP) { // Store top relative StackValue
-        auto I = stack_map.find(stack_offset + Imm12);
-        if (I == stack_map.end()) {
-          Instruction *Alloca = new AllocaInst(Ty32, 0, "STRi12Alloca", BB);
-          Monitor::event_Instruction(Alloca);
-          stack_map[stack_offset + Imm12] = Alloca;
+      Value *Val = getRegValue(Rt, Type::getInt32Ty(Context), BB);
+      Value *Ptr;
+
+      if (Rn == ARM::SP || (Rn == ARM::R11 && FP_valid)) {
+        Ptr = getOrCreateStackValue(Rn, Imm12, Type::getInt32PtrTy(Context), BB);
+      } else {
+        Ptr = getRegValue(Rn, Type::getInt32PtrTy(Context), BB);
+        if (Imm12 != 0) {
+          Instruction *GEP = GetElementPtrInst::Create(Type::getInt32Ty(Context), Ptr, ConstantInt::get(Type::getInt32Ty(Context), Imm12, false), "STRi12GEP", BB);
+          Monitor::event_Instruction(GEP);
+          Ptr = GEP;
         }
-        Instruction *Store = new StoreInst(RegValueMap[Rt], stack_map[stack_offset + Imm12], false, BB);
-        Monitor::event_Instruction(Store);
-        break;
       }
 
-      if (Rn == ARM::R11) { // Store bottom relative StackValue
-        auto I = stack_map.find(Imm12);
-        if (I == stack_map.end()) {
-          Instruction *Alloca = new AllocaInst(Ty32, 0, "STRi12Alloca", BB);
-          Monitor::event_Instruction(Alloca);
-          stack_map[Imm12] = Alloca;
-        }
-        Instruction *Store = new StoreInst(RegValueMap[Rt], stack_map[Imm12], false, BB);
-        Monitor::event_Instruction(Store);
-        break;
-      }
-
-      Value *Ptr = RegValueMap[Rn];
-
-      // Offset
-      if (Imm12 != 0) {
-        if (Ptr->getType()->isPointerTy()) {
-          Instruction *Cast = new PtrToIntInst(Ptr, Ty32, "STRi12PtrCast", BB);
-          Monitor::event_Instruction(Cast);
-          Ptr = Cast;
-        }
-        Instruction *Add = BinaryOperator::Create(Instruction::Add, Ptr, ConstantInt::get(Ty32, Imm12), "STRi12Add", BB);
-        Monitor::event_Instruction(Add);
-        Ptr = Add;
-      }
-      
-      // Ptr cast
-      Instruction *Cast = new IntToPtrInst(Ptr, PtrTy32, "STRi12PtrCastUP", BB);
-      Monitor::event_Instruction(Cast);
-      Ptr = Cast;
-
-      Instruction *Instr = new StoreInst(RegValueMap[Rt], Ptr, false, BB);
+      Instruction *Instr = new StoreInst(Val, Ptr, false, BB);
       Monitor::event_Instruction(Instr);
     } break;
     case ARM::STRrs: { // 1927 | STR Rt Rn Rm AM2Shift CC CPSR
@@ -1967,18 +1875,17 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
       assert(
         CC == 14 &&
         CPSR == 0 &&
-        "ARM::LDRrs: assuming no flags for now"
+        "assuming no flags for now"
       );
       
-      Value *Addr = resolveAM2Shift(Rn, Rm, AM2Shift, BB);
-      Value *Ptr = toPtr(Addr, Type::getInt32PtrTy(Context), BB);
-      Value *RtVal = getRegValue(Rt, BB);
-      Instruction *Store = new StoreInst(RtVal, Ptr, false, BB);
+      Value *Addr = resolveAM2Shift(Rn, 0, Rm, AM2Shift, BB);
+      Instruction *Cast = new IntToPtrInst(Addr, Type::getInt32PtrTy(Context), "STRrsPtrCast", BB);
+      Monitor::event_Instruction(Cast);
+      Value *RtVal = getRegValue(Rt, Type::getInt32Ty(Context), BB);
+      Instruction *Store = new StoreInst(RtVal, Cast, false, BB);
       Monitor::event_Instruction(Store);
     } break;
     case ARM::SUBri: { // 1928 | SUB Rd Rn Op2 CC CPSR S
-      Type *Ty32 = Type::getInt32Ty(Context);
-
       Register Rd = MI->getOperand(0).getReg();
       Register Rn = MI->getOperand(1).getReg();
       int64_t Op2 = MI->getOperand(2).getImm();
@@ -2002,13 +1909,13 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         break;
       }
     
-      Instruction *Instr = BinaryOperator::CreateSub(RegValueMap[Rn], ConstantInt::get(Ty32, Imm), "SUBri", BB);
+      Instruction *Instr = BinaryOperator::CreateSub(RegValueMap[Rn], ConstantInt::get(Type::getInt32Ty(Context), Imm), "SUBri", BB);
       Monitor::event_Instruction(Instr);
       RegValueMap[Rd] = Instr;
 
       if (S == ARM::CPSR) {
         Value *RnVal = RegValueMap[Rn];
-        Value *ImmVal = ConstantInt::get(Ty32, Imm);
+        Value *ImmVal = ConstantInt::get(Type::getInt32Ty(Context), Imm);
         
         // Negative flag
         Instruction *CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, RnVal, ImmVal, "SUBSriNeg", BB);
@@ -2023,7 +1930,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         Monitor::event_Instruction(StoreZero);
 
         // Carry flag
-        Function *USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Ty32);
+        Function *USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Type::getInt32Ty(Context));
         Instruction *CallUSub = CallInst::Create(USub, {RnVal, ImmVal}, "USubInstrinsic", BB);
         Monitor::event_Instruction(CallUSub);
         Instruction *C_Flag = ExtractValueInst::Create(CallUSub, 1, "SUBSriCFlag", BB);
@@ -2032,7 +1939,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr *MI) {
         Monitor::event_Instruction(StoreCarry);
 
         // Overflow flag
-        Function *SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Ty32);
+        Function *SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Type::getInt32Ty(Context));
         Instruction *CallSSub = CallInst::Create(SSub, {RnVal, ImmVal}, "SSubIntrinsic", BB);
         Monitor::event_Instruction(CallSSub);
         Instruction *V_Flag = ExtractValueInst::Create(CallSSub, 1, "SUBSriVFlag", BB);
@@ -2077,7 +1984,7 @@ void ARMLinearRaiserPass::raiseBINOPrr(MachineInstr *MI, Instruction::BinaryOps 
     MBBBBMap[MBB].push_back(CondExecBB);
     MergeBB = BasicBlock::Create(Context, "Merge", F);
     MBBBBMap[MBB].push_back(MergeBB);
-    RdVal = getRegValue(Rd, BB);
+    RdVal = getRegValue(Rd, Type::getInt32Ty(Context), BB);
     Instruction *CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
     Monitor::event_Instruction(CondBranch);
     Instruction* MergeElse = BranchInst::Create(MergeBB, BB);
@@ -2086,8 +1993,8 @@ void ARMLinearRaiserPass::raiseBINOPrr(MachineInstr *MI, Instruction::BinaryOps 
     BB = CondExecBB;
   }
 
-  Value *RnVal = getRegValue(Rn, BB);
-  Value *RmVal = getRegValue(Rm, BB);
+  Value *RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+  Value *RmVal = getRegValue(Rm, Type::getInt32Ty(Context), BB);
 
   Instruction *Instr = BinaryOperator::Create(Opcode, RnVal, RmVal, "BINOPrr", BB);
   Monitor::event_Instruction(Instr);

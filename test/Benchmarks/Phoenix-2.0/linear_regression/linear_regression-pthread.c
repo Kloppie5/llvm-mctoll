@@ -1,3 +1,8 @@
+// RUN: clang -O3 -target arm-linux-gnueabi -mfloat-abi=soft -pthread -o %t.o %s -I %S/../
+// RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I /usr/include/stdio.h -I /usr/include/string.h -I /usr/include/fcntl.h -I /usr/include/sys/stat.h
+// RUN: clang -o %t-res %t-dis.ll
+// RUN: %t-res 2>&1 | FileCheck %s
+
 /* Copyright (c) 2007-2009, Stanford University
 * All rights reserved.
 *

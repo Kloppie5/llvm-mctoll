@@ -24,18 +24,20 @@ public:
   bool run (MachineFunction *MF, Function *F) override;
   
   DenseMap<Register, Value*> RegValueMap;
-  Value *getRegValue(Register Reg, BasicBlock *BB);
+  Value *getRegValue(Register Reg, Type *Ty, BasicBlock *BB);
   void setRegValue(Register Reg, Value *V, BasicBlock *BB);
 
+  bool FP_valid = true;
   int64_t stack_offset;
   std::map<int64_t, Value*> stack_map;
-  Value *getStackValue(Register Reg, int64_t offset, BasicBlock *BB);
-  Value *getStackValue(int64_t offset, BasicBlock *BB);
+  Value *getStackValue(Register Reg, int64_t offset, Type *Ty, BasicBlock *BB);
+  Value *getStackValue(int64_t offset, Type *Ty, BasicBlock *BB);
+  Value *getOrCreateStackValue(Register Reg, int64_t offset, Type *Ty, BasicBlock *BB);
+  Value *getOrCreateStackValue(int64_t offset, Type *Ty, BasicBlock *BB);
   void setStackValue(Register Reg, int64_t offset, Value *V, BasicBlock *BB);
   void setStackValue(int64_t offset, Value *V, BasicBlock *BB);
   
-  Value *toPtr(Value *Addr, Type *Ty, BasicBlock *BB);
-  Value *resolveAM2Shift(Register Rn, Register Rm, int64_t AM2Shift, BasicBlock *BB);
+  Value *resolveAM2Shift(Register Rn, Register Rs, Register Rm, int64_t AM2Shift, BasicBlock *BB);
 
   GlobalValue *getGlobalValueByOffset(int64_t MCInstOffset, uint64_t PCOffset);
   Value *ARMCCToValue(int Cond, BasicBlock *BB);
