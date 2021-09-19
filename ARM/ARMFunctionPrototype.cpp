@@ -90,6 +90,16 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
           Monitor::event_raw() << "Incrementing stack offset: 4 to " << (stack_offset+4) << "\n";
           stack_offset += 4;
           break;
+        case ARM::LDRBi12: // 831
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(3).getImm()) << "\n";
+            stack_offsets.insert(stack_offset + MI.getOperand(3).getImm());
+          } break;
+        case ARM::LDRH: // 840
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(3).getImm()) << "\n";
+            stack_offsets.insert(stack_offset + MI.getOperand(3).getImm());
+          } break;
         case ARM::LDR_POST_IMM: // 857 { Reg:$R0 Reg:$SP Reg:$SP Reg:$ Imm:147460 Imm:14 Reg:$ }
           if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP
            && MI.getOperand(2).isReg() && MI.getOperand(2).getReg() == ARM::SP) {
@@ -109,6 +119,11 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
             Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
             stack_offsets.insert(stack_offset + MI.getOperand(2).getImm());
           } break;
+        case ARM::MOVr: // 874
+          if (MI.getOperand(0).getReg() == ARM::R11
+           && MI.getOperand(1).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Ignoring R11 = SP, assumed to be in stack setup\n";
+           } break;
         case ARM::STMDB_UPD: // 1895
           Monitor::event_raw() << "Decrementing stack offset: 4 to " << (stack_offset-4) << "\n";
           stack_offset -= 4;
@@ -118,7 +133,18 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
           stack_offsets.insert(stack_offset);
           Monitor::event_raw() << "Found stack access: " << stack_offset << "\n";
           break;
-        case ARM::STR_PRE_IMM: // 1924) { Reg:$SP Reg:$R12 Reg:$SP Imm:-4 Imm:14 Reg:$ }
+        case ARM::STRBi12: // 1906 Reg:$R0 Reg:$SP Imm:3 CC CPSR
+          if (MI.getOperand(1).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
+            stack_offsets.insert(stack_offset + MI.getOperand(2).getImm());
+          } break;
+        case ARM::STRH: // 1915
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(3).getImm()) << "\n";
+            stack_offsets.insert(stack_offset + MI.getOperand(3).getImm());
+          }
+          break;
+        case ARM::STR_PRE_IMM: // 1924
           if (MI.getOperand(2).isReg() && MI.getOperand(2).getReg() == ARM::SP) {
             stack_offset += MI.getOperand(3).getImm();
             stack_offsets.insert(stack_offset);

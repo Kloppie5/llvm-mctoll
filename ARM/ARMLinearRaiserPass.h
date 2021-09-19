@@ -28,7 +28,9 @@ public:
   void setRegValue(Register Reg, Value *V, BasicBlock *BB);
 
   bool FP_valid = true;
-  int64_t stack_offset;
+  int64_t FP_offset = 0;
+  int64_t SP_offset = 0;
+  Instruction *stack_insertion_point;
   std::map<int64_t, Value*> stack_map;
   Value *getStackValue(Register Reg, int64_t offset, Type *Ty, BasicBlock *BB);
   Value *getStackValue(int64_t offset, Type *Ty, BasicBlock *BB);
