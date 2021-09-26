@@ -87,12 +87,15 @@ private:
   bool raiseSTRrs(MachineInstr* MI);
   bool raiseSUBri(MachineInstr* MI);
   bool raiseSUBrr(MachineInstr* MI);
+  bool raiseSUBrsi(MachineInstr* MI);
   bool raiseVADDD(MachineInstr* MI);
   bool raiseVADDS(MachineInstr* MI);
   bool raiseVLDMDIA_UPD(MachineInstr* MI);
   bool raiseVMOVD(MachineInstr* MI);
   bool raiseVMOVRS(MachineInstr* MI);
   bool raiseVMOVSR(MachineInstr* MI);
+  bool raiseVMULD(MachineInstr* MI);
+  bool raiseVSITOD(MachineInstr* MI);
   bool raiseVSTMDDB_UPD(MachineInstr* MI);
 };
 

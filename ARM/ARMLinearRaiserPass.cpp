@@ -112,8 +112,8 @@ bool ARMLinearRaiserPass::run(MachineFunction* MF, Function* F) {
 Value* ARMLinearRaiserPass::getRegValue(Register Reg, Type* Ty, BasicBlock* BB) {
   assert(BBStateMap.count(BB) && "BBStateMap does not contain BB");
   Value* V = BBStateMap[BB]->getRegValue(Reg);
-  {auto &OS=Monitor::event_raw(); OS << "getRegValue: " << Reg << ": "; Ty->print(OS); OS << " <= "; V->getType()->print(OS); OS << "\n";}
-  if (V->getType() == Ty)
+  {auto &OS=Monitor::event_raw(); OS << "getRegValue: " << Reg << ": "; if(Ty) {Ty->print(OS); OS << " <= ";} V->getType()->print(OS); OS << "\n";}
+  if (!Ty || V->getType() == Ty)
     return V;
   if (V->getType() == Type::getInt32Ty(Context) && Ty->isPointerTy()) {
     Instruction* Cast = new IntToPtrInst(V, Ty, "Cast", BB);
@@ -580,8 +580,8 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::CMPrr:         raiseCMPrr(MI);         break; //  760 | CMP Rn Rm CC CPSR
     case ARM::DMB:           raiseDMB(MI);           break; //  773 | DMB Imm
     case ARM::EORrr:         raiseEORrr(MI);         break; //  776 | EOR Rd Rn Rm CC CPSR S
-    case ARM::FCONSTD:       raiseFCONSTD(MI);       break; //  780 | FCONSTD Dd Imm CC CPSR
-    case ARM::FCONSTS:       raiseFCONSTS(MI);       break; //  782 | FCONSTS Sd Imm CC CPSR
+    case ARM::FCONSTD:       raiseFCONSTD(MI);       break; //  780 | VMOV.F64 Dd Imm CC CPSR
+    case ARM::FCONSTS:       raiseFCONSTS(MI);       break; //  782 | VMOV.F32 Sd Imm CC CPSR
     case ARM::LDMIA_UPD:     raiseLDMIA_UPD(MI);     break; //  822 | LDMIA Rn Rn CC CPSR Reg
     case ARM::LDRB_PRE_REG:  raiseLDRB_PRE_REG(MI);  break; //  830 | LDRB_PRE_REG Rt Rn Rs Rm - CC CPSR
     case ARM::LDRBi12:       raiseLDRBi12(MI);       break; //  831 | LDRB Rt Rn Imm12 CC CPSR
@@ -610,13 +610,16 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::STRrs:         raiseSTRrs(MI);         break; // 1927 | STR Rt Rn Rm AM2Shift CC CPSR
     case ARM::SUBri:         raiseSUBri(MI);         break; // 1928 | SUB Rd Rn Op2 CC CPSR S
     case ARM::SUBrr:         raiseSUBrr(MI);         break; // 1929 | SUB Rd Rn Rm CC CPSR S
-    case ARM::VADDD:         raiseVADDD(MI);         break; // 2047 | VADDD Dd Dn Dm CC CPSR
-    case ARM::VADDS:         raiseVADDS(MI);         break; // 2058 | VADDS Sd Sn Sm CC CPSR
-    case ARM::VLDMDIA_UPD:   raiseVLDMDIA_UPD(MI);   break; // 2778 | VLDM Rt! {Rwb} CC CPSR Dn
-    case ARM::VMOVD:         raiseVMOVD(MI);         break; // 2901 | VMOV Dd Dn CC CPSR
-    case ARM::VMOVRS:        raiseVMOVRS(MI);        break; // 2917 | VMOV Rd Sn CC CPSR
-    case ARM::VMOVSR:        raiseVMOVSR(MI);        break; // 2919 | VMOV St Rn CC CPSR
-    case ARM::VSTMDDB_UPD:   raiseVSTMDDB_UPD(MI);   break; // 3763 | VSTM Rt! {Rwb} CC CPSR Dn
+    case ARM::SUBrsi:        raiseSUBrsi(MI);        break; // 1930 | SUB Rd Rn Rm Shift CC CPSR S
+    case ARM::VADDD:         raiseVADDD(MI);         break; // 2047 | VADD.F64 Dd Dn Dm CC CPSR
+    case ARM::VADDS:         raiseVADDS(MI);         break; // 2058 | VADD.F32 Sd Sn Sm CC CPSR
+    case ARM::VLDMDIA_UPD:   raiseVLDMDIA_UPD(MI);   break; // 2778 | VLDM.F64 Rt! {Rwb} CC CPSR Dn
+    case ARM::VMOVD:         raiseVMOVD(MI);         break; // 2901 | VMOV.F64 Dd Dn CC CPSR
+    case ARM::VMOVRS:        raiseVMOVRS(MI);        break; // 2917 | VMOV.F32 Rd Sn CC CPSR
+    case ARM::VMOVSR:        raiseVMOVSR(MI);        break; // 2919 | VMOV.F32 St Rn CC CPSR
+    case ARM::VMULD:         raiseVMULD(MI);         break; // 2954 | VMUL.F64 Dd Dn Dm CC CPSR
+    case ARM::VSITOD:        raiseVSITOD(MI);        break; // 3463 | VCVT.F64.S32 Dd Sm CC CPSR
+    case ARM::VSTMDDB_UPD:   raiseVSTMDDB_UPD(MI);   break; // 3763 | VSTM.F64 Rt! {Rwb} CC CPSR Dn
   }
   Monitor::event_end("ARMLinearRaiserPass::RaiseMachineInstr");
   return true;
@@ -1537,11 +1540,10 @@ bool ARMLinearRaiserPass::raiseEORrr(MachineInstr* MI) { // 776 | EOR Rd Rn Rm C
 
   return true;
 }
-bool ARMLinearRaiserPass::raiseFCONSTD(MachineInstr* MI) { // 780 | FCONSTD Dd Imm CC CPSR
+bool ARMLinearRaiserPass::raiseFCONSTD(MachineInstr* MI) { // 780 | VMOV.F64 Dd Imm CC CPSR
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
 
-  // VMOV.F64 Alias
   Register Dd = MI->getOperand(0).getReg();
   int64_t Imm = MI->getOperand(1).getImm();
   uint8_t Sign = (Imm >> 7) & 0x1;
@@ -1567,11 +1569,10 @@ bool ARMLinearRaiserPass::raiseFCONSTD(MachineInstr* MI) { // 780 | FCONSTD Dd I
 
   return true;
 }
-bool ARMLinearRaiserPass::raiseFCONSTS(MachineInstr* MI) { // 782 | FCONSTS Sd Imm CC CPSR
+bool ARMLinearRaiserPass::raiseFCONSTS(MachineInstr* MI) { // 782 | VMOV.F32 Sd Imm CC CPSR
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
 
-  // VMOV.F32 Alias
   Register Sd = MI->getOperand(0).getReg();
   int64_t Imm = MI->getOperand(1).getImm();
   uint8_t Sign = (Imm >> 7) & 0x1;
@@ -2661,11 +2662,52 @@ bool ARMLinearRaiserPass::raiseSUBrr(MachineInstr* MI) { // 1929 | SUB Rd Rn Rm 
 
   return true;
 }
-bool ARMLinearRaiserPass::raiseVADDD(MachineInstr* MI) { // 2047 | VADDD Dd Dn Dm CC CPSR
+bool ARMLinearRaiserPass::raiseSUBrsi(MachineInstr* MI) { // 1930 | SUB Rd Rn Rm Shift CC CPSR S
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
 
-  // VADD.F64 Alias
+  Register Rd = MI->getOperand(0).getReg();
+  Register Rn = MI->getOperand(1).getReg();
+  Register Rm = MI->getOperand(2).getReg();
+  int64_t Shift = MI->getOperand(3).getImm();
+  int64_t CC = MI->getOperand(4).getImm();
+  Register CPSR = MI->getOperand(5).getReg();
+  Register S = MI->getOperand(6).getReg();
+
+  assert(
+    CC == 14 &&
+    CPSR == 0 &&
+    S == 0 &&
+    "SUBrsi: assuming no flags for now"
+  );
+
+  int64_t ShiftAmount = Shift >> 3;
+  ARM_AM::ShiftOpc ShiftOpcode = (ARM_AM::ShiftOpc) (Shift & 0x7);
+
+  Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+  Value* RmVal = getRegValue(Rm, Type::getInt32Ty(Context), BB);
+
+  Instruction::BinaryOps ShiftOp;
+  switch (ShiftOpcode) {
+    case ARM_AM::asr: ShiftOp = Instruction::AShr; break;
+    case ARM_AM::lsl: ShiftOp = Instruction::Shl; break;
+    case ARM_AM::lsr: ShiftOp = Instruction::LShr; break;
+    default:
+      assert(false && "SUBrsi: unknown shift opcode");
+  }
+
+  Instruction* ShiftInstr = BinaryOperator::Create(ShiftOp, RmVal, ConstantInt::get(Type::getInt32Ty(Context), ShiftAmount), "SUBrsiShift", BB);
+  Monitor::event_Instruction(ShiftInstr);
+  Instruction* Instr = BinaryOperator::Create(Instruction::Sub, RnVal, ShiftInstr, "SUBrsi", BB);
+  Monitor::event_Instruction(Instr);
+  setRegValue(Rd, Instr, BB);
+
+  return true;
+}
+bool ARMLinearRaiserPass::raiseVADDD(MachineInstr* MI) { // 2047 | VADD.F64 Dd Dn Dm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
   Register Dd = MI->getOperand(0).getReg();
   Register Dn = MI->getOperand(1).getReg();
   Register Dm = MI->getOperand(2).getReg();
@@ -2685,11 +2727,10 @@ bool ARMLinearRaiserPass::raiseVADDD(MachineInstr* MI) { // 2047 | VADDD Dd Dn D
 
   return true;
 }
-bool ARMLinearRaiserPass::raiseVADDS(MachineInstr* MI) { // 2058 | VADDS Sd Sn Sm CC CPSR
+bool ARMLinearRaiserPass::raiseVADDS(MachineInstr* MI) { // 2058 | VADD.F32 Sd Sn Sm CC CPSR
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
 
-  // VADD.F32 Alias
   Register Sd = MI->getOperand(0).getReg();
   Register Sn = MI->getOperand(1).getReg();
   Register Sm = MI->getOperand(2).getReg();
@@ -2709,7 +2750,7 @@ bool ARMLinearRaiserPass::raiseVADDS(MachineInstr* MI) { // 2058 | VADDS Sd Sn S
 
   return true;
 }
-bool ARMLinearRaiserPass::raiseVLDMDIA_UPD(MachineInstr* MI) { // 2778 | VLDM Rt! {Rwb} CC CPSR Dn
+bool ARMLinearRaiserPass::raiseVLDMDIA_UPD(MachineInstr* MI) { // 2778 | VLDM.F64 Rt! {Rwb} CC CPSR Dn
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
 
@@ -2732,7 +2773,7 @@ bool ARMLinearRaiserPass::raiseVLDMDIA_UPD(MachineInstr* MI) { // 2778 | VLDM Rt
 
   return true;
 }
-bool ARMLinearRaiserPass::raiseVMOVD(MachineInstr* MI) { // 2901 | VMOV Dd Dn CC CPSR
+bool ARMLinearRaiserPass::raiseVMOVD(MachineInstr* MI) { // 2901 | VMOV.F64 Dd Dn CC CPSR
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
 
@@ -2750,7 +2791,7 @@ bool ARMLinearRaiserPass::raiseVMOVD(MachineInstr* MI) { // 2901 | VMOV Dd Dn CC
 
   return true;
 }
-bool ARMLinearRaiserPass::raiseVMOVRS(MachineInstr* MI) { // 2917 | VMOV Rd Sn CC CPSR
+bool ARMLinearRaiserPass::raiseVMOVRS(MachineInstr* MI) { // 2917 | VMOV.F32 Rd Sn CC CPSR
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
 
@@ -2770,7 +2811,7 @@ bool ARMLinearRaiserPass::raiseVMOVRS(MachineInstr* MI) { // 2917 | VMOV Rd Sn C
 
   return true;
 }
-bool ARMLinearRaiserPass::raiseVMOVSR(MachineInstr* MI) { // 2919 VMOV St Rn CC CPSR
+bool ARMLinearRaiserPass::raiseVMOVSR(MachineInstr* MI) { // 2919 VMOV.F32 St Rn CC CPSR
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
 
@@ -2782,7 +2823,7 @@ bool ARMLinearRaiserPass::raiseVMOVSR(MachineInstr* MI) { // 2919 VMOV St Rn CC 
 
   assert(!conditional_execution && "VMOVS conditional execution not yet implemented");
 
-  Value* RnVal = getRegValue(Rn, Type::getFloatTy(Context), BB);
+  Value* RnVal = getRegValue(Rn,  nullptr, BB);
 
   Monitor::event_raw() << "Reg: " << St << " <= " << RnVal << "\n";
 
@@ -2790,7 +2831,51 @@ bool ARMLinearRaiserPass::raiseVMOVSR(MachineInstr* MI) { // 2919 VMOV St Rn CC 
 
   return true;
 }
-bool ARMLinearRaiserPass::raiseVSTMDDB_UPD(MachineInstr* MI) { // 3763 VSTM Rt! {Rwb} CC CPSR Dn
+bool ARMLinearRaiserPass::raiseVMULD(MachineInstr* MI) { // 2954 | VMUL.F64 Dd Dn Dm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Dd = MI->getOperand(0).getReg();
+  Register Dn = MI->getOperand(1).getReg();
+  Register Dm = MI->getOperand(2).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
+  Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  assert(!conditional_execution && "VMULD conditional execution not yet implemented");
+
+  Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
+  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+
+  Instruction* Result = BinaryOperator::Create(Instruction::FMul, DnVal, DmVal, "VMULD", BB);
+  Monitor::event_Instruction(Result);
+
+  setRegValue(Dd, Result, BB);
+
+  return true;
+}
+bool ARMLinearRaiserPass::raiseVSITOD(MachineInstr* MI) { // 3463 | VCVT.F64.S32 Dd Sm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Dd = MI->getOperand(0).getReg();
+  Register Sm = MI->getOperand(1).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
+  Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  assert(!conditional_execution && "VSITOD conditional execution not yet implemented");
+
+  Value* SmVal = getRegValue(Sm, Type::getInt32Ty(Context), BB);
+
+  Instruction* Cast = CastInst::Create(Instruction::SIToFP, SmVal, Type::getDoubleTy(Context), "VSITOD", BB);
+  Monitor::event_Instruction(Cast);
+
+  setRegValue(Dd, Cast, BB);
+
+  return true;
+}
+bool ARMLinearRaiserPass::raiseVSTMDDB_UPD(MachineInstr* MI) { // 3763 VSTM.F64 Rt! {Rwb} CC CPSR Dn
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
 
