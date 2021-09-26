@@ -42,6 +42,58 @@ public:
 
 private:
   MCInstRaiser* MCIR;
+
+  bool raiseADDri(MachineInstr* MI);
+  bool raiseADDrr(MachineInstr* MI);
+  bool raiseADDrsi(MachineInstr* MI);
+  bool raiseANDri(MachineInstr* MI);
+  bool raiseANDrr(MachineInstr* MI);
+  bool raiseBICri(MachineInstr* MI);
+  bool raiseBL(MachineInstr* MI);
+  bool raiseBX_RET(MachineInstr* MI);
+  bool raiseBcc(MachineInstr* MI);
+  bool raiseCMNri(MachineInstr* MI);
+  bool raiseCMPri(MachineInstr* MI);
+  bool raiseCMPrr(MachineInstr* MI);
+  bool raiseDMB(MachineInstr* MI);
+  bool raiseEORrr(MachineInstr* MI);
+  bool raiseFCONSTD(MachineInstr* MI);
+  bool raiseFCONSTS(MachineInstr* MI);
+  bool raiseLDMIA_UPD(MachineInstr* MI);
+  bool raiseLDRB_PRE_REG(MachineInstr* MI);
+  bool raiseLDRBi12(MachineInstr* MI);
+  bool raiseLDREX(MachineInstr* MI);
+  bool raiseLDRH(MachineInstr* MI);
+  bool raiseLDR_POST_IMM(MachineInstr* MI);
+  bool raiseLDRi12(MachineInstr* MI);
+  bool raiseLDRrs(MachineInstr* MI);
+  bool raiseMLA(MachineInstr* MI);
+  bool raiseMOVTi16(MachineInstr* MI);
+  bool raiseMOVi(MachineInstr* MI);
+  bool raiseMOVi16(MachineInstr* MI);
+  bool raiseMOVr(MachineInstr* MI);
+  bool raiseMOVsi(MachineInstr* MI);
+  bool raiseMUL(MachineInstr* MI);
+  bool raiseMVNi(MachineInstr* MI);
+  bool raiseORRri(MachineInstr* MI);
+  bool raiseORRrr(MachineInstr* MI);
+  bool raiseSMULL(MachineInstr* MI);
+  bool raiseSTMDB_UPD(MachineInstr* MI);
+  bool raiseSTRB_POST_IMM(MachineInstr* MI);
+  bool raiseSTRBi12(MachineInstr* MI);
+  bool raiseSTREX(MachineInstr* MI);
+  bool raiseSTRH(MachineInstr* MI);
+  bool raiseSTRi12(MachineInstr* MI);
+  bool raiseSTRrs(MachineInstr* MI);
+  bool raiseSUBri(MachineInstr* MI);
+  bool raiseSUBrr(MachineInstr* MI);
+  bool raiseVADDD(MachineInstr* MI);
+  bool raiseVADDS(MachineInstr* MI);
+  bool raiseVLDMDIA_UPD(MachineInstr* MI);
+  bool raiseVMOVD(MachineInstr* MI);
+  bool raiseVMOVRS(MachineInstr* MI);
+  bool raiseVMOVSR(MachineInstr* MI);
+  bool raiseVSTMDDB_UPD(MachineInstr* MI);
 };
 
 #endif // LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMLINEARRAISERPASS_H

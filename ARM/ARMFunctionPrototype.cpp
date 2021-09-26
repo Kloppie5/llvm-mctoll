@@ -48,11 +48,11 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
   for (unsigned IReg = ARM::R0; IReg < ARM::R4; IReg++) {
     if (!isUsedRegister(IReg, MF))
       continue;
-    
+
     int idx = IReg - ARM::R0;
     if (idx > maxidx)
       maxidx = idx;
-    
+
     tarr[idx] = getDefaultType();
     Monitor::event_raw() << "Found reg " << idx << "; maxidx = " << maxidx << "\n";
   }
@@ -61,11 +61,11 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
   // stack arguments beforehand is via symbolic execution.
   // A better approach would be to adapt the function prototype on
   // the fly, but this is not feasible for now.
-  
+
   // A somewhat stable way is to symbolically execute the stack access
   // related instructions and hope that no stack accesses are missed.
   int64_t stack_offset = 0;
-  std::set<int64_t> stack_offsets;
+  std::map<int64_t, Type*> stack_offsets;
   for (MachineBasicBlock &MBB : *MF) {
     for (MachineInstr &MI : MBB) {
       switch(MI.getOpcode()) {
@@ -88,17 +88,18 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
           } break;
         case ARM::LDMIA_UPD: // 822
           Monitor::event_raw() << "Incrementing stack offset: 4 to " << (stack_offset+4) << "\n";
+          stack_offsets[stack_offset] = Type::getInt32Ty(MF->getFunction().getContext());
           stack_offset += 4;
           break;
         case ARM::LDRBi12: // 831
           if(MI.getOperand(1).getReg() == ARM::SP) {
             Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(3).getImm()) << "\n";
-            stack_offsets.insert(stack_offset + MI.getOperand(3).getImm());
+            stack_offsets[stack_offset + MI.getOperand(3).getImm()] = Type::getInt8Ty(MF->getFunction().getContext());
           } break;
         case ARM::LDRH: // 840
           if(MI.getOperand(1).getReg() == ARM::SP) {
             Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(3).getImm()) << "\n";
-            stack_offsets.insert(stack_offset + MI.getOperand(3).getImm());
+            stack_offsets[stack_offset + MI.getOperand(3).getImm()] = Type::getInt16Ty(MF->getFunction().getContext());
           } break;
         case ARM::LDR_POST_IMM: // 857 { Reg:$R0 Reg:$SP Reg:$SP Reg:$ Imm:147460 Imm:14 Reg:$ }
           if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP
@@ -107,7 +108,7 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
             unsigned Imm12 = AM2Shift & 0xFFF;
             bool isSub = (AM2Shift >> 12) & 0x1;
             Monitor::event_raw() << "Found stack access: " << stack_offset << "\n";
-            stack_offsets.insert(stack_offset);
+            stack_offsets[stack_offset + MI.getOperand(3).getImm()] = Type::getInt32Ty(MF->getFunction().getContext());
             if (isSub)
               stack_offset -= Imm12;
             else
@@ -117,7 +118,7 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
         case ARM::LDRi12: // 862
           if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP) {
             Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
-            stack_offsets.insert(stack_offset + MI.getOperand(2).getImm());
+            stack_offsets[stack_offset + MI.getOperand(2).getImm()] = Type::getInt32Ty(MF->getFunction().getContext());
           } break;
         case ARM::MOVr: // 874
           if (MI.getOperand(0).getReg() == ARM::R11
@@ -127,33 +128,34 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
         case ARM::STMDB_UPD: // 1895
           Monitor::event_raw() << "Decrementing stack offset: 4 to " << (stack_offset-4) << "\n";
           stack_offset -= 4;
+          stack_offsets[stack_offset] = Type::getInt32Ty(MF->getFunction().getContext());
           break;
         case ARM::STMIA: // 1896
           // Why does this exist?
-          stack_offsets.insert(stack_offset);
+          stack_offsets[stack_offset] = Type::getInt32Ty(MF->getFunction().getContext());
           Monitor::event_raw() << "Found stack access: " << stack_offset << "\n";
           break;
-        case ARM::STRBi12: // 1906 Reg:$R0 Reg:$SP Imm:3 CC CPSR
+        case ARM::STRBi12: // 1906
           if (MI.getOperand(1).getReg() == ARM::SP) {
             Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
-            stack_offsets.insert(stack_offset + MI.getOperand(2).getImm());
+            stack_offsets[stack_offset + MI.getOperand(2).getImm()] = Type::getInt8Ty(MF->getFunction().getContext());
           } break;
         case ARM::STRH: // 1915
           if(MI.getOperand(1).getReg() == ARM::SP) {
             Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(3).getImm()) << "\n";
-            stack_offsets.insert(stack_offset + MI.getOperand(3).getImm());
+            stack_offsets[stack_offset + MI.getOperand(3).getImm()] = Type::getInt16Ty(MF->getFunction().getContext());
           }
           break;
         case ARM::STR_PRE_IMM: // 1924
           if (MI.getOperand(2).isReg() && MI.getOperand(2).getReg() == ARM::SP) {
             stack_offset += MI.getOperand(3).getImm();
-            stack_offsets.insert(stack_offset);
+            stack_offsets[stack_offset] = Type::getInt32Ty(MF->getFunction().getContext());
             Monitor::event_raw() << "Found stack access: " << stack_offset << "\n";
           } break;
         case ARM::STRi12: // 1926
           if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP) {
             Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
-            stack_offsets.insert(stack_offset + MI.getOperand(2).getImm());
+            stack_offsets[stack_offset + MI.getOperand(2).getImm()] = Type::getInt32Ty(MF->getFunction().getContext());
           } break;
         case ARM::SUBri: // 1928
           if (MI.getOperand(0).isReg() && MI.getOperand(0).getReg() == ARM::SP
@@ -165,12 +167,34 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
             Monitor::event_raw() << "Decrementing stack offset: " << Imm << " to " << (stack_offset-Imm) << "\n";
             stack_offset -= Imm;
           } break;
+        case ARM::VLDMDIA_UPD: // 2778
+          Monitor::event_raw() << "Incrementing stack offset: 4 to " << (stack_offset+4) << "\n";
+          stack_offsets[stack_offset] = Type::getDoubleTy(MF->getFunction().getContext());
+          stack_offset += 4;
+          break;
+        case ARM::VLDRD: // 2783
+          Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
+          stack_offsets[stack_offset + MI.getOperand(2).getImm()] = Type::getDoubleTy(MF->getFunction().getContext());
+          break;
+        case ARM::VSTMDDB_UPD: // 3763
+          Monitor::event_raw() << "Decrementing stack offset: 4 to " << (stack_offset-4) << "\n";
+          stack_offset -= 4;
+          stack_offsets[stack_offset] = Type::getDoubleTy(MF->getFunction().getContext());
+          break;
+        case ARM::VSTRD: // 3770
+          if (MI.getOperand(1).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
+            stack_offsets[stack_offset + MI.getOperand(2).getImm()] = Type::getDoubleTy(MF->getFunction().getContext());
+          } break;
       }
     }
   }
 
   // Add parameters on the stack to the function prototype
-  for (int64_t offset : stack_offsets) {
+  for (auto &stack_offset : stack_offsets) {
+    int64_t offset = stack_offset.first;
+    Type *type = stack_offset.second;
+
     if (offset < 0)
       continue;
     int idx = offset / 4 + 4;
@@ -182,7 +206,7 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
 
     if (idx > maxidx)
       maxidx = idx;
-    tarr[idx] = getDefaultType();
+    tarr[idx] = type;
   }
 
   Monitor::event_raw() << "Found " << maxidx+1 << " parameters.\n";
