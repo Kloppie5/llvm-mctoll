@@ -11,20 +11,20 @@
   .type func, %function
 func:
   cmp r0, #0
-  oreq r0, r0, r1
-  orne r0, r0, r1
-  orcs r0, r0, r1
-  orcc r0, r0, r1
-  ormi r0, r0, r1
-  orpl r0, r0, r1
-  orvs r0, r0, r1
-  orvc r0, r0, r1
-  orhi r0, r0, r1
-  orls r0, r0, r1
-  orge r0, r0, r1
-  orlt r0, r0, r1
-  orgt r0, r0, r1
-  orle r0, r0, r1
-  oral r0, r0, r1
+  orreq r0, r0, r1
+  orrne r0, r0, r1
+  orrcs r0, r0, r1
+  orrcc r0, r0, r1
+  orrmi r0, r0, r1
+  orrpl r0, r0, r1
+  orrvs r0, r0, r1
+  orrvc r0, r0, r1
+  orrhi r0, r0, r1
+  orrls r0, r0, r1
+  orrge r0, r0, r1
+  orrlt r0, r0, r1
+  orrgt r0, r0, r1
+  orrle r0, r0, r1
+  orral r0, r0, r1
   bx	lr
   .size func, .-func

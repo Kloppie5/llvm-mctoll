@@ -23,14 +23,9 @@ public:
 
   std::map<BasicBlock* , ARMBasicBlockState* > BBStateMap;
 
-  Instruction* stack_insertion_point;
-  std::map<int64_t, Value*> stack_map;
-  Value* getStackValue(Register Reg, int64_t offset, Type* Ty, BasicBlock* BB);
-  Value* getStackValue(int64_t offset, Type* Ty, BasicBlock* BB);
-  Value* getOrCreateStackValue(Register Reg, int64_t offset, Type* Ty, BasicBlock* BB);
-  Value* getOrCreateStackValue(int64_t offset, Type* Ty, BasicBlock* BB);
-  void setStackValue(Register Reg, int64_t offset, Value* V, BasicBlock* BB);
-  void setStackValue(int64_t offset, Value* V, BasicBlock* BB);
+  std::map<int64_t, AllocaInst*> stack_map;
+  AllocaInst* getOrCreateStackAlloca(Register Reg, int64_t offset, Type* Ty, BasicBlock* BB);
+  AllocaInst* getOrCreateStackAlloca(int64_t offset, Type* Ty, BasicBlock* BB);
 
   Value* getRegValue(Register Reg, Type* Ty, BasicBlock* BB);
   void setRegValue(Register Reg, Value* V, BasicBlock* BB);

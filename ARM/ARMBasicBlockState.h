@@ -30,6 +30,38 @@ public:
     Monitor::event_raw() << "Creating ARMBasicBlockState for BB " << BB->getName() << "\n";
   }
 
+  bool updatePHINodes(BasicBlock *PBB, ARMBasicBlockState *PState) {
+    bool changed = false;
+    for (std::pair<Register, PHINode*> RegPHIPair : P_RegValueMap) {
+      Register reg = RegPHIPair.first;
+      PHINode* phi = RegPHIPair.second;
+
+      if (phi->getBasicBlockIndex(PBB) == -1) {
+        Value* V = PState->getRegValue(reg);
+        {auto &OS=Monitor::event_raw(); OS << "Adding to reg " << reg << ", type "; phi->getType()->print(OS); OS << " <= "; V->getType()->print(OS); OS << "\n";}
+        phi->addIncoming(V, PBB);
+        changed = true;
+      }
+    }
+    if (P_N_Flag && P_N_Flag->getBasicBlockIndex(PBB) == -1) {
+      P_N_Flag->addIncoming(PState->getNFlag(), PBB);
+      changed = true;
+    }
+    if (P_Z_Flag && P_Z_Flag->getBasicBlockIndex(PBB) == -1) {
+      P_Z_Flag->addIncoming(PState->getZFlag(), PBB);
+      changed = true;
+    }
+    if (P_C_Flag && P_C_Flag->getBasicBlockIndex(PBB) == -1) {
+      P_C_Flag->addIncoming(PState->getCFlag(), PBB);
+      changed = true;
+    }
+    if (P_V_Flag && P_V_Flag->getBasicBlockIndex(PBB) == -1) {
+      P_V_Flag->addIncoming(PState->getVFlag(), PBB);
+      changed = true;
+    }
+    return changed;
+  }
+
   /*-+- RegValueMap -+-*/
   std::map<Register, PHINode*> P_RegValueMap;
   std::map<Register, Value*> Q_RegValueMap;
@@ -40,7 +72,11 @@ public:
     Value* V = Q_RegValueMap[Reg];
     if (V == nullptr) {
       Monitor::event_raw() << "Creating PHI node for " << Reg << " in BB " << BB->getName() << "\n";
-      PHINode *phi = PHINode::Create(Type::getInt32Ty(BB->getContext()), 0, "", BB);
+      PHINode *phi;
+      if (BB->size() == 0)
+        phi = PHINode::Create(Type::getInt32Ty(BB->getContext()), 0, Twine(Reg) + ".phi", BB);
+      else
+        phi = PHINode::Create(Type::getInt32Ty(BB->getContext()), 0, Twine(Reg) + ".phi", &*BB->begin());
       P_RegValueMap[Reg] = phi;
       V = phi;
       Q_RegValueMap[Reg] = V;
@@ -49,16 +85,21 @@ public:
   }
 
   /*-+- N Flag -+-*/
-  PHINode* P_N_Flag;
-  Value* Q_N_Flag;
+  PHINode* P_N_Flag = nullptr;
+  Value* Q_N_Flag = nullptr;
   void setNFlag(Value *V) {
+    assert(V->getType() == Type::getInt1Ty(BB->getContext()) && "N flag must be of type i1");
     Q_N_Flag = V;
   }
   Value* getNFlag() {
     Value* V = Q_N_Flag;
     if (V == nullptr) {
       Monitor::event_raw() << "Creating PHI node for N in BB " << BB->getName() << "\n";
-      PHINode *phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "", BB);
+      PHINode *phi;
+      if (BB->size() == 0)
+        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "N.phi", BB);
+      else
+        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "N.phi", &*BB->begin());
       P_N_Flag = phi;
       V = phi;
       Q_N_Flag = V;
@@ -67,16 +108,21 @@ public:
   }
 
   /*-+- Z Flag -+-*/
-  PHINode* P_Z_Flag;
-  Value* Q_Z_Flag;
+  PHINode* P_Z_Flag = nullptr;
+  Value* Q_Z_Flag = nullptr;
   void setZFlag(Value *V) {
+    assert(V->getType() == Type::getInt1Ty(BB->getContext()) && "Z flag must be of type i1");
     Q_Z_Flag = V;
   }
   Value* getZFlag() {
     Value* V = Q_Z_Flag;
     if (V == nullptr) {
       Monitor::event_raw() << "Creating PHI node for Z in BB " << BB->getName() << "\n";
-      PHINode *phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "", BB);
+      PHINode *phi;
+      if (BB->size() == 0)
+        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "Z.phi", BB);
+      else
+        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "Z.phi", &*BB->begin());
       P_Z_Flag = phi;
       V = phi;
       Q_Z_Flag = V;
@@ -85,16 +131,21 @@ public:
   }
 
   /*-+- C Flag -+-*/
-  PHINode* P_C_Flag;
-  Value* Q_C_Flag;
+  PHINode* P_C_Flag = nullptr;
+  Value* Q_C_Flag = nullptr;
   void setCFlag(Value *V) {
+    assert(V->getType() == Type::getInt1Ty(BB->getContext()) && "C flag must be of type i1");
     Q_C_Flag = V;
   }
   Value* getCFlag() {
     Value* V = Q_C_Flag;
     if (V == nullptr) {
       Monitor::event_raw() << "Creating PHI node for C in BB " << BB->getName() << "\n";
-      PHINode *phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "", BB);
+      PHINode *phi;
+      if (BB->size() == 0)
+        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "C.phi", BB);
+      else
+        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "C.phi", &*BB->begin());
       P_C_Flag = phi;
       V = phi;
       Q_C_Flag = V;
@@ -103,16 +154,21 @@ public:
   }
 
   /*-+- V Flag -+-*/
-  PHINode* P_V_Flag;
-  Value* Q_V_Flag;
+  PHINode* P_V_Flag = nullptr;
+  Value* Q_V_Flag = nullptr;
   void setVFlag(Value *V) {
+    assert(V->getType() == Type::getInt1Ty(BB->getContext()) && "V flag must be of type i1");
     Q_V_Flag = V;
   }
   Value* getVFlag() {
     Value* V = Q_V_Flag;
     if (V == nullptr) {
       Monitor::event_raw() << "Creating PHI node for V in BB " << BB->getName() << "\n";
-      PHINode *phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "", BB);
+      PHINode *phi;
+      if (BB->size() == 0)
+        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "V.phi", BB);
+      else
+        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "V.phi", &*BB->begin());
       P_V_Flag = phi;
       V = phi;
       Q_V_Flag = V;
