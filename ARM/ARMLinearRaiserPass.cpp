@@ -586,6 +586,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::ADDrsi:        raiseADDrsi(MI);        break; //  686 | ADD Rd Rn Rm Shift CC CPSR S
     case ARM::ANDri:         raiseANDri(MI);         break; //  693 | AND Rd Rn Op2 CC CPSR S
     case ARM::ANDrr:         raiseANDrr(MI);         break; //  694 | AND Rd Rn Rm CC CPSR S
+    case ARM::BFC:           raiseBFC(MI);           break; //  704 | BFC Rd {Rwb} Imm CC CPSR
     case ARM::BICri:         raiseBICri(MI);         break; //  706 | BIC Rd Rn Op2 CC CPSR S
     case ARM::BL:            raiseBL(MI);            break; //  711 | BL Imm
     case ARM::BX_RET:        raiseBX_RET(MI);        break; //  718 | BX_RET CC CPSR
@@ -931,6 +932,29 @@ bool ARMLinearRaiserPass::raiseANDrr(MachineInstr* MI) { // 694 | AND Rd Rn Rm C
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
     Monitor::event_Instruction(Branch);
   }
+  return true;
+}
+bool ARMLinearRaiserPass::raiseBFC(MachineInstr* MI) { //  704 | BFC Rd {Rwb} Imm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Rd = MI->getOperand(0).getReg();
+  int64_t Imm = MI->getOperand(2).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
+  Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  assert(!conditional_execution && "BFC: conditional execution not implemented");
+
+  Value* RdVal = getRegValue(Rd, Type::getInt32Ty(Context), BB);
+  // Instead of the lsb and width, llvm saves the expanded form
+  Value* ImmVal = ConstantInt::get(Type::getInt32Ty(Context), Imm);
+
+  Instruction* Result = BinaryOperator::Create(Instruction::And, RdVal, ImmVal, "BFC", BB);
+  Monitor::event_Instruction(Result);
+
+  setRegValue(Rd, Result, BB);
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseBICri(MachineInstr* MI) { // 706 | BIC Rd Rn Op2 CC CPSR S

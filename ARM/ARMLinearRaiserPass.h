@@ -48,6 +48,7 @@ private:
   bool raiseADDrsi(MachineInstr* MI);
   bool raiseANDri(MachineInstr* MI);
   bool raiseANDrr(MachineInstr* MI);
+  bool raiseBFC(MachineInstr* MI);
   bool raiseBICri(MachineInstr* MI);
   bool raiseBL(MachineInstr* MI);
   bool raiseBX_RET(MachineInstr* MI);
