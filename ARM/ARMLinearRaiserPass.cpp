@@ -634,10 +634,11 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::VMOVD:         raiseVMOVD(MI);         break; // 2901 | VMOV.F64 Dd Dn CC CPSR
     case ARM::VMOVRS:        raiseVMOVRS(MI);        break; // 2917 | VMOV.F32 Rd Sn CC CPSR
     case ARM::VMOVSR:        raiseVMOVSR(MI);        break; // 2919 | VMOV.F32 St Rn CC CPSR
+    case ARM::VMOVv2i32:     raiseVMOVv2i32(MI);     break; // 2924 | VMOV.I32 Dd Imm CC CPSR
     case ARM::VMULD:         raiseVMULD(MI);         break; // 2954 | VMUL.F64 Dd Dn Dm CC CPSR
     case ARM::VSITOD:        raiseVSITOD(MI);        break; // 3463 | VCVT.F64.S32 Dd Sm CC CPSR
     case ARM::VSTMDDB_UPD:   raiseVSTMDDB_UPD(MI);   break; // 3763 | VSTM.F64 Rt! {Rwb} CC CPSR Dn
-    case ARM::VSTRD:         raiseVSTRD(MI);         break; // 3770 | VSTR.F64 Fd Rn Imm/4 CC CPSR
+    case ARM::VSTRD:         raiseVSTRD(MI);         break; // 3770 | VSTR.F64 Dd Rn Imm/4 CC CPSR
   }
   Monitor::event_end("ARMLinearRaiserPass::RaiseMachineInstr");
   return true;
@@ -2902,6 +2903,26 @@ bool ARMLinearRaiserPass::raiseVMOVSR(MachineInstr* MI) { // 2919 VMOV.F32 St Rn
 
   return true;
 }
+bool ARMLinearRaiserPass::raiseVMOVv2i32(MachineInstr* MI) { // 2924 | VMOV.I32 Dd Imm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Dd = MI->getOperand(0).getReg();
+  int64_t Imm = MI->getOperand(1).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
+  Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  assert(!conditional_execution && "VMOVv2i32 conditional execution not yet implemented");
+
+  double_t DImm; memcpy(&DImm, &Imm, sizeof(DImm));
+  Value* ImmVal = ConstantFP::get(Type::getDoubleTy(Context), DImm);
+
+  Monitor::event_raw() << "Reg: " << Dd << " <= " << ImmVal << "\n";
+  setRegValue(Dd, ImmVal, BB);
+
+  return true;
+}
 bool ARMLinearRaiserPass::raiseVMULD(MachineInstr* MI) { // 2954 | VMUL.F64 Dd Dn Dm CC CPSR
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
@@ -2969,11 +2990,11 @@ bool ARMLinearRaiserPass::raiseVSTMDDB_UPD(MachineInstr* MI) { // 3763 VSTM.F64 
   Monitor::event_raw() << "stack[" << BBStateMap[BB]->SP_offset << "] ~ Reg " << Dn << ", ignored under assumption of function prologue\n";
   return true;
 }
-bool ARMLinearRaiserPass::raiseVSTRD(MachineInstr* MI) { // 3770 | VSTR.F64 Fd Rn Imm/4 CC CPSR
+bool ARMLinearRaiserPass::raiseVSTRD(MachineInstr* MI) { // 3770 | VSTR.F64 Dd Rn Imm/4 CC CPSR
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
 
-  Register Fd = MI->getOperand(0).getReg();
+  Register Dd = MI->getOperand(0).getReg();
   Register Rn = MI->getOperand(1).getReg();
   uint64_t Imm = MI->getOperand(2).getImm();
   ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
@@ -2984,10 +3005,10 @@ bool ARMLinearRaiserPass::raiseVSTRD(MachineInstr* MI) { // 3770 | VSTR.F64 Fd R
 
   assert(Rn == ARM::SP && "VSTRD not yet implemented for non SP registers");
 
-  Value* FdVal = getRegValue(Fd, Type::getDoubleTy(Context), BB);
+  Value* DdVal = getRegValue(Dd, Type::getDoubleTy(Context), BB);
   Value* Ptr = getOrCreateStackAlloca(Rn, Imm*4, Type::getDoubleTy(Context), BB);
 
-  Instruction* Store = new StoreInst(FdVal, Ptr, false, BB);
+  Instruction* Store = new StoreInst(DdVal, Ptr, false, BB);
   Monitor::event_Instruction(Store);
 
   return true;
