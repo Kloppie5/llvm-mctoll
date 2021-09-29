@@ -89,6 +89,7 @@ private:
   bool raiseSUBri(MachineInstr* MI);
   bool raiseSUBrr(MachineInstr* MI);
   bool raiseSUBrsi(MachineInstr* MI);
+  bool raiseVABSD(MachineInstr* MI);
   bool raiseVADDD(MachineInstr* MI);
   bool raiseVADDS(MachineInstr* MI);
   bool raiseVDIVD(MachineInstr* MI);
