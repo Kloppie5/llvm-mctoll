@@ -211,7 +211,7 @@ Value* ARMLinearRaiserPass::resolveAM2Shift(Register Rn, Register Rs, Register R
 }
 
 // TODO: merge with X86MachineInstructionRaiser::createPCRelativeAccesssValue
-GlobalValue* ARMLinearRaiserPass::getGlobalValueByOffset(int64_t MCInstOffset, uint64_t PCOffset) {
+GlobalValue* ARMLinearRaiserPass::getGlobalValueByOffset(int64_t MCInstOffset, uint64_t PCOffset, Type* Ty) {
   ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser&>(MR);
   GlobalValue* GlobVal = nullptr;
   const ELF32LEObjectFile* ObjFile =
@@ -225,6 +225,7 @@ GlobalValue* ARMLinearRaiserPass::getGlobalValueByOffset(int64_t MCInstOffset, u
 
   uint64_t InstAddr = TextSecAddr + MCInstOffset;
   uint64_t Offset = InstAddr + PCOffset;
+  uint64_t Target = MCInstOffset + PCOffset;
 
   // Start to search the corresponding symbol.
   const SymbolRef* Symbol = nullptr;
@@ -237,7 +238,7 @@ GlobalValue* ARMLinearRaiserPass::getGlobalValueByOffset(int64_t MCInstOffset, u
 
   assert(MCIR != nullptr && "MCInstRaiser was not initialized!");
   if (Symbol == nullptr) {
-    auto Iter = MCIR->getMCInstAt(Offset - TextSecAddr);
+    auto Iter = MCIR->getMCInstAt(Target);
     uint64_t OffVal = static_cast<uint64_t>((*Iter).second.getData());
 
     for (auto &Sym : ObjFile->symbols()) {
@@ -255,7 +256,6 @@ GlobalValue* ARMLinearRaiserPass::getGlobalValueByOffset(int64_t MCInstOffset, u
     }
   }
 
-  LLVMContext &LCTX = MR.getModule()->getContext();
   if (Symbol != nullptr) {
     // If the symbol is found.
     Expected<StringRef> SymNameVal = Symbol->getName();
@@ -288,16 +288,16 @@ GlobalValue* ARMLinearRaiserPass::getGlobalValueByOffset(int64_t MCInstOffset, u
       Type* GlobValTy = nullptr;
       switch (SymSz) {
         case 4:
-          GlobValTy = Type::getInt32Ty(LCTX);
+          GlobValTy = Type::getInt32Ty(Context);
           break;
         case 2:
-          GlobValTy = Type::getInt16Ty(LCTX);
+          GlobValTy = Type::getInt16Ty(Context);
           break;
         case 1:
-          GlobValTy = Type::getInt8Ty(LCTX);
+          GlobValTy = Type::getInt8Ty(Context);
           break;
         default:
-          GlobValTy = ArrayType::get(Type::getInt8Ty(LCTX), SymSz);
+          GlobValTy = ArrayType::get(Type::getInt8Ty(Context), SymSz);
           break;
       }
 
@@ -346,78 +346,93 @@ GlobalValue* ARMLinearRaiserPass::getGlobalValueByOffset(int64_t MCInstOffset, u
       GlobVal = const_cast<GlobalVariable*>(dyn_cast<GlobalVariable>(ROVal));
       Monitor::event_raw() << "Found ROVal " << GlobVal->getName() << "\n";
       assert(GlobVal && "Failed to cast the value to global variable!");
-    } else {
-      uint64_t Index = Offset - TextSecAddr;
-      if (MCIR->getMCInstAt(Index) == MCIR->const_mcinstr_end()) {
-        Monitor::event_raw() << "Failed to read data at " << Index << "\n";
-        assert(false && "Index out of bounds");
-      }
-      std::string LocalName("ROConst");
-      LocalName.append(std::to_string(Index));
-      // Find if a global value associated with symbol name is already
-      // created
-      StringRef LocalNameRef(LocalName);
-      Monitor::event_raw() << "Looking for " << LocalName << "\n";
-      GlobVal = MR.getModule()->getGlobalVariable(LocalNameRef);
-      if (GlobVal == nullptr) {
-        Monitor::event_raw() << "Creating GlobalValue " << LocalName << "\n";
-        MCInstOrData MD = MCIR->getMCInstAt(Index)->second;
-        uint32_t Data = MD.getData();
-        uint64_t DataAddr = (uint64_t)Data;
-        // Check if this is an address in .rodata
-        for (section_iterator SecIter : ObjFile->sections()) {
-          uint64_t SecStart = SecIter->getAddress();
-          uint64_t SecEnd = SecStart + SecIter->getSize();
+      return GlobVal;
+    }
 
-          if ((SecStart <= DataAddr) && (SecEnd >= DataAddr)) {
-            if (SecIter->isData()) {
-              auto StrOrErr = SecIter->getContents();
-              assert(StrOrErr && "Failed to get the content of section!");
-              StringRef SecData =* StrOrErr;
-              uint64_t DataOffset = DataAddr - SecStart;
-              const unsigned char* RODataBegin =
-                  SecData.bytes_begin() + DataOffset;
+    if (MCIR->getMCInstAt(Target) == MCIR->const_mcinstr_end()) {
+      Monitor::event_raw() << "Failed to read data at " << Target << "\n";
+      Monitor::event_raw() << "MCInstOffset: " << MCInstOffset << "\n";
+      Monitor::event_raw() << "PCOffset: " << PCOffset << "\n";
+      assert(false && "Target out of bounds");
+    }
+    std::string LocalName("ROConst");
+    LocalName.append(std::to_string(Target));
+    // Find if a global value associated with symbol name is already
+    // created
+    StringRef LocalNameRef(LocalName);
+    Monitor::event_raw() << "Looking for " << LocalName << "\n";
+    GlobVal = MR.getModule()->getGlobalVariable(LocalNameRef);
+    if (GlobVal) {
+      Monitor::event_raw() << "Found " << LocalName << "\n";
+      return GlobVal;
+    }
 
-              unsigned char c;
-              uint64_t argNum = 0;
-              const unsigned char* str = RODataBegin;
-              do {
-                c = (unsigned char)*str++;
-                if (c == '%') {
-                  argNum++;
-                }
-              } while (c != '\0');
-              if (argNum != 0) {
-                AMR.collectRodataInstAddr(InstAddr);
-                AMR.fillInstArgMap(InstAddr, argNum + 1);
-              }
-              StringRef ROStringRef(
-                  reinterpret_cast<const char* >(RODataBegin));
-              Constant* StrConstant =
-                  ConstantDataArray::getString(LCTX, ROStringRef);
-              GlobalValue* GlobalStrConstVal = new GlobalVariable(
-                 * MR.getModule(), StrConstant->getType(), /* isConstant */ true,
-                  GlobalValue::PrivateLinkage, StrConstant, "RO-String");
-              // Record the mapping between offset and global value
-              AMR.addRODataValueAt(GlobalStrConstVal, Offset);
-              GlobVal = GlobalStrConstVal;
-              break;
+    Monitor::event_raw() << "Creating GlobalValue " << LocalName << "\n";
+
+    if (Ty == Type::getInt32Ty(Context)) {
+      uint32_t Data = MCIR->getMCInstAt(Target)->second.getData();
+      return new GlobalVariable(*MR.getModule(), Ty, false /* isConstant */,
+                                GlobalValue::InternalLinkage,
+                                ConstantInt::get(Ty, Data), LocalName);
+    }
+    if (Ty == Type::getDoubleTy(Context)) {
+      uint32_t firsthalf = MCIR->getMCInstAt(Target)->second.getData();
+      uint32_t secondhalf = MCIR->getMCInstAt(Target + 4)->second.getData();
+      uint64_t InitVal = ((uint64_t) firsthalf << 32) | secondhalf;
+      // double_t InitValD = *reinterpret_cast<double_t*>(&InitVal); Somewhat defined undefined behaviour because of type pruning
+      double_t InitValD; memcpy(&InitValD, &InitVal, sizeof(InitValD));
+      return new GlobalVariable(*MR.getModule(), Ty, false /* isConstant */,
+                                GlobalValue::InternalLinkage,
+                                ConstantFP::get(Context, APFloat(InitValD)), LocalName);
+    }
+
+    MCInstOrData MD = MCIR->getMCInstAt(Target)->second;
+    uint32_t Data = MD.getData();
+    uint64_t DataAddr = (uint64_t)Data;
+    // Check if this is an address in .rodata
+    for (section_iterator SecIter : ObjFile->sections()) {
+      uint64_t SecStart = SecIter->getAddress();
+      uint64_t SecEnd = SecStart + SecIter->getSize();
+
+      if ((SecStart <= DataAddr) && (SecEnd >= DataAddr)) {
+        if (SecIter->isData()) {
+          auto StrOrErr = SecIter->getContents();
+          assert(StrOrErr && "Failed to get the content of section!");
+          StringRef SecData =* StrOrErr;
+          uint64_t DataOffset = DataAddr - SecStart;
+          const unsigned char* RODataBegin =
+              SecData.bytes_begin() + DataOffset;
+
+          unsigned char c;
+          uint64_t argNum = 0;
+          const unsigned char* str = RODataBegin;
+          do {
+            c = (unsigned char)*str++;
+            if (c == '%') {
+              argNum++;
             }
+          } while (c != '\0');
+          if (argNum != 0) {
+            AMR.collectRodataInstAddr(InstAddr);
+            AMR.fillInstArgMap(InstAddr, argNum + 1);
           }
-        }
-
-        if (GlobVal == nullptr) {
-          Type* ty = Type::getInt32Ty(LCTX);
-          Constant* GlobInit = ConstantInt::get(ty, Data);
-          GlobVal = new GlobalVariable(*MR.getModule(), ty, /* isConstant */ true,
-                                            GlobalValue::PrivateLinkage,
-                                            GlobInit, LocalNameRef);
+          StringRef ROStringRef(
+              reinterpret_cast<const char* >(RODataBegin));
+          Constant* StrConstant =
+              ConstantDataArray::getString(Context, ROStringRef);
+          GlobalValue* GlobalStrConstVal = new GlobalVariable(
+              * MR.getModule(), StrConstant->getType(), /* isConstant */ true,
+              GlobalValue::PrivateLinkage, StrConstant, "RO-String");
+          // Record the mapping between offset and global value
+          AMR.addRODataValueAt(GlobalStrConstVal, Offset);
+          return GlobalStrConstVal;
         }
       }
     }
   }
 
-  return GlobVal;
+  assert(false && "Could not get or create a global value");
+  return nullptr;
 }
 
 Value* ARMLinearRaiserPass::ARMCCToValue(int Cond, BasicBlock* BB) {
@@ -613,7 +628,9 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::SUBrsi:        raiseSUBrsi(MI);        break; // 1930 | SUB Rd Rn Rm Shift CC CPSR S
     case ARM::VADDD:         raiseVADDD(MI);         break; // 2047 | VADD.F64 Dd Dn Dm CC CPSR
     case ARM::VADDS:         raiseVADDS(MI);         break; // 2058 | VADD.F32 Sd Sn Sm CC CPSR
+    case ARM::VDIVD:         raiseVDIVD(MI);         break; // 2327 | VDIV.F64 Dd Dn Dm CC CPSR
     case ARM::VLDMDIA_UPD:   raiseVLDMDIA_UPD(MI);   break; // 2778 | VLDM.F64 Rt! {Rwb} CC CPSR Dn
+    case ARM::VLDRD:         raiseVLDRD(MI);         break; // 2783 | VLDR.F64 Dd Rn Imm CC CPSR
     case ARM::VMOVD:         raiseVMOVD(MI);         break; // 2901 | VMOV.F64 Dd Dn CC CPSR
     case ARM::VMOVRS:        raiseVMOVRS(MI);        break; // 2917 | VMOV.F32 Rd Sn CC CPSR
     case ARM::VMOVSR:        raiseVMOVSR(MI);        break; // 2919 | VMOV.F32 St Rn CC CPSR
@@ -1834,7 +1851,7 @@ bool ARMLinearRaiserPass::raiseLDRi12(MachineInstr* MI) { // 862 | LDR Rt Rn Imm
   );
 
   if (Rn == ARM::PC) { // Load PC-relative GlobalValue
-    Value* GV = getGlobalValueByOffset(MCIR->getMCInstIndex(*MI), Imm12 + 8);
+    Value* GV = getGlobalValueByOffset(MCIR->getMCInstIndex(*MI), Imm12 + 8, Type::getInt32Ty(Context));
     Monitor::event_raw() << "Global Value: " << GV->getName() << "\n";
     Instruction* Cast = new PtrToIntInst(GV, Type::getInt32Ty(Context), "LDRi12CastDown", BB);
     Monitor::event_Instruction(Cast);
@@ -2750,6 +2767,29 @@ bool ARMLinearRaiserPass::raiseVADDS(MachineInstr* MI) { // 2058 | VADD.F32 Sd S
 
   return true;
 }
+bool ARMLinearRaiserPass::raiseVDIVD(MachineInstr* MI) { // 2327 | VDIV.F64 Dd Dn Dm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Dd = MI->getOperand(0).getReg();
+  Register Dn = MI->getOperand(1).getReg();
+  Register Dm = MI->getOperand(2).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
+  Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  assert(!conditional_execution && "VDIVD conditional execution not yet implemented");
+
+  Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
+  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+
+  Instruction* Result = BinaryOperator::Create(Instruction::FDiv, DnVal, DmVal, "VDIVD", BB);
+  Monitor::event_Instruction(Result);
+
+  setRegValue(Dd, Result, BB);
+
+  return true;
+}
 bool ARMLinearRaiserPass::raiseVLDMDIA_UPD(MachineInstr* MI) { // 2778 | VLDM.F64 Rt! {Rwb} CC CPSR Dn
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
@@ -2772,6 +2812,36 @@ bool ARMLinearRaiserPass::raiseVLDMDIA_UPD(MachineInstr* MI) { // 2778 | VLDM.F6
   BBStateMap[BB]->SP_offset += 4;
 
   return true;
+}
+bool ARMLinearRaiserPass::raiseVLDRD(MachineInstr* MI) { // 2783 | VLDR.F64 Dd Rn Imm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Dd = MI->getOperand(0).getReg();
+  Register Rn = MI->getOperand(1).getReg();
+  int64_t Imm = MI->getOperand(2).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
+  Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  assert(!conditional_execution && "VLDRD conditional execution not yet implemented");
+
+  assert(Rn == ARM::PC && "VLDRD Rn != PC not yet implemented");
+
+  if (Rn == ARM::PC) { // Load PC-relative GlobalValue
+    // A direct offset has to be a multiple of 4, and a PC-relative offset
+    // created by an assembler based on a label or created by adding to the
+    // double literal pool has to be word boundary aligned, which is also a
+    // multiple of 4. Because of this, LLVM thought it was a great idea to
+    // save a whopping 2 bits by using the offset/4 in the instruction.
+    Value* GV = getGlobalValueByOffset(MCIR->getMCInstIndex(*MI), Imm * 4 + 8, Type::getDoubleTy(Context));
+    Monitor::event_raw() << "Global Value: " << GV->getName() << "\n";
+    Instruction* Load = new LoadInst(Type::getDoubleTy(Context), GV, "VLDRD", BB);
+    Monitor::event_Instruction(Load);
+    setRegValue(Dd, Load, BB);
+    return true;
+  }
+  return false;
 }
 bool ARMLinearRaiserPass::raiseVMOVD(MachineInstr* MI) { // 2901 | VMOV.F64 Dd Dn CC CPSR
   MachineBasicBlock* MBB = MI->getParent();

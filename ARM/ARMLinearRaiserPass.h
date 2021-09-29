@@ -32,7 +32,7 @@ public:
 
   Value* resolveAM2Shift(Register Rn, Register Rs, Register Rm, int64_t AM2Shift, BasicBlock* BB);
 
-  GlobalValue* getGlobalValueByOffset(int64_t MCInstOffset, uint64_t PCOffset);
+  GlobalValue* getGlobalValueByOffset(int64_t MCInstOffset, uint64_t PCOffset, Type* Ty);
   Value* ARMCCToValue(int Cond, BasicBlock* BB);
 
   BasicBlock* createBasicBlock(MachineBasicBlock* MBB);
@@ -90,7 +90,9 @@ private:
   bool raiseSUBrsi(MachineInstr* MI);
   bool raiseVADDD(MachineInstr* MI);
   bool raiseVADDS(MachineInstr* MI);
+  bool raiseVDIVD(MachineInstr* MI);
   bool raiseVLDMDIA_UPD(MachineInstr* MI);
+  bool raiseVLDRD(MachineInstr* MI);
   bool raiseVMOVD(MachineInstr* MI);
   bool raiseVMOVRS(MachineInstr* MI);
   bool raiseVMOVSR(MachineInstr* MI);
