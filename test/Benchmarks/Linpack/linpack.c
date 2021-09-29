@@ -1,5 +1,5 @@
 // RUN: clang -O3 -target armv7-unknown-linux-gnueabisf -o %t.o %s
-// RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I /usr/include/stdlib.h -I /usr/include/stdio.h -I /usr/include/time.h
+// RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I /usr/include/stdlib.h -I /usr/include/stdio.h -I /usr/include/string.h -I /usr/include/time.h
 // UN: clang -o %t-res %t-dis.ll
 // UN: %t-res 2>&1 | FileCheck %s
 

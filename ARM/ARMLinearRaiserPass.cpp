@@ -639,6 +639,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::VMULD:         raiseVMULD(MI);         break; // 2954 | VMUL.F64 Dd Dn Dm CC CPSR
     case ARM::VSITOD:        raiseVSITOD(MI);        break; // 3463 | VCVT.F64.S32 Dd Sm CC CPSR
     case ARM::VSTMDDB_UPD:   raiseVSTMDDB_UPD(MI);   break; // 3763 | VSTM.F64 Rt! {Rwb} CC CPSR Dn
+    case ARM::VSTMDIA_UPD:   raiseVSTMDIA_UPD(MI);   break; // 3765 | VSTM.F64 Rt! {Rwb} CC CPSR Dn
     case ARM::VSTRD:         raiseVSTRD(MI);         break; // 3770 | VSTR.F64 Dd Rn Imm/4 CC CPSR
     case ARM::VSUBD:         raiseVSUBD(MI);         break; // 3791 | VSUB.F64 Dd Dn Dm CC CPSR
   }
@@ -2835,8 +2836,8 @@ bool ARMLinearRaiserPass::raiseVLDMDIA_UPD(MachineInstr* MI) { // 2778 | VLDM.F6
   Monitor::event_raw() << "Reg " << Dn << " ~ stack[" << BBStateMap[BB]->SP_offset << "], ignoring under assumption of function epilogue\n";
 
   // Increment SP
-  Monitor::event_raw() << "incrementing SP by 4\n";
-  BBStateMap[BB]->SP_offset += 4;
+  Monitor::event_raw() << "incrementing SP by 8\n";
+  BBStateMap[BB]->SP_offset += 8;
 
   return true;
 }
@@ -3005,14 +3006,44 @@ bool ARMLinearRaiserPass::raiseVSTMDDB_UPD(MachineInstr* MI) { // 3763 VSTM.F64 
   assert(!conditional_execution && "VSTMDDB_UPD conditional execution not yet implemented");
 
   assert(Rt == ARM::SP && "VSTMDDB_UPD not yet implemented for non SP registers");
-  // Should be disassembled to VPUSH.D
 
   // Value* RegVal = getRegValue(Reg, Type::getDoubleTy(Context), BB);
 
-  Monitor::event_raw() << "VSTMDDB_UPD: decrementing SP by 4\n";
-  BBStateMap[BB]->SP_offset -= 4;
+  Monitor::event_raw() << "VSTMDDB_UPD: decrementing SP by 8\n";
+  BBStateMap[BB]->SP_offset -= 8;
 
   Monitor::event_raw() << "stack[" << BBStateMap[BB]->SP_offset << "] ~ Reg " << Dn << ", ignored under assumption of function prologue\n";
+  return true;
+}
+bool ARMLinearRaiserPass::raiseVSTMDIA_UPD(MachineInstr* MI) { // 3765 | VSTM.F64 Rt! {Rwb} CC CPSR Dn
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Rt = MI->getOperand(0).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
+  Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+  Register Dn = MI->getOperand(4).getReg();
+
+  assert(!conditional_execution && "VSTMDIA_UPD conditional execution not yet implemented");
+
+  assert(Rt != ARM::SP && "VSTMDIA_UPD not yet implemented for SP registers");
+
+  Value* RtVal = getRegValue(Rt, Type::getInt32Ty(Context), BB);
+  Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
+
+  Instruction* Ptr = new IntToPtrInst(RtVal, Type::getDoublePtrTy(Context), "VSTMDIA_UPD", BB);
+  Monitor::event_Instruction(Ptr);
+
+  Instruction* Store = new StoreInst(DnVal, Ptr, false, BB);
+  Monitor::event_Instruction(Store);
+
+  Monitor::event_raw() << "VSTMDIA_UPD: incrementing Rt by 8\n";
+  Instruction* Add = BinaryOperator::Create(Instruction::Add, RtVal, ConstantInt::get(Type::getInt32Ty(Context), 8), "VSTMDIA_UPD", BB);
+  Monitor::event_Instruction(Add);
+
+  setRegValue(Rt, Add, BB);
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseVSTRD(MachineInstr* MI) { // 3770 | VSTR.F64 Dd Rn Imm/4 CC CPSR

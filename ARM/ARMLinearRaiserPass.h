@@ -101,6 +101,7 @@ private:
   bool raiseVMULD(MachineInstr* MI);
   bool raiseVSITOD(MachineInstr* MI);
   bool raiseVSTMDDB_UPD(MachineInstr* MI);
+  bool raiseVSTMDIA_UPD(MachineInstr* MI);
   bool raiseVSTRD(MachineInstr* MI);
   bool raiseVSUBD(MachineInstr* MI);
 };

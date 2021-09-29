@@ -168,17 +168,17 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
             stack_offset -= Imm;
           } break;
         case ARM::VLDMDIA_UPD: // 2778
-          Monitor::event_raw() << "Incrementing stack offset: 4 to " << (stack_offset+4) << "\n";
+          Monitor::event_raw() << "Incrementing stack offset: 8 to " << (stack_offset+8) << "\n";
           stack_offsets[stack_offset] = Type::getDoubleTy(MF->getFunction().getContext());
-          stack_offset += 4;
+          stack_offset += 8;
           break;
         case ARM::VLDRD: // 2783
           Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
           stack_offsets[stack_offset + MI.getOperand(2).getImm()] = Type::getDoubleTy(MF->getFunction().getContext());
           break;
         case ARM::VSTMDDB_UPD: // 3763
-          Monitor::event_raw() << "Decrementing stack offset: 4 to " << (stack_offset-4) << "\n";
-          stack_offset -= 4;
+          Monitor::event_raw() << "Decrementing stack offset: 4 to " << (stack_offset-8) << "\n";
+          stack_offset -= 8;
           stack_offsets[stack_offset] = Type::getDoubleTy(MF->getFunction().getContext());
           break;
         case ARM::VSTRD: // 3770
