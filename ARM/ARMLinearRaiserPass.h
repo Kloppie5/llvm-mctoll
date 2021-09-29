@@ -101,6 +101,7 @@ private:
   bool raiseVSITOD(MachineInstr* MI);
   bool raiseVSTMDDB_UPD(MachineInstr* MI);
   bool raiseVSTRD(MachineInstr* MI);
+  bool raiseVSUBD(MachineInstr* MI);
 };
 
 #endif // LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMLINEARRAISERPASS_H

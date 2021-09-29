@@ -639,6 +639,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::VSITOD:        raiseVSITOD(MI);        break; // 3463 | VCVT.F64.S32 Dd Sm CC CPSR
     case ARM::VSTMDDB_UPD:   raiseVSTMDDB_UPD(MI);   break; // 3763 | VSTM.F64 Rt! {Rwb} CC CPSR Dn
     case ARM::VSTRD:         raiseVSTRD(MI);         break; // 3770 | VSTR.F64 Dd Rn Imm/4 CC CPSR
+    case ARM::VSUBD:         raiseVSUBD(MI);         break; // 3791 | VSUB.F64 Dd Dn Dm CC CPSR
   }
   Monitor::event_end("ARMLinearRaiserPass::RaiseMachineInstr");
   return true;
@@ -3010,6 +3011,29 @@ bool ARMLinearRaiserPass::raiseVSTRD(MachineInstr* MI) { // 3770 | VSTR.F64 Dd R
 
   Instruction* Store = new StoreInst(DdVal, Ptr, false, BB);
   Monitor::event_Instruction(Store);
+
+  return true;
+}
+bool ARMLinearRaiserPass::raiseVSUBD(MachineInstr* MI) { // 3791 | VSUB.F64 Dd Dn Dm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Dd = MI->getOperand(0).getReg();
+  Register Dn = MI->getOperand(1).getReg();
+  Register Dm = MI->getOperand(2).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
+  Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  assert(!conditional_execution && "VSUBD conditional execution not yet implemented");
+
+  Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
+  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+
+  Instruction* Result = BinaryOperator::Create(Instruction::FSub, DnVal, DmVal, "VSUBD", BB);
+  Monitor::event_Instruction(Result);
+
+  setRegValue(Dd, Result, BB);
 
   return true;
 }
