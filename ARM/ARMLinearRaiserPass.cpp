@@ -2830,14 +2830,37 @@ bool ARMLinearRaiserPass::raiseVLDMDIA_UPD(MachineInstr* MI) { // 2778 | VLDM.F6
 
   assert(!conditional_execution && "VLDMDIA_UPD conditional execution not yet implemented");
 
-  assert(Rt == ARM::SP && "VLDMDIA_UPD Rt != SP not yet implemented");
-  // Should be disassembled as VPOP.D
+  if (Rt == ARM::SP) {
+    Value* Ptr = getOrCreateStackAlloca(Rt, 0, Type::getDoubleTy(Context), BB);
+    Monitor::event_raw() << "Reg " << Dn << " ~ stack[" << BBStateMap[BB]->SP_offset << "] = " << Ptr << "\n";
 
-  Monitor::event_raw() << "Reg " << Dn << " ~ stack[" << BBStateMap[BB]->SP_offset << "], ignoring under assumption of function epilogue\n";
+    Instruction* Load = new LoadInst(Type::getDoubleTy(Context), Ptr, "VLDMDIA_UPD", BB);
+    Monitor::event_Instruction(Load);
 
-  // Increment SP
-  Monitor::event_raw() << "incrementing SP by 8\n";
-  BBStateMap[BB]->SP_offset += 8;
+    setRegValue(Dn, Load, BB);
+
+    Monitor::event_raw() << "incrementing SP by 8\n";
+    BBStateMap[BB]->SP_offset += 8;
+    return true;
+  }
+
+  assert(Rt != ARM::PC && "VLDMDIA_UPD: Rt == PC");
+
+  Value* RtVal = getRegValue(Rt, Type::getInt32Ty(Context), BB);
+
+  Instruction* Ptr = new IntToPtrInst(RtVal, Type::getDoublePtrTy(Context), "VLDMDIA_UPD", BB);
+  Monitor::event_Instruction(Ptr);
+
+  Instruction* Load = new LoadInst(Type::getDoubleTy(Context), Ptr, "VLDMDIA_UPD", BB);
+  Monitor::event_Instruction(Load);
+
+  setRegValue(Dn, Load, BB);
+
+  Monitor::event_raw() << "VLDMDIA_UPD: incrementing Rt by 8\n";
+  Instruction* Add = BinaryOperator::Create(Instruction::Add, RtVal, ConstantInt::get(Type::getInt32Ty(Context), 8), "VLDMDIA_UPD", BB);
+  Monitor::event_Instruction(Add);
+
+  setRegValue(Rt, Add, BB);
 
   return true;
 }
@@ -2854,8 +2877,6 @@ bool ARMLinearRaiserPass::raiseVLDRD(MachineInstr* MI) { // 2783 | VLDR.F64 Dd R
 
   assert(!conditional_execution && "VLDRD conditional execution not yet implemented");
 
-  assert(Rn == ARM::PC && "VLDRD Rn != PC not yet implemented");
-
   if (Rn == ARM::PC) { // Load PC-relative GlobalValue
     // A direct offset has to be a multiple of 4, and a PC-relative offset
     // created by an assembler based on a label or created by adding to the
@@ -2869,6 +2890,24 @@ bool ARMLinearRaiserPass::raiseVLDRD(MachineInstr* MI) { // 2783 | VLDR.F64 Dd R
     setRegValue(Dd, Load, BB);
     return true;
   }
+
+  assert(Rn != ARM::SP && "VLDRD not yet implemented for SP registers");
+  Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+
+  if (Imm != 0) {
+    Instruction* Add = BinaryOperator::Create(Instruction::Add, RnVal, ConstantInt::get(Type::getInt32Ty(Context), Imm * 4), "VLDRD", BB);
+    Monitor::event_Instruction(Add);
+    RnVal = Add;
+  }
+
+  Instruction* Ptr = new IntToPtrInst(RnVal, Type::getDoublePtrTy(Context), "VLDRD", BB);
+  Monitor::event_Instruction(Ptr);
+
+  Instruction* Load = new LoadInst(Type::getDoubleTy(Context), Ptr, "VLDRD", BB);
+  Monitor::event_Instruction(Load);
+
+  setRegValue(Dd, Load, BB);
+
   return false;
 }
 bool ARMLinearRaiserPass::raiseVMOVD(MachineInstr* MI) { // 2901 | VMOV.F64 Dd Dn CC CPSR
