@@ -68,15 +68,15 @@ public:
   void setRegValue(Register Reg, Value *V) {
     Q_RegValueMap[Reg] = V;
   }
-  Value *getRegValue(Register Reg) {
+  Value *getRegValue(Register Reg, Type* Ty = nullptr) {
     Value* V = Q_RegValueMap[Reg];
     if (V == nullptr) {
       Monitor::event_raw() << "Creating PHI node for " << Reg << " in BB " << BB->getName() << "\n";
       PHINode *phi;
       if (BB->size() == 0)
-        phi = PHINode::Create(Type::getInt32Ty(BB->getContext()), 0, Twine(Reg) + ".phi", BB);
+        phi = PHINode::Create(Ty, 0, Twine(Reg) + ".phi", BB);
       else
-        phi = PHINode::Create(Type::getInt32Ty(BB->getContext()), 0, Twine(Reg) + ".phi", &*BB->begin());
+        phi = PHINode::Create(Ty, 0, Twine(Reg) + ".phi", &*BB->begin());
       P_RegValueMap[Reg] = phi;
       V = phi;
       Q_RegValueMap[Reg] = V;

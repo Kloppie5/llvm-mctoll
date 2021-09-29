@@ -111,7 +111,7 @@ bool ARMLinearRaiserPass::run(MachineFunction* MF, Function* F) {
 
 Value* ARMLinearRaiserPass::getRegValue(Register Reg, Type* Ty, BasicBlock* BB) {
   assert(BBStateMap.count(BB) && "BBStateMap does not contain BB");
-  Value* V = BBStateMap[BB]->getRegValue(Reg);
+  Value* V = BBStateMap[BB]->getRegValue(Reg, Ty);
   {auto &OS=Monitor::event_raw(); OS << "getRegValue: " << Reg << ": "; if(Ty) {Ty->print(OS); OS << " <= ";} V->getType()->print(OS); OS << "\n";}
   if (!Ty || V->getType() == Ty)
     return V;
