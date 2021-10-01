@@ -632,6 +632,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::VADDD:         raiseVADDD(MI);         break; // 2047 | VADD.F64 Dd Dn Dm CC CPSR
     case ARM::VADDS:         raiseVADDS(MI);         break; // 2058 | VADD.F32 Sd Sn Sm CC CPSR
     case ARM::VCMPD:         raiseVCMPD(MI);         break; // 2213 | VCMP.F64 Dd Dm CC CPSR
+    case ARM::VCMPZD:        raiseVCMPZD(MI);        break; // 2222 | VCMP.F64 Dd [0] CC CPSR
     case ARM::VDIVD:         raiseVDIVD(MI);         break; // 2327 | VDIV.F64 Dd Dn Dm CC CPSR
     case ARM::VLDMDIA_UPD:   raiseVLDMDIA_UPD(MI);   break; // 2778 | VLDM.F64 Rt! {Rwb} CC CPSR Dn
     case ARM::VLDRD:         raiseVLDRD(MI);         break; // 2783 | VLDR.F64 Dd Rn Imm/4 CC CPSR
@@ -3269,6 +3270,50 @@ bool ARMLinearRaiserPass::raiseVCMPD(MachineInstr* MI) { // 2213 | VCMP.F64 Dd D
   BBStateMap[BB]->setFPSCRZFlag(CmpEQ);
 
   Instruction* CmpGE = CmpInst::Create(Instruction::FCmp, CmpInst::FCMP_OGE, DdVal, DmVal, "VCMPDCmp", BB);
+  Monitor::event_Instruction(CmpGE);
+  BBStateMap[BB]->setFPSCRCFlag(CmpGE);
+
+  BBStateMap[BB]->setFPSCRVFlag(ConstantInt::get(Type::getInt1Ty(Context), 0));
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
+  return true;
+}
+bool ARMLinearRaiserPass::raiseVCMPZD(MachineInstr* MI) { // 2222 | VCMP.F64 Dd [0] CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Dd = MI->getOperand(0).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(1).getImm();
+  Register CPSR = MI->getOperand(2).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
+
+  Value* DdVal = getRegValue(Dd, Type::getDoubleTy(Context), BB);
+
+  // TODO: Handle NaN
+
+  Instruction* CmpLT = CmpInst::Create(Instruction::FCmp, CmpInst::FCMP_OLT, DdVal, ConstantFP::get(Context, APFloat(0.0)), "VCMPZDCmp", BB);
+  Monitor::event_Instruction(CmpLT);
+  BBStateMap[BB]->setFPSCRNFlag(CmpLT);
+
+  Instruction* CmpEQ = CmpInst::Create(Instruction::FCmp, CmpInst::FCMP_OEQ, DdVal, ConstantFP::get(Context, APFloat(0.0)), "VCMPZDCmp", BB);
+  Monitor::event_Instruction(CmpEQ);
+  BBStateMap[BB]->setFPSCRZFlag(CmpEQ);
+
+  Instruction* CmpGE = CmpInst::Create(Instruction::FCmp, CmpInst::FCMP_OGE, DdVal, ConstantFP::get(Context, APFloat(0.0)), "VCMPZDCmp", BB);
   Monitor::event_Instruction(CmpGE);
   BBStateMap[BB]->setFPSCRCFlag(CmpGE);
 

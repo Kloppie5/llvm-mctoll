@@ -94,6 +94,7 @@ private:
   bool raiseVADDD(MachineInstr* MI);
   bool raiseVADDS(MachineInstr* MI);
   bool raiseVCMPD(MachineInstr* MI);
+  bool raiseVCMPZD(MachineInstr* MI);
   bool raiseVDIVD(MachineInstr* MI);
   bool raiseVLDMDIA_UPD(MachineInstr* MI);
   bool raiseVLDRD(MachineInstr* MI);
