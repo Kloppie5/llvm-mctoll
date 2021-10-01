@@ -596,6 +596,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::CMPrr:         raiseCMPrr(MI);         break; //  760 | CMP Rn Rm CC CPSR
     case ARM::DMB:           raiseDMB(MI);           break; //  773 | DMB Imm
     case ARM::EORrr:         raiseEORrr(MI);         break; //  776 | EOR Rd Rn Rm CC CPSR S
+    case ARM::FMSTAT:        raiseFMSTAT(MI);        break; //  786 | FMRX CC CPSR
     case ARM::FCONSTD:       raiseFCONSTD(MI);       break; //  780 | VMOV.F64 Dd Imm CC CPSR
     case ARM::FCONSTS:       raiseFCONSTS(MI);       break; //  782 | VMOV.F32 Sd Imm CC CPSR
     case ARM::LDMIA_UPD:     raiseLDMIA_UPD(MI);     break; //  822 | LDMIA Rn Rn CC CPSR Reg
@@ -1584,6 +1585,25 @@ bool ARMLinearRaiserPass::raiseEORrr(MachineInstr* MI) { // 776 | EOR Rd Rn Rm C
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
     Monitor::event_Instruction(Branch);
   }
+
+  return true;
+}
+bool ARMLinearRaiserPass::raiseFMSTAT(MachineInstr* MI) { //  786 | FMRX CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  // FMRX r15, FPSCR Alias; which doesnt move to PC, but instead targets CPSR
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(0).getImm();
+  Register CPSR = MI->getOperand(1).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  assert(!conditional_execution && "Conditional execution not yet implemented");
+
+  Monitor::event_raw() << "Moving FPSCR flags to CPSR\n";
+  BBStateMap[BB]->setCPSRNFlag(BBStateMap[BB]->getFPSCRNFlag());
+  BBStateMap[BB]->setCPSRZFlag(BBStateMap[BB]->getFPSCRZFlag());
+  BBStateMap[BB]->setCPSRCFlag(BBStateMap[BB]->getFPSCRCFlag());
+  BBStateMap[BB]->setCPSRVFlag(BBStateMap[BB]->getFPSCRVFlag());
 
   return true;
 }
@@ -2851,6 +2871,8 @@ bool ARMLinearRaiserPass::raiseVCMPD(MachineInstr* MI) { // 2213 | VCMP.F64 Dd D
   Instruction* CmpGE = CmpInst::Create(Instruction::FCmp, CmpInst::FCMP_OGE, DdVal, DmVal, "VCMPDCmp", BB);
   Monitor::event_Instruction(CmpGE);
   BBStateMap[BB]->setFPSCRCFlag(CmpGE);
+
+  BBStateMap[BB]->setFPSCRVFlag(ConstantInt::get(Type::getInt1Ty(Context), 0));
 
   return true;
 }

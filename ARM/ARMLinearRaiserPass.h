@@ -58,6 +58,7 @@ private:
   bool raiseCMPrr(MachineInstr* MI);
   bool raiseDMB(MachineInstr* MI);
   bool raiseEORrr(MachineInstr* MI);
+  bool raiseFMSTAT(MachineInstr* MI);
   bool raiseFCONSTD(MachineInstr* MI);
   bool raiseFCONSTS(MachineInstr* MI);
   bool raiseLDMIA_UPD(MachineInstr* MI);
