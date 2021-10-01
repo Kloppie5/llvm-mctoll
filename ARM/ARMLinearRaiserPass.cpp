@@ -442,58 +442,58 @@ Value* ARMLinearRaiserPass::ARMCCToValue(int Cond, BasicBlock* BB) {
     default:
       llvm_unreachable("Unknown condition code!");
     case ARMCC::EQ: { // Z = 1
-      Value* Z = BBStateMap[BB]->getZFlag();
+      Value* Z = BBStateMap[BB]->getCPSRZFlag();
       Instruction* ZS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getTrue(Context), "ZS");
       Monitor::event_Instruction(ZS);
       return ZS;
     } break;
     case ARMCC::NE: { // Z = 0
-      Value* Z = BBStateMap[BB]->getZFlag();
+      Value* Z = BBStateMap[BB]->getCPSRZFlag();
       Instruction* ZC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getFalse(Context), "ZC");
       Monitor::event_Instruction(ZC);
       return ZC;
     } break;
     case ARMCC::HS: { // C = 1
-      Value* C = BBStateMap[BB]->getCFlag();
+      Value* C = BBStateMap[BB]->getCPSRCFlag();
       Instruction* CS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, C, ConstantInt::getTrue(Context), "CS");
       Monitor::event_Instruction(CS);
       return CS;
     } break;
     case ARMCC::LO: { // C = 0
-      Value* C = BBStateMap[BB]->getCFlag();
+      Value* C = BBStateMap[BB]->getCPSRCFlag();
       Instruction* CC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, C, ConstantInt::getFalse(Context), "CC");
       Monitor::event_Instruction(CC);
       return CC;
     } break;
     case ARMCC::MI: { // N = 1
-      Value* N = BBStateMap[BB]->getNFlag();
+      Value* N = BBStateMap[BB]->getCPSRNFlag();
       Instruction* NS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, N, ConstantInt::getTrue(Context), "NS");
       Monitor::event_Instruction(NS);
       return NS;
     } break;
     case ARMCC::PL: { // N = 0
-      Value* N = BBStateMap[BB]->getNFlag();
+      Value* N = BBStateMap[BB]->getCPSRNFlag();
       Instruction* NC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, N, ConstantInt::getFalse(Context), "NC");
       Monitor::event_Instruction(NC);
       return NC;
     } break;
     case ARMCC::VS: { // V = 1
-      Value* V = BBStateMap[BB]->getVFlag();
+      Value* V = BBStateMap[BB]->getCPSRVFlag();
       Instruction* VS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, V, ConstantInt::getTrue(Context), "VS");
       Monitor::event_Instruction(VS);
       return VS;
     } break;
     case ARMCC::VC: { // V = 0
-      Value* V = BBStateMap[BB]->getVFlag();
+      Value* V = BBStateMap[BB]->getCPSRVFlag();
       Instruction* VC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, V, ConstantInt::getFalse(Context), "VC");
       Monitor::event_Instruction(VC);
       return VC;
     } break;
     case ARMCC::HI: { // C = 1 && Z = 0
-      Value* C = BBStateMap[BB]->getCFlag();
+      Value* C = BBStateMap[BB]->getCPSRCFlag();
       Instruction* CS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, C, ConstantInt::getTrue(Context), "CS");
       Monitor::event_Instruction(CS);
-      Value* Z = BBStateMap[BB]->getZFlag();
+      Value* Z = BBStateMap[BB]->getCPSRZFlag();
       Instruction* ZC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getFalse(Context), "ZC");
       Monitor::event_Instruction(ZC);
       Instruction* HI = BinaryOperator::Create(Instruction::Add, CS, ZC, "HI", BB);
@@ -501,10 +501,10 @@ Value* ARMLinearRaiserPass::ARMCCToValue(int Cond, BasicBlock* BB) {
       return HI;
     } break;
     case ARMCC::LS: { // C = 0 || Z = 1
-      Value* C = BBStateMap[BB]->getCFlag();
+      Value* C = BBStateMap[BB]->getCPSRCFlag();
       Instruction* CC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, C, ConstantInt::getFalse(Context), "CC");
       Monitor::event_Instruction(CC);
-      Value* Z = BBStateMap[BB]->getZFlag();
+      Value* Z = BBStateMap[BB]->getCPSRZFlag();
       Instruction* ZS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getTrue(Context), "ZS");
       Monitor::event_Instruction(ZS);
       Instruction* LS = BinaryOperator::Create(Instruction::Or, CC, ZS, "LS", BB);
@@ -512,25 +512,25 @@ Value* ARMLinearRaiserPass::ARMCCToValue(int Cond, BasicBlock* BB) {
       return LS;
     } break;
     case ARMCC::GE: { // N = V
-      Value* N = BBStateMap[BB]->getNFlag();
-      Value* V = BBStateMap[BB]->getVFlag();
+      Value* N = BBStateMap[BB]->getCPSRNFlag();
+      Value* V = BBStateMap[BB]->getCPSRVFlag();
       Instruction* GE = new ICmpInst(*BB, ICmpInst::ICMP_EQ, N, V, "GE");
       Monitor::event_Instruction(GE);
       return GE;
     } break;
     case ARMCC::LT: { // N != V
-      Value* N = BBStateMap[BB]->getNFlag();
-      Value* V = BBStateMap[BB]->getVFlag();
+      Value* N = BBStateMap[BB]->getCPSRNFlag();
+      Value* V = BBStateMap[BB]->getCPSRVFlag();
       Instruction* LT = new ICmpInst(*BB, ICmpInst::ICMP_NE, N, V, "LT");
       Monitor::event_Instruction(LT);
       return LT;
     } break;
     case ARMCC::GT: { // Z = 0 && N = V
-      Value* Z = BBStateMap[BB]->getZFlag();
+      Value* Z = BBStateMap[BB]->getCPSRZFlag();
       Instruction* ZC = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getFalse(Context), "ZC");
       Monitor::event_Instruction(ZC);
-      Value* N = BBStateMap[BB]->getNFlag();
-      Value* V = BBStateMap[BB]->getVFlag();
+      Value* N = BBStateMap[BB]->getCPSRNFlag();
+      Value* V = BBStateMap[BB]->getCPSRVFlag();
       Instruction* Sign = new ICmpInst(*BB, ICmpInst::ICMP_EQ, N, V, "S");
       Monitor::event_Instruction(Sign);
       Instruction* GT = BinaryOperator::Create(Instruction::And, ZC, Sign, "GT", BB);
@@ -538,11 +538,11 @@ Value* ARMLinearRaiserPass::ARMCCToValue(int Cond, BasicBlock* BB) {
       return GT;
     } break;
     case ARMCC::LE: { // Z = 1 || N != V
-      Value* Z = BBStateMap[BB]->getZFlag();
+      Value* Z = BBStateMap[BB]->getCPSRZFlag();
       Instruction* ZS = new ICmpInst(*BB, ICmpInst::ICMP_EQ, Z, ConstantInt::getTrue(Context), "ZS");
       Monitor::event_Instruction(ZS);
-      Value* N = BBStateMap[BB]->getNFlag();
-      Value* V = BBStateMap[BB]->getVFlag();
+      Value* N = BBStateMap[BB]->getCPSRNFlag();
+      Value* V = BBStateMap[BB]->getCPSRVFlag();
       Instruction* Sign = new ICmpInst(*BB, ICmpInst::ICMP_NE, N, V, "S");
       Monitor::event_Instruction(Sign);
       Instruction* LE = BinaryOperator::Create(Instruction::Or, ZS, Sign, "LE", BB);
@@ -630,6 +630,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::VABSD:         raiseVABSD(MI);         break; // 2026 | VABS.F64 Dd Dm CC CPSR
     case ARM::VADDD:         raiseVADDD(MI);         break; // 2047 | VADD.F64 Dd Dn Dm CC CPSR
     case ARM::VADDS:         raiseVADDS(MI);         break; // 2058 | VADD.F32 Sd Sn Sm CC CPSR
+    case ARM::VCMPD:         raiseVCMPD(MI);         break; // 2213 | VCMP.F64 Dd Dm CC CPSR
     case ARM::VDIVD:         raiseVDIVD(MI);         break; // 2327 | VDIV.F64 Dd Dn Dm CC CPSR
     case ARM::VLDMDIA_UPD:   raiseVLDMDIA_UPD(MI);   break; // 2778 | VLDM.F64 Rt! {Rwb} CC CPSR Dn
     case ARM::VLDRD:         raiseVLDRD(MI);         break; // 2783 | VLDR.F64 Dd Rn Imm/4 CC CPSR
@@ -700,12 +701,12 @@ bool ARMLinearRaiserPass::raiseADDri(MachineInstr* MI) { // 684 | ADD Rd Rn Op2 
     // Negative flag
     Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "ADDSNeg", BB);
     Monitor::event_Instruction(CmpNeg);
-    BBStateMap[BB]->setNFlag(CmpNeg);
+    BBStateMap[BB]->setCPSRNFlag(CmpNeg);
 
     // Zero flag
     Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "ADDSZero", BB);
     Monitor::event_Instruction(CmpZero);
-    BBStateMap[BB]->setZFlag(CmpZero);
+    BBStateMap[BB]->setCPSRZFlag(CmpZero);
 
     // Carry flag
     Function* UAdd = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::uadd_with_overflow, Type::getInt32Ty(Context));
@@ -713,7 +714,7 @@ bool ARMLinearRaiserPass::raiseADDri(MachineInstr* MI) { // 684 | ADD Rd Rn Op2 
     Monitor::event_Instruction(CallUAdd);
     Instruction* C_Flag = ExtractValueInst::Create(CallUAdd, 1, "ADDSCFlag", BB);
     Monitor::event_Instruction(C_Flag);
-    BBStateMap[BB]->setCFlag(C_Flag);
+    BBStateMap[BB]->setCPSRCFlag(C_Flag);
 
     // Overflow flag
     Function* SAdd = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::sadd_with_overflow, Type::getInt32Ty(Context));
@@ -721,7 +722,7 @@ bool ARMLinearRaiserPass::raiseADDri(MachineInstr* MI) { // 684 | ADD Rd Rn Op2 
     Monitor::event_Instruction(CallSAdd);
     Instruction* V_Flag = ExtractValueInst::Create(CallSAdd, 1, "ADDSVFlag", BB);
     Monitor::event_Instruction(V_Flag);
-    BBStateMap[BB]->setVFlag(V_Flag);
+    BBStateMap[BB]->setCPSRVFlag(V_Flag);
   }
 
   setRegValue(Rd, Result, BB);
@@ -766,12 +767,12 @@ bool ARMLinearRaiserPass::raiseADDrr(MachineInstr* MI) { // 685 | ADD Rd Rn Rm C
     // Negative flag
     Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "ADDSNeg", BB);
     Monitor::event_Instruction(CmpNeg);
-    BBStateMap[BB]->setNFlag(CmpNeg);
+    BBStateMap[BB]->setCPSRNFlag(CmpNeg);
 
     // Zero flag
     Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "ADDSZero", BB);
     Monitor::event_Instruction(CmpZero);
-    BBStateMap[BB]->setZFlag(CmpZero);
+    BBStateMap[BB]->setCPSRZFlag(CmpZero);
 
     // Carry flag
     Function* UAdd = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::uadd_with_overflow, Type::getInt32Ty(Context));
@@ -779,7 +780,7 @@ bool ARMLinearRaiserPass::raiseADDrr(MachineInstr* MI) { // 685 | ADD Rd Rn Rm C
     Monitor::event_Instruction(CallUAdd);
     Instruction* C_Flag = ExtractValueInst::Create(CallUAdd, 1, "ADDSCFlag", BB);
     Monitor::event_Instruction(C_Flag);
-    BBStateMap[BB]->setCFlag(C_Flag);
+    BBStateMap[BB]->setCPSRCFlag(C_Flag);
 
     // Overflow flag
     Function* SAdd = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::sadd_with_overflow, Type::getInt32Ty(Context));
@@ -787,7 +788,7 @@ bool ARMLinearRaiserPass::raiseADDrr(MachineInstr* MI) { // 685 | ADD Rd Rn Rm C
     Monitor::event_Instruction(CallSAdd);
     Instruction* V_Flag = ExtractValueInst::Create(CallSAdd, 1, "ADDSVFlag", BB);
     Monitor::event_Instruction(V_Flag);
-    BBStateMap[BB]->setVFlag(V_Flag);
+    BBStateMap[BB]->setCPSRVFlag(V_Flag);
   }
 
   setRegValue(Rd, Result, BB);
@@ -876,12 +877,12 @@ bool ARMLinearRaiserPass::raiseANDri(MachineInstr* MI) { // 693 | AND Rd Rn Op2 
     // Negative flag
     Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "ANDSNeg", BB);
     Monitor::event_Instruction(CmpNeg);
-    BBStateMap[BB]->setNFlag(CmpNeg);
+    BBStateMap[BB]->setCPSRNFlag(CmpNeg);
 
     // Zero flag
     Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "ANDSZero", BB);
     Monitor::event_Instruction(CmpZero);
-    BBStateMap[BB]->setZFlag(CmpZero);
+    BBStateMap[BB]->setCPSRZFlag(CmpZero);
 
     // Carry flag update cant occur for constant Op2
     // Overflow flag is not updated
@@ -1389,12 +1390,12 @@ bool ARMLinearRaiserPass::raiseCMNri(MachineInstr* MI) { // 755 | CMN Rn Op2 CC 
   // Negative flag
   Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, RnVal, NImmVal, "CMNriNeg", BB);
   Monitor::event_Instruction(CmpNeg);
-  BBStateMap[BB]->setNFlag(CmpNeg);
+  BBStateMap[BB]->setCPSRNFlag(CmpNeg);
 
   // Zero flag
   Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, RnVal, NImmVal, "CMNriZero", BB);
   Monitor::event_Instruction(CmpZero);
-  BBStateMap[BB]->setZFlag(CmpZero);
+  BBStateMap[BB]->setCPSRZFlag(CmpZero);
 
   // Carry flag
   Function* UAdd = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::uadd_with_overflow, Type::getInt32Ty(Context));
@@ -1402,7 +1403,7 @@ bool ARMLinearRaiserPass::raiseCMNri(MachineInstr* MI) { // 755 | CMN Rn Op2 CC 
   Monitor::event_Instruction(CallUAdd);
   Instruction* C_Flag = ExtractValueInst::Create(CallUAdd, 1, "CMNCFlag", BB);
   Monitor::event_Instruction(C_Flag);
-  BBStateMap[BB]->setCFlag(C_Flag);
+  BBStateMap[BB]->setCPSRCFlag(C_Flag);
 
   // Overflow flag
   Function* SAdd = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::sadd_with_overflow, Type::getInt32Ty(Context));
@@ -1410,7 +1411,7 @@ bool ARMLinearRaiserPass::raiseCMNri(MachineInstr* MI) { // 755 | CMN Rn Op2 CC 
   Monitor::event_Instruction(CallSAdd);
   Instruction* V_Flag = ExtractValueInst::Create(CallSAdd, 1, "CMNVFlag", BB);
   Monitor::event_Instruction(V_Flag);
-  BBStateMap[BB]->setVFlag(V_Flag);
+  BBStateMap[BB]->setCPSRVFlag(V_Flag);
 
   return true;
 }
@@ -1444,12 +1445,12 @@ bool ARMLinearRaiserPass::raiseCMPri(MachineInstr* MI) { // 759 | CMP Rn Op2 CC 
   // Negative flag
   Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, RnVal, ImmVal, "CMPriNeg", BB);
   Monitor::event_Instruction(CmpNeg);
-  BBStateMap[BB]->setNFlag(CmpNeg);
+  BBStateMap[BB]->setCPSRNFlag(CmpNeg);
 
   // Zero flag
   Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, RnVal, ImmVal, "CMPriZero", BB);
   Monitor::event_Instruction(CmpZero);
-  BBStateMap[BB]->setZFlag(CmpZero);
+  BBStateMap[BB]->setCPSRZFlag(CmpZero);
 
   // Carry flag
   //Instruction* CmpCarry = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SGT, Rn, imm, "CMPriCarry", BB); Monitor::event_Instruction(CmpCarry);
@@ -1458,7 +1459,7 @@ bool ARMLinearRaiserPass::raiseCMPri(MachineInstr* MI) { // 759 | CMP Rn Op2 CC 
   Monitor::event_Instruction(CallUSub);
   Instruction* C_Flag = ExtractValueInst::Create(CallUSub, 1, "CMPriCFlag", BB);
   Monitor::event_Instruction(C_Flag);
-  BBStateMap[BB]->setCFlag(C_Flag);
+  BBStateMap[BB]->setCPSRCFlag(C_Flag);
 
   // Overflow flag
   //Instruction* CmpOverflow = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_UGT, Rn, imm, "CMPriOverflow", BB); Monitor::event_Instruction(CmpOverflow);
@@ -1467,7 +1468,7 @@ bool ARMLinearRaiserPass::raiseCMPri(MachineInstr* MI) { // 759 | CMP Rn Op2 CC 
   Monitor::event_Instruction(CallSSub);
   Instruction* V_Flag = ExtractValueInst::Create(CallSSub, 1, "CMPriVFlag", BB);
   Monitor::event_Instruction(V_Flag);
-  BBStateMap[BB]->setVFlag(V_Flag);
+  BBStateMap[BB]->setCPSRVFlag(V_Flag);
 
   if (conditional_execution) {
     Instruction* MergeIf = BranchInst::Create(MergeBB, BB);
@@ -1501,12 +1502,12 @@ bool ARMLinearRaiserPass::raiseCMPrr(MachineInstr* MI) { // 760 | CMP Rn Rm CC C
   // Negative flag
   Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, RnVal, RmVal, "CMPrrNeg", BB);
   Monitor::event_Instruction(CmpNeg);
-  BBStateMap[BB]->setNFlag(CmpNeg);
+  BBStateMap[BB]->setCPSRNFlag(CmpNeg);
 
   // Zero flag
   Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, RnVal, RmVal, "CMPrrZero", BB);
   Monitor::event_Instruction(CmpZero);
-  BBStateMap[BB]->setZFlag(CmpZero);
+  BBStateMap[BB]->setCPSRZFlag(CmpZero);
 
   // Carry flag
   Function* USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Type::getInt32Ty(Context));
@@ -1514,7 +1515,7 @@ bool ARMLinearRaiserPass::raiseCMPrr(MachineInstr* MI) { // 760 | CMP Rn Rm CC C
   Monitor::event_Instruction(CallUSub);
   Instruction* C_Flag = ExtractValueInst::Create(CallUSub, 1, "CMPrrCFlag", BB);
   Monitor::event_Instruction(C_Flag);
-  BBStateMap[BB]->setCFlag(C_Flag);
+  BBStateMap[BB]->setCPSRCFlag(C_Flag);
 
   // Overflow flag
   Function* SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Type::getInt32Ty(Context));
@@ -1522,7 +1523,7 @@ bool ARMLinearRaiserPass::raiseCMPrr(MachineInstr* MI) { // 760 | CMP Rn Rm CC C
   Monitor::event_Instruction(CallSSub);
   Instruction* V_Flag = ExtractValueInst::Create(CallSSub, 1, "CMPrrVFlag", BB);
   Monitor::event_Instruction(V_Flag);
-  BBStateMap[BB]->setVFlag(V_Flag);
+  BBStateMap[BB]->setCPSRVFlag(V_Flag);
 
   if (conditional_execution) {
     Instruction* MergeIf = BranchInst::Create(MergeBB, BB);
@@ -2167,12 +2168,12 @@ bool ARMLinearRaiserPass::raiseMUL(MachineInstr* MI) { // 888 | MUL Rd Rn Rm CC 
     // Negative flag
     Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "CmpNeg", BB);
     Monitor::event_Instruction(CmpNeg);
-    BBStateMap[BB]->setNFlag(CmpNeg);
+    BBStateMap[BB]->setCPSRNFlag(CmpNeg);
 
     // Zero flag
     Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "CMPriZero", BB);
     Monitor::event_Instruction(CmpZero);
-    BBStateMap[BB]->setZFlag(CmpZero);
+    BBStateMap[BB]->setCPSRZFlag(CmpZero);
 
     // Carry flag and Overflow flag are corrupted in ARMv4, unaffected in ARMv5T and above
   }
@@ -2242,12 +2243,12 @@ bool ARMLinearRaiserPass::raiseORRri(MachineInstr* MI) { // 1748 | ORR Rd Rn Op2
     // Negative flag
     Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "ORRSNeg", BB);
     Monitor::event_Instruction(CmpNeg);
-    BBStateMap[BB]->setNFlag(CmpNeg);
+    BBStateMap[BB]->setCPSRNFlag(CmpNeg);
 
     // Zero flag
     Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "ORRSZero", BB);
     Monitor::event_Instruction(CmpZero);
-    BBStateMap[BB]->setZFlag(CmpZero);
+    BBStateMap[BB]->setCPSRZFlag(CmpZero);
 
     // Carry flag update cant occur for constant Op2
     // Overflow flag is not updated
@@ -2295,12 +2296,12 @@ bool ARMLinearRaiserPass::raiseORRrr(MachineInstr* MI) { // 1749 | ORR Rd Rn Rm 
     // Negative flag
     Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "ORRSNeg", BB);
     Monitor::event_Instruction(CmpNeg);
-    BBStateMap[BB]->setNFlag(CmpNeg);
+    BBStateMap[BB]->setCPSRNFlag(CmpNeg);
 
     // Zero flag
     Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "ORRSZero", BB);
     Monitor::event_Instruction(CmpZero);
-    BBStateMap[BB]->setZFlag(CmpZero);
+    BBStateMap[BB]->setCPSRZFlag(CmpZero);
 
     // Carry flag update cant occur for direct register Op2
     // Overflow flag is not updated
@@ -2616,12 +2617,12 @@ bool ARMLinearRaiserPass::raiseSUBri(MachineInstr* MI) { // 1928 | SUB Rd Rn Op2
     // Negative flag
     Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, RnVal, ImmVal, "SUBSriNeg", BB);
     Monitor::event_Instruction(CmpNeg);
-    BBStateMap[BB]->setNFlag(CmpNeg);
+    BBStateMap[BB]->setCPSRNFlag(CmpNeg);
 
     // Zero flag
     Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, RnVal, ImmVal, "SUBSriZero", BB);
     Monitor::event_Instruction(CmpZero);
-    BBStateMap[BB]->setZFlag(CmpZero);
+    BBStateMap[BB]->setCPSRZFlag(CmpZero);
 
     // Carry flag
     Function* USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Type::getInt32Ty(Context));
@@ -2629,7 +2630,7 @@ bool ARMLinearRaiserPass::raiseSUBri(MachineInstr* MI) { // 1928 | SUB Rd Rn Op2
     Monitor::event_Instruction(CallUSub);
     Instruction* C_Flag = ExtractValueInst::Create(CallUSub, 1, "SUBSriCFlag", BB);
     Monitor::event_Instruction(C_Flag);
-    BBStateMap[BB]->setCFlag(C_Flag);
+    BBStateMap[BB]->setCPSRCFlag(C_Flag);
 
     // Overflow flag
     Function* SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Type::getInt32Ty(Context));
@@ -2637,7 +2638,7 @@ bool ARMLinearRaiserPass::raiseSUBri(MachineInstr* MI) { // 1928 | SUB Rd Rn Op2
     Monitor::event_Instruction(CallSSub);
     Instruction* V_Flag = ExtractValueInst::Create(CallSSub, 1, "SUBSriVFlag", BB);
     Monitor::event_Instruction(V_Flag);
-    BBStateMap[BB]->setVFlag(V_Flag);
+    BBStateMap[BB]->setCPSRVFlag(V_Flag);
   }
 
   return true;
@@ -2675,12 +2676,12 @@ bool ARMLinearRaiserPass::raiseSUBrr(MachineInstr* MI) { // 1929 | SUB Rd Rn Rm 
     // Negative flag
     Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "SUBSNeg", BB);
     Monitor::event_Instruction(CmpNeg);
-    BBStateMap[BB]->setNFlag(CmpNeg);
+    BBStateMap[BB]->setCPSRNFlag(CmpNeg);
 
     // Zero flag
     Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "SUBSZero", BB);
     Monitor::event_Instruction(CmpZero);
-    BBStateMap[BB]->setZFlag(CmpZero);
+    BBStateMap[BB]->setCPSRZFlag(CmpZero);
 
     // Carry flag
     Function* USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Type::getInt32Ty(Context));
@@ -2688,7 +2689,7 @@ bool ARMLinearRaiserPass::raiseSUBrr(MachineInstr* MI) { // 1929 | SUB Rd Rn Rm 
     Monitor::event_Instruction(CallUSub);
     Instruction* C_Flag = ExtractValueInst::Create(CallUSub, 1, "SUBSCFlag", BB);
     Monitor::event_Instruction(C_Flag);
-    BBStateMap[BB]->setCFlag(C_Flag);
+    BBStateMap[BB]->setCPSRCFlag(C_Flag);
 
     // Overflow flag
     Function* SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Type::getInt32Ty(Context));
@@ -2696,7 +2697,7 @@ bool ARMLinearRaiserPass::raiseSUBrr(MachineInstr* MI) { // 1929 | SUB Rd Rn Rm 
     Monitor::event_Instruction(CallSSub);
     Instruction* V_Flag = ExtractValueInst::Create(CallSSub, 1, "SUBSVFlag", BB);
     Monitor::event_Instruction(V_Flag);
-    BBStateMap[BB]->setVFlag(V_Flag);
+    BBStateMap[BB]->setCPSRVFlag(V_Flag);
   }
 
   setRegValue(Rd, Result, BB);
@@ -2819,6 +2820,37 @@ bool ARMLinearRaiserPass::raiseVADDS(MachineInstr* MI) { // 2058 | VADD.F32 Sd S
   Monitor::event_Instruction(Result);
 
   setRegValue(Sd, Result, BB);
+
+  return true;
+}
+bool ARMLinearRaiserPass::raiseVCMPD(MachineInstr* MI) { // 2213 | VCMP.F64 Dd Dm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Dd = MI->getOperand(0).getReg();
+  Register Dm = MI->getOperand(1).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
+  Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  assert(!conditional_execution && "VCMPD: assuming no flags for now");
+
+  Value* DdVal = getRegValue(Dd, Type::getDoubleTy(Context), BB);
+  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+
+  // TODO: Handle NaN
+
+  Instruction* CmpLT = CmpInst::Create(Instruction::FCmp, CmpInst::FCMP_OLT, DdVal, DmVal, "VCMPDCmp", BB);
+  Monitor::event_Instruction(CmpLT);
+  BBStateMap[BB]->setFPSCRNFlag(CmpLT);
+
+  Instruction* CmpEQ = CmpInst::Create(Instruction::FCmp, CmpInst::FCMP_OEQ, DdVal, DmVal, "VCMPDCmp", BB);
+  Monitor::event_Instruction(CmpEQ);
+  BBStateMap[BB]->setFPSCRZFlag(CmpEQ);
+
+  Instruction* CmpGE = CmpInst::Create(Instruction::FCmp, CmpInst::FCMP_OGE, DdVal, DmVal, "VCMPDCmp", BB);
+  Monitor::event_Instruction(CmpGE);
+  BBStateMap[BB]->setFPSCRCFlag(CmpGE);
 
   return true;
 }

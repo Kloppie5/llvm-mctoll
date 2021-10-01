@@ -43,21 +43,16 @@ public:
         changed = true;
       }
     }
-    if (P_N_Flag && P_N_Flag->getBasicBlockIndex(PBB) == -1) {
-      P_N_Flag->addIncoming(PState->getNFlag(), PBB);
-      changed = true;
-    }
-    if (P_Z_Flag && P_Z_Flag->getBasicBlockIndex(PBB) == -1) {
-      P_Z_Flag->addIncoming(PState->getZFlag(), PBB);
-      changed = true;
-    }
-    if (P_C_Flag && P_C_Flag->getBasicBlockIndex(PBB) == -1) {
-      P_C_Flag->addIncoming(PState->getCFlag(), PBB);
-      changed = true;
-    }
-    if (P_V_Flag && P_V_Flag->getBasicBlockIndex(PBB) == -1) {
-      P_V_Flag->addIncoming(PState->getVFlag(), PBB);
-      changed = true;
+    for (std::pair<StateFlag, PHINode*> FlagPHIPair : P_FlagValueMap) {
+      StateFlag flag = FlagPHIPair.first;
+      PHINode* phi = FlagPHIPair.second;
+
+      if (phi->getBasicBlockIndex(PBB) == -1) {
+        Value* V = PState->getFlagValue(flag);
+        {auto &OS=Monitor::event_raw(); OS << "Adding to flag " << flag << ", type "; phi->getType()->print(OS); OS << " <= "; V->getType()->print(OS); OS << "\n";}
+        phi->addIncoming(V, PBB);
+        changed = true;
+      }
     }
     return changed;
   }
@@ -84,98 +79,65 @@ public:
     return V;
   }
 
-  /*-+- N Flag -+-*/
-  PHINode* P_N_Flag = nullptr;
-  Value* Q_N_Flag = nullptr;
-  void setNFlag(Value *V) {
-    assert(V->getType() == Type::getInt1Ty(BB->getContext()) && "N flag must be of type i1");
-    Q_N_Flag = V;
+  /*-+- StateFlagMap -+-*/
+  enum StateFlag {
+    // Current Program State Register
+    INVALID = 0,
+    CPSR_N_Flag,
+    CPSR_Z_Flag,
+    CPSR_C_Flag,
+    CPSR_V_Flag,
+
+    // Floating-Point Status and Control Register
+    FPSCR_N_Flag,
+    FPSCR_Z_Flag,
+    FPSCR_C_Flag,
+    FPSCR_V_Flag,
+
+  };
+  std::map<StateFlag, PHINode*> P_FlagValueMap;
+  std::map<StateFlag, Value*> Q_FlagValueMap;
+
+  void setFlagValue(StateFlag Flag, Value *V) {
+    assert(V->getType() == Type::getInt1Ty(BB->getContext()) && "flag must be of type i1");
+    Q_FlagValueMap[Flag] = V;
   }
-  Value* getNFlag() {
-    Value* V = Q_N_Flag;
+  Value* getFlagValue(StateFlag Flag) {
+    Value* V = Q_FlagValueMap[Flag];
     if (V == nullptr) {
-      Monitor::event_raw() << "Creating PHI node for N in BB " << BB->getName() << "\n";
+      Monitor::event_raw() << "Creating PHI node for " << Flag << " in BB " << BB->getName() << "\n";
       PHINode *phi;
       if (BB->size() == 0)
-        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "N.phi", BB);
+        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, Twine(Flag) + ".phi", BB);
       else
-        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "N.phi", &*BB->begin());
-      P_N_Flag = phi;
+        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, Twine(Flag) + ".phi", &*BB->begin());
+      P_FlagValueMap[Flag] = phi;
       V = phi;
-      Q_N_Flag = V;
+      Q_FlagValueMap[Flag] = V;
     }
     return V;
   }
 
-  /*-+- Z Flag -+-*/
-  PHINode* P_Z_Flag = nullptr;
-  Value* Q_Z_Flag = nullptr;
-  void setZFlag(Value *V) {
-    assert(V->getType() == Type::getInt1Ty(BB->getContext()) && "Z flag must be of type i1");
-    Q_Z_Flag = V;
-  }
-  Value* getZFlag() {
-    Value* V = Q_Z_Flag;
-    if (V == nullptr) {
-      Monitor::event_raw() << "Creating PHI node for Z in BB " << BB->getName() << "\n";
-      PHINode *phi;
-      if (BB->size() == 0)
-        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "Z.phi", BB);
-      else
-        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "Z.phi", &*BB->begin());
-      P_Z_Flag = phi;
-      V = phi;
-      Q_Z_Flag = V;
-    }
-    return V;
-  }
+  // Could all be inlined in the linear raiser pass, but maybe leave the
+  // internal logic of how flags are handled within this class.
 
-  /*-+- C Flag -+-*/
-  PHINode* P_C_Flag = nullptr;
-  Value* Q_C_Flag = nullptr;
-  void setCFlag(Value *V) {
-    assert(V->getType() == Type::getInt1Ty(BB->getContext()) && "C flag must be of type i1");
-    Q_C_Flag = V;
-  }
-  Value* getCFlag() {
-    Value* V = Q_C_Flag;
-    if (V == nullptr) {
-      Monitor::event_raw() << "Creating PHI node for C in BB " << BB->getName() << "\n";
-      PHINode *phi;
-      if (BB->size() == 0)
-        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "C.phi", BB);
-      else
-        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "C.phi", &*BB->begin());
-      P_C_Flag = phi;
-      V = phi;
-      Q_C_Flag = V;
-    }
-    return V;
-  }
+  void setCPSRNFlag(Value *V) { setFlagValue(CPSR_N_Flag, V); }
+  Value* getCPSRNFlag() { return getFlagValue(CPSR_N_Flag); }
+  void setCPSRZFlag(Value *V) { setFlagValue(CPSR_Z_Flag, V); }
+  Value* getCPSRZFlag() { return getFlagValue(CPSR_Z_Flag); }
+  void setCPSRCFlag(Value *V) { setFlagValue(CPSR_C_Flag, V); }
+  Value* getCPSRCFlag() { return getFlagValue(CPSR_C_Flag); }
+  void setCPSRVFlag(Value *V) { setFlagValue(CPSR_V_Flag, V); }
+  Value* getCPSRVFlag() { return getFlagValue(CPSR_V_Flag); }
 
-  /*-+- V Flag -+-*/
-  PHINode* P_V_Flag = nullptr;
-  Value* Q_V_Flag = nullptr;
-  void setVFlag(Value *V) {
-    assert(V->getType() == Type::getInt1Ty(BB->getContext()) && "V flag must be of type i1");
-    Q_V_Flag = V;
-  }
-  Value* getVFlag() {
-    Value* V = Q_V_Flag;
-    if (V == nullptr) {
-      Monitor::event_raw() << "Creating PHI node for V in BB " << BB->getName() << "\n";
-      PHINode *phi;
-      if (BB->size() == 0)
-        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "V.phi", BB);
-      else
-        phi = PHINode::Create(Type::getInt1Ty(BB->getContext()), 0, "V.phi", &*BB->begin());
-      P_V_Flag = phi;
-      V = phi;
-      Q_V_Flag = V;
-    }
-    return V;
-  }
-
+  void setFPSCRNFlag(Value *V) { setFlagValue(FPSCR_N_Flag, V); }
+  Value* getFPSCRNFlag() { return getFlagValue(FPSCR_N_Flag); }
+  void setFPSCRZFlag(Value *V) { setFlagValue(FPSCR_Z_Flag, V); }
+  Value* getFPSCRZFlag() { return getFlagValue(FPSCR_Z_Flag); }
+  void setFPSCRCFlag(Value *V) { setFlagValue(FPSCR_C_Flag, V); }
+  Value* getFPSCRCFlag() { return getFlagValue(FPSCR_C_Flag); }
+  void setFPSCRVFlag(Value *V) { setFlagValue(FPSCR_V_Flag, V); }
+  Value* getFPSCRVFlag() { return getFlagValue(FPSCR_V_Flag); }
 };
 
 #endif // LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMBASICBLOCKSTATE_H
