@@ -798,6 +798,7 @@ bool ARMLinearRaiserPass::raiseADDrr(MachineInstr* MI) { // 685 | ADD Rd Rn Rm C
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
     Monitor::event_Instruction(Branch);
   }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseADDrsi(MachineInstr* MI) { // 686 | ADD Rd Rn Rm Shift CC CPSR S
@@ -808,15 +809,25 @@ bool ARMLinearRaiserPass::raiseADDrsi(MachineInstr* MI) { // 686 | ADD Rd Rn Rm 
   Register Rn = MI->getOperand(1).getReg();
   Register Rm = MI->getOperand(2).getReg();
   int64_t Shift = MI->getOperand(3).getImm();
-  int64_t CC = MI->getOperand(4).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(4).getImm();
   Register CPSR = MI->getOperand(5).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register S = MI->getOperand(6).getReg();
+  bool update_flags = (S != 0);
+
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   assert(
-    CC == 14 &&
-    CPSR == 0 &&
     S == 0 &&
-    "ADDrsi: assuming no flags for now"
+    "ADDrsi: assuming no S flag for now"
   );
 
   int64_t ShiftAmount = Shift >> 3;
@@ -839,6 +850,11 @@ bool ARMLinearRaiserPass::raiseADDrsi(MachineInstr* MI) { // 686 | ADD Rd Rn Rm 
   Instruction* Instr = BinaryOperator::Create(Instruction::Add, RnVal, ShiftInstr, "ADDrsi", BB);
   Monitor::event_Instruction(Instr);
   setRegValue(Rd, Instr, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -948,7 +964,15 @@ bool ARMLinearRaiserPass::raiseBFC(MachineInstr* MI) { //  704 | BFC Rd {Rwb} Im
   Register CPSR = MI->getOperand(4).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "BFC: conditional execution not implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* RdVal = getRegValue(Rd, Type::getInt32Ty(Context), BB);
   // Instead of the lsb and width, llvm saves the expanded form
@@ -958,6 +982,11 @@ bool ARMLinearRaiserPass::raiseBFC(MachineInstr* MI) { //  704 | BFC Rd {Rwb} Im
   Monitor::event_Instruction(Result);
 
   setRegValue(Rd, Result, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -971,15 +1000,25 @@ bool ARMLinearRaiserPass::raiseBICri(MachineInstr* MI) { // 706 | BIC Rd Rn Op2 
   unsigned Bits = Op2 & 0xFF;
   unsigned Rot = (Op2 & 0xF00) >> 7;
   int64_t Imm = static_cast<int64_t>(ARM_AM::rotr32(Bits, Rot));
-  int64_t CC = MI->getOperand(3).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
   Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register S = MI->getOperand(5).getReg();
+  bool update_flags = (S != 0);
+
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   assert(
-    CC == 14 &&
-    CPSR == 0 &&
     S == 0 &&
-    "you know"
+    "something something S flag"
   );
 
   Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
@@ -987,6 +1026,12 @@ bool ARMLinearRaiserPass::raiseBICri(MachineInstr* MI) { // 706 | BIC Rd Rn Op2 
   Instruction* Instr = BinaryOperator::Create(Instruction::And, RnVal, ImmVal, "BICri", BB);
   Monitor::event_Instruction(Instr);
   setRegValue(Rd, Instr, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseBL(MachineInstr* MI) { // 711 | BL Imm
@@ -1153,14 +1198,19 @@ bool ARMLinearRaiserPass::raiseBX_RET(MachineInstr* MI) { // 718 | BX_RET CC CPS
   MachineBasicBlock* MBB = MI->getParent();
   BasicBlock* BB = getBasicBlocks(MBB).back();
 
-  int64_t CC = MI->getOperand(0).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(0).getImm();
   Register CPSR = MI->getOperand(1).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "BX_RET: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Type* RetTy = F->getReturnType();
 
@@ -1171,6 +1221,12 @@ bool ARMLinearRaiserPass::raiseBX_RET(MachineInstr* MI) { // 718 | BX_RET CC CPS
     Instruction* Instr = ReturnInst::Create(Context, getRegValue(ARM::R0, Type::getInt32Ty(Context), BB), BB);
     Monitor::event_Instruction(Instr);
   }
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseBcc(MachineInstr* MI) { // 720 | Bcc offset CC CPSR
@@ -1374,14 +1430,19 @@ bool ARMLinearRaiserPass::raiseCMNri(MachineInstr* MI) { // 755 | CMN Rn Op2 CC 
   unsigned Bits = Op2 & 0xFF;
   unsigned Rot = (Op2 & 0xF00) >> 7;
   int64_t Imm = static_cast<int64_t>(ARM_AM::rotr32(Bits, Rot));
-  int64_t CC = MI->getOperand(2).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
   Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "something something conditional execution"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
   Value* ImmVal = ConstantInt::get(Type::getInt32Ty(Context), Imm);
@@ -1413,6 +1474,11 @@ bool ARMLinearRaiserPass::raiseCMNri(MachineInstr* MI) { // 755 | CMN Rn Op2 CC 
   Instruction* V_Flag = ExtractValueInst::Create(CallSAdd, 1, "CMNVFlag", BB);
   Monitor::event_Instruction(V_Flag);
   BBStateMap[BB]->setCPSRVFlag(V_Flag);
+
+  if (conditional_execution) {
+    Instruction* MergeIf = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(MergeIf);
+  }
 
   return true;
 }
@@ -1597,13 +1663,26 @@ bool ARMLinearRaiserPass::raiseFMSTAT(MachineInstr* MI) { //  786 | FMRX CC CPSR
   Register CPSR = MI->getOperand(1).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "Conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Monitor::event_raw() << "Moving FPSCR flags to CPSR\n";
   BBStateMap[BB]->setCPSRNFlag(BBStateMap[BB]->getFPSCRNFlag());
   BBStateMap[BB]->setCPSRZFlag(BBStateMap[BB]->getFPSCRZFlag());
   BBStateMap[BB]->setCPSRCFlag(BBStateMap[BB]->getFPSCRCFlag());
   BBStateMap[BB]->setCPSRVFlag(BBStateMap[BB]->getFPSCRVFlag());
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -1627,12 +1706,25 @@ bool ARMLinearRaiserPass::raiseFCONSTD(MachineInstr* MI) { // 780 | VMOV.F64 Dd 
   Register CPSR = MI->getOperand(3).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "FCONSTD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* ImmVal = ConstantFP::get(Type::getDoubleTy(Context), F);
   Monitor::event_raw() << "Reg: " << Dd << " <= " << F << "\n";
 
   setRegValue(Dd, ImmVal, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -1652,15 +1744,28 @@ bool ARMLinearRaiserPass::raiseFCONSTS(MachineInstr* MI) { // 782 | VMOV.F32 Sd 
     | ((Exp & 0x3) << 23)
     | (Mantissa << 19)
   );
-  unsigned CC = MI->getOperand(2).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
   Register CPSR = MI->getOperand(3).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "FCONSTS conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* ImmVal = ConstantFP::get(Type::getFloatTy(Context), F);
   Monitor::event_raw() << "Reg: " << Sd << " <= " << F << "\n";
   setRegValue(Sd, ImmVal, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -1670,15 +1775,20 @@ bool ARMLinearRaiserPass::raiseLDMIA_UPD(MachineInstr* MI) { // 822 | LDMIA Rn R
 
   Register Rn = MI->getOperand(0).getReg();
   assert(MI->getOperand(1).getReg() == Rn && "ARM::LDMIA_UPD: expecting doubled Rn");
-  int64_t CC = MI->getOperand(2).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
   Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register Reg = MI->getOperand(4).getReg();
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "ARM::LDMIA_UPD: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   assert(
     Rn == ARM::SP &&
@@ -1691,6 +1801,11 @@ bool ARMLinearRaiserPass::raiseLDMIA_UPD(MachineInstr* MI) { // 822 | LDMIA Rn R
   // Increment SP
   Monitor::event_raw() << "incrementing SP by 4\n";
   BBStateMap[BB]->SP_offset += 4;
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -1705,14 +1820,19 @@ bool ARMLinearRaiserPass::raiseLDRB_PRE_REG(MachineInstr* MI) { // 830 | LDRB_PR
   Register Rm = MI->getOperand(3).getReg();
   int64_t AM2Shift = MI->getOperand(4).getImm();
   assert(AM2Shift == 16384 && "ARM::LDRB_PRE_REG: shift ignored");
-  int64_t CC = MI->getOperand(5).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(5).getImm();
   Register CPSR = MI->getOperand(6).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "ARM::LDRB_PRE_REG: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
   Value* RmVal = getRegValue(Rm, Type::getInt32Ty(Context), BB);
@@ -1731,6 +1851,11 @@ bool ARMLinearRaiserPass::raiseLDRB_PRE_REG(MachineInstr* MI) { // 830 | LDRB_PR
   Monitor::event_Instruction(ZExt);
 
   setRegValue(Rt, ZExt, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -1788,22 +1913,31 @@ bool ARMLinearRaiserPass::raiseLDREX(MachineInstr* MI) { // 836 | LDREX Rt Rn CC
 
   Register Rt = MI->getOperand(0).getReg();
   Register Rn = MI->getOperand(1).getReg();
-  int64_t CC = MI->getOperand(2).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
   Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "LDREX: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* Ptr = getRegValue(Rn, Type::getInt32PtrTy(Context), BB);
 
   Function* LDREX = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::arm_ldrex, {Type::getInt32PtrTy(Context)});
   Instruction* Instr = CallInst::Create(LDREX, { Ptr }, "LDREX", BB);
   Monitor::event_Instruction(Instr);
-
   setRegValue(Rt, Instr, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -1871,9 +2005,17 @@ bool ARMLinearRaiserPass::raiseLDR_POST_IMM(MachineInstr* MI) { // 857 | LDR_POS
   int64_t AM2Shift = MI->getOperand(4).getImm();
   ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(5).getImm();
   Register CPSR = MI->getOperand(6).getReg();
-
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
-  assert(!conditional_execution && "ARM::LDR_POST_IMM: conditional execution not supported");
+
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* Addr = resolveAM2Shift(Rn, Rs, Rm, AM2Shift, BB);
   Instruction* Cast = new IntToPtrInst(Addr, Type::getInt32PtrTy(Context), "LDR_POST_IMMCast", BB);
@@ -1881,6 +2023,11 @@ bool ARMLinearRaiserPass::raiseLDR_POST_IMM(MachineInstr* MI) { // 857 | LDR_POS
   Instruction* Load = new LoadInst(Type::getInt32Ty(Context), Cast, "LDR_POST_IMM", BB);
   Monitor::event_Instruction(Load);
   setRegValue(Rt, Load, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -1891,14 +2038,19 @@ bool ARMLinearRaiserPass::raiseLDRi12(MachineInstr* MI) { // 862 | LDR Rt Rn Imm
   Register Rt = MI->getOperand(0).getReg();
   Register Rn = MI->getOperand(1).getReg();
   int64_t Imm12 = MI->getOperand(2).getImm();
-  int64_t CC = MI->getOperand(3).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
   Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "ARM::LDRi12: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   if (Rn == ARM::PC) { // Load PC-relative GlobalValue
     Value* GV = getGlobalValueByOffset(MCIR->getMCInstIndex(*MI), Imm12 + 8, Type::getInt32Ty(Context));
@@ -1928,8 +2080,12 @@ bool ARMLinearRaiserPass::raiseLDRi12(MachineInstr* MI) { // 862 | LDR Rt Rn Imm
 
   Instruction* Load = new LoadInst(Type::getInt32Ty(Context), Ptr, "LDRi12Load", BB);
   Monitor::event_Instruction(Load);
-
   setRegValue(Rt, Load, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -1941,14 +2097,19 @@ bool ARMLinearRaiserPass::raiseLDRrs(MachineInstr* MI) { // 863 | LDR Rt Rn Rm A
   Register Rn = MI->getOperand(1).getReg();
   Register Rm = MI->getOperand(2).getReg();
   int64_t AM2Shift = MI->getOperand(3).getImm();
-  int64_t CC = MI->getOperand(4).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(4).getImm();
   Register CPSR = MI->getOperand(5).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "ARM::LDRrs: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* Addr = resolveAM2Shift(Rn, 0, Rm, AM2Shift, BB);
   Instruction* Cast = new IntToPtrInst(Addr, Type::getInt32PtrTy(Context), "LDRrsCast", BB);
@@ -1957,6 +2118,11 @@ bool ARMLinearRaiserPass::raiseLDRrs(MachineInstr* MI) { // 863 | LDR Rt Rn Rm A
   Monitor::event_Instruction(Load);
 
   setRegValue(Rt, Load, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -1968,15 +2134,24 @@ bool ARMLinearRaiserPass::raiseMLA(MachineInstr* MI) { // 868 | MLA Rd Rn Rm Ra 
   Register Rn = MI->getOperand(1).getReg();
   Register Rm = MI->getOperand(2).getReg();
   Register Ra = MI->getOperand(3).getReg();
-  int64_t CC = MI->getOperand(4).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(4).getImm();
   Register CPSR = MI->getOperand(5).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register S = MI->getOperand(6).getReg();
 
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
+
   assert(
-    CC == 14 &&
-    CPSR == 0 &&
     S == 0 &&
-    "ARM::MLA: assuming no flags for now"
+    "ARM::MLA: assuming no S flag for now"
   );
 
   Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
@@ -1989,6 +2164,11 @@ bool ARMLinearRaiserPass::raiseMLA(MachineInstr* MI) { // 868 | MLA Rd Rn Rm Ra 
   Monitor::event_Instruction(Add);
   setRegValue(Rd, Add, BB);
 
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseMOVTi16(MachineInstr* MI) { // 871 |  Rd Rd Imm16 CC CPSR
@@ -1998,14 +2178,19 @@ bool ARMLinearRaiserPass::raiseMOVTi16(MachineInstr* MI) { // 871 |  Rd Rd Imm16
   Register Rd = MI->getOperand(0).getReg();
   assert(MI->getOperand(1).getReg() == Rd && "ARM::MOVTi16: expecting doubled Rd entry");
   int64_t Imm16 = MI->getOperand(2).getImm();
-  int64_t CC = MI->getOperand(3).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
   Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "ARM::MOVTi16: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* Val = getRegValue(Rd, Type::getInt32Ty(Context), BB);
 
@@ -2023,6 +2208,11 @@ bool ARMLinearRaiserPass::raiseMOVTi16(MachineInstr* MI) { // 871 |  Rd Rd Imm16
 
   assert(Val->getType() == Type::getInt32Ty(Context) && "ARM::MOVTi16: expecting output type to be Ty32");
   setRegValue(Rd, Val, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2071,16 +2261,26 @@ bool ARMLinearRaiserPass::raiseMOVi16(MachineInstr* MI) { // 873 | MOV Rd Imm16 
 
   Register Rd = MI->getOperand(0).getReg();
   int64_t Imm16 = MI->getOperand(1).getImm();
-  int64_t CC = MI->getOperand(2).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
   Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "ARM::MOVi16: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   setRegValue(Rd, ConstantInt::get(Type::getInt32Ty(Context), Imm16), BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2090,14 +2290,19 @@ bool ARMLinearRaiserPass::raiseMOVr(MachineInstr* MI) { // 874 | MOV Rd Rn CC CP
 
   Register Rd = MI->getOperand(0).getReg();
   Register Rn = MI->getOperand(1).getReg();
-  int64_t CC = MI->getOperand(2).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
   Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "ARM::MOVr: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   if (Rd == ARM::R11 && Rn == ARM::SP) {
     BBStateMap[BB]->FP_offset = BBStateMap[BB]->SP_offset;
@@ -2112,8 +2317,13 @@ bool ARMLinearRaiserPass::raiseMOVr(MachineInstr* MI) { // 874 | MOV Rd Rn CC CP
   }
 
   Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
-  setRegValue(Rd, RnVal, BB);
   Monitor::event_raw() << "Reg " << Rd << " <= " << Rn << "\n";
+  setRegValue(Rd, RnVal, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2124,15 +2334,24 @@ bool ARMLinearRaiserPass::raiseMOVsi(MachineInstr* MI) { // 876 | MOV Rd Rm Shif
   Register Rd = MI->getOperand(0).getReg();
   Register Rm = MI->getOperand(1).getReg();
   int64_t Shift = MI->getOperand(2).getImm();
-  int64_t CC = MI->getOperand(3).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
   Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register S = MI->getOperand(5).getReg();
 
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
+
   assert(
-    CC == 14 &&
-    CPSR == 0 &&
     S == 0 &&
-    "ARM::MOVsi: assuming no flags for now"
+    "ARM::MOVsi: assuming no S flag for now"
   );
 
   int64_t ShiftAmount = Shift >> 3;
@@ -2152,6 +2371,11 @@ bool ARMLinearRaiserPass::raiseMOVsi(MachineInstr* MI) { // 876 | MOV Rd Rm Shif
   Instruction* ShiftInstr = BinaryOperator::Create(ShiftOp, RmVal, ConstantInt::get(Type::getInt32Ty(Context), ShiftAmount), "MOVsiShift", BB);
   Monitor::event_Instruction(ShiftInstr);
   setRegValue(Rd, ShiftInstr, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2218,12 +2442,26 @@ bool ARMLinearRaiserPass::raiseMVNi(MachineInstr* MI) { // 1736 | Rd Imm CC CPSR
   Register S = MI->getOperand(4).getReg();
   bool update_flags = (S != 0);
 
-  assert(!conditional_execution && "MVNi: conditional execution not supported");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
+
   assert(!update_flags && "MVNi: assuming no flags for now");
 
   Value* ImmVal = ConstantInt::get(Type::getInt32Ty(Context), ~Imm);
   Monitor::event_raw() << "Reg: " << Rd << " <= " << ~Imm << "\n";
   setRegValue(Rd, ImmVal, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2344,15 +2582,24 @@ bool ARMLinearRaiserPass::raiseSMULL(MachineInstr* MI) { // 1849 | SMULL RdLo Rd
   Register RdHi = MI->getOperand(1).getReg();
   Register Rn = MI->getOperand(2).getReg();
   Register Rm = MI->getOperand(3).getReg();
-  int64_t CC = MI->getOperand(4).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(4).getImm();
   Register CPSR = MI->getOperand(5).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register S = MI->getOperand(6).getReg();
 
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
+
   assert(
-    CC == 14 &&
-    CPSR == 0 &&
     S == 0 &&
-    "ARM::SMULL: assuming no flags for now"
+    "ARM::SMULL: assuming no S flag for now"
   );
 
   Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
@@ -2376,6 +2623,11 @@ bool ARMLinearRaiserPass::raiseSMULL(MachineInstr* MI) { // 1849 | SMULL RdLo Rd
   setRegValue(RdLo, Lo, BB);
   setRegValue(RdHi, CastHi, BB);
 
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseSTMDB_UPD(MachineInstr* MI) { // 1895 | STMDB Rn Rn CC CPSR Reg
@@ -2384,15 +2636,20 @@ bool ARMLinearRaiserPass::raiseSTMDB_UPD(MachineInstr* MI) { // 1895 | STMDB Rn 
 
   Register Rn = MI->getOperand(0).getReg();
   assert(MI->getOperand(1).getReg() == Rn && "ARM::STMDB_UPD: expecting doubled Rn");
-  int64_t CC = MI->getOperand(2).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
   Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register Reg = MI->getOperand(4).getReg();
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "ARM::STMDB_UPD: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   assert(
     Rn == ARM::SP &&
@@ -2405,6 +2662,12 @@ bool ARMLinearRaiserPass::raiseSTMDB_UPD(MachineInstr* MI) { // 1895 | STMDB Rn 
 
   Monitor::event_raw() << "stack[" << BBStateMap[BB]->SP_offset << "] ~ Reg " << Reg << ", ignored under assumption of function prologue\n";
   // stack_map[BBStateMap[BB]->SP_offset] = getRegValue(Reg, Type::getInt32Ty(Context), BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseSTRB_POST_IMM(MachineInstr* MI) { // 1902 | STRB Rt Rn Rs Rm=0 AM2Shift CC CPSR
@@ -2416,14 +2679,19 @@ bool ARMLinearRaiserPass::raiseSTRB_POST_IMM(MachineInstr* MI) { // 1902 | STRB 
   Register Rs = MI->getOperand(2).getReg();
   Register Rm = MI->getOperand(3).getReg();
   int64_t AM2Shift = MI->getOperand(4).getImm();
-  int64_t CC = MI->getOperand(5).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(5).getImm();
   Register CPSR = MI->getOperand(6).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "ARM::STRB_POST_IMM: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* Addr = resolveAM2Shift(Rn, Rs, Rm, AM2Shift, BB);
   Instruction* Cast = new IntToPtrInst(Addr, Type::getInt8PtrTy(Context), "STRB_POST_IMMCast", BB);
@@ -2435,6 +2703,11 @@ bool ARMLinearRaiserPass::raiseSTRB_POST_IMM(MachineInstr* MI) { // 1902 | STRB 
 
   Instruction* Store = new StoreInst(Trunc, Cast, false, BB);
   Monitor::event_Instruction(Store);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2448,7 +2721,16 @@ bool ARMLinearRaiserPass::raiseSTRBi12(MachineInstr* MI) { // 1906 | STRB Rt Rn 
   ARMCC::CondCodes CC = (ARMCC::CondCodes)MI->getOperand(3).getImm();
   Register CPSR = MI->getOperand(4).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
-  assert(!conditional_execution && "ARM::STRBi12: conditional execution not supported yet");
+
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* RtVal = getRegValue(Rt, Type::getInt32Ty(Context), BB);
   Instruction* Trunc = new TruncInst(RtVal, Type::getInt8Ty(Context), "STRBi12_ValTrunc", BB);
@@ -2469,6 +2751,11 @@ bool ARMLinearRaiserPass::raiseSTRBi12(MachineInstr* MI) { // 1906 | STRB Rt Rn 
   Instruction* Store = new StoreInst(RtVal, Addr, false, BB);
   Monitor::event_Instruction(Store);
 
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseSTREX(MachineInstr* MI) { // 1911 | STREX Rd Rt Rn CC CPSR
@@ -2478,14 +2765,19 @@ bool ARMLinearRaiserPass::raiseSTREX(MachineInstr* MI) { // 1911 | STREX Rd Rt R
   Register Rd = MI->getOperand(0).getReg();
   Register Rt = MI->getOperand(1).getReg();
   Register Rn = MI->getOperand(2).getReg();
-  int64_t CC = MI->getOperand(3).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
   Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "STREX: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* Ptr = getRegValue(Rt, Type::getInt32PtrTy(Context), BB);
   Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
@@ -2493,8 +2785,12 @@ bool ARMLinearRaiserPass::raiseSTREX(MachineInstr* MI) { // 1911 | STREX Rd Rt R
   Function* STREX = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::arm_strex, {Type::getInt32PtrTy(Context)});
   Instruction* Call = CallInst::Create(STREX, { RnVal, Ptr }, "STREX", BB);
   Monitor::event_Instruction(Call);
-
   setRegValue(Rd, Call, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2510,7 +2806,15 @@ bool ARMLinearRaiserPass::raiseSTRH(MachineInstr* MI) { // 1915 | STRH Rt Rn AM3
   Register CPSR = MI->getOperand(5).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "ARM::STRH: conditional execution not supported yet");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* RtVal = getRegValue(Rt, Type::getInt32Ty(Context), BB);
   Instruction* Trunc = new TruncInst(RtVal, Type::getInt16Ty(Context), "STRH_ValTrunc", BB);
@@ -2536,6 +2840,11 @@ bool ARMLinearRaiserPass::raiseSTRH(MachineInstr* MI) { // 1915 | STRH Rt Rn AM3
   Instruction* Store = new StoreInst(RtVal, Addr, false, BB);
   Monitor::event_Instruction(Store);
 
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseSTRi12(MachineInstr* MI) { // 1926 | STR Rt Rn Imm12 CC CPSR
@@ -2545,14 +2854,19 @@ bool ARMLinearRaiserPass::raiseSTRi12(MachineInstr* MI) { // 1926 | STR Rt Rn Im
   Register Rt = MI->getOperand(0).getReg();
   Register Rn = MI->getOperand(1).getReg();
   int64_t Imm12 = MI->getOperand(2).getImm();
-  int64_t CC = MI->getOperand(3).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
   Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "ARM::STRi12: assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* Val = getRegValue(Rt, Type::getInt32Ty(Context), BB);
   Value* Ptr;
@@ -2571,6 +2885,11 @@ bool ARMLinearRaiserPass::raiseSTRi12(MachineInstr* MI) { // 1926 | STR Rt Rn Im
   Instruction* Store = new StoreInst(Val, Ptr, false, BB);
   Monitor::event_Instruction(Store);
 
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseSTRrs(MachineInstr* MI) { // 1927 | STR Rt Rn Rm AM2Shift CC CPSR
@@ -2581,14 +2900,19 @@ bool ARMLinearRaiserPass::raiseSTRrs(MachineInstr* MI) { // 1927 | STR Rt Rn Rm 
   Register Rn = MI->getOperand(1).getReg();
   Register Rm = MI->getOperand(2).getReg();
   int64_t AM2Shift = MI->getOperand(3).getImm();
-  int64_t CC = MI->getOperand(4).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(4).getImm();
   Register CPSR = MI->getOperand(5).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "assuming no flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* Addr = resolveAM2Shift(Rn, 0, Rm, AM2Shift, BB);
   Instruction* Cast = new IntToPtrInst(Addr, Type::getInt32PtrTy(Context), "STRrsPtrCast", BB);
@@ -2596,6 +2920,11 @@ bool ARMLinearRaiserPass::raiseSTRrs(MachineInstr* MI) { // 1927 | STR Rt Rn Rm 
   Value* RtVal = getRegValue(Rt, Type::getInt32Ty(Context), BB);
   Instruction* Store = new StoreInst(RtVal, Cast, false, BB);
   Monitor::event_Instruction(Store);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2609,16 +2938,20 @@ bool ARMLinearRaiserPass::raiseSUBri(MachineInstr* MI) { // 1928 | SUB Rd Rn Op2
   unsigned Bits = Op2 & 0xFF;
   unsigned Rot = (Op2 & 0xF00) >> 7;
   int64_t Imm = static_cast<int64_t>(ARM_AM::rotr32(Bits, Rot));
-
-  int64_t CC = MI->getOperand(3).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
   Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register S = MI->getOperand(5).getReg();
 
-  assert(
-    CC == 14 &&
-    CPSR == 0 &&
-    "ARM::SUBri: assuming no conditional flags for now"
-  );
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   if (Rd == ARM::SP && Rn == ARM::SP) {
     Monitor::event_raw() << "decrementing SP by " << Imm << "\n";
@@ -2659,6 +2992,11 @@ bool ARMLinearRaiserPass::raiseSUBri(MachineInstr* MI) { // 1928 | SUB Rd Rn Op2
     Instruction* V_Flag = ExtractValueInst::Create(CallSSub, 1, "SUBSriVFlag", BB);
     Monitor::event_Instruction(V_Flag);
     BBStateMap[BB]->setCPSRVFlag(V_Flag);
+  }
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
   }
 
   return true;
@@ -2737,15 +3075,25 @@ bool ARMLinearRaiserPass::raiseSUBrsi(MachineInstr* MI) { // 1930 | SUB Rd Rn Rm
   Register Rn = MI->getOperand(1).getReg();
   Register Rm = MI->getOperand(2).getReg();
   int64_t Shift = MI->getOperand(3).getImm();
-  int64_t CC = MI->getOperand(4).getImm();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(4).getImm();
   Register CPSR = MI->getOperand(5).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register S = MI->getOperand(6).getReg();
+  bool update_flags = (S != 0);
+
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   assert(
-    CC == 14 &&
-    CPSR == 0 &&
     S == 0 &&
-    "SUBrsi: assuming no flags for now"
+    "SUBrsi: assuming no S flag for now"
   );
 
   int64_t ShiftAmount = Shift >> 3;
@@ -2769,6 +3117,11 @@ bool ARMLinearRaiserPass::raiseSUBrsi(MachineInstr* MI) { // 1930 | SUB Rd Rn Rm
   Monitor::event_Instruction(Instr);
   setRegValue(Rd, Instr, BB);
 
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseVABSD(MachineInstr* MI) { // 2026 | VABS.F64 Dd Dm CC CPSR
@@ -2781,7 +3134,15 @@ bool ARMLinearRaiserPass::raiseVABSD(MachineInstr* MI) { // 2026 | VABS.F64 Dd D
   Register CPSR = MI->getOperand(3).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VABSD: assuming no flags for now");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
 
@@ -2794,6 +3155,11 @@ bool ARMLinearRaiserPass::raiseVABSD(MachineInstr* MI) { // 2026 | VABS.F64 Dd D
   Monitor::event_Instruction(Sel);
 
   setRegValue(Dd, Sel, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2808,7 +3174,15 @@ bool ARMLinearRaiserPass::raiseVADDD(MachineInstr* MI) { // 2047 | VADD.F64 Dd D
   Register CPSR = MI->getOperand(4).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VADDD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
   Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
@@ -2817,6 +3191,11 @@ bool ARMLinearRaiserPass::raiseVADDD(MachineInstr* MI) { // 2047 | VADD.F64 Dd D
   Monitor::event_Instruction(Result);
 
   setRegValue(Dd, Result, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2831,7 +3210,15 @@ bool ARMLinearRaiserPass::raiseVADDS(MachineInstr* MI) { // 2058 | VADD.F32 Sd S
   Register CPSR = MI->getOperand(4).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VADDS conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* SnVal = getRegValue(Sn, Type::getFloatTy(Context), BB);
   Value* SmVal = getRegValue(Sm, Type::getFloatTy(Context), BB);
@@ -2840,6 +3227,11 @@ bool ARMLinearRaiserPass::raiseVADDS(MachineInstr* MI) { // 2058 | VADD.F32 Sd S
   Monitor::event_Instruction(Result);
 
   setRegValue(Sd, Result, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2853,7 +3245,15 @@ bool ARMLinearRaiserPass::raiseVCMPD(MachineInstr* MI) { // 2213 | VCMP.F64 Dd D
   Register CPSR = MI->getOperand(3).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VCMPD: assuming no flags for now");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* DdVal = getRegValue(Dd, Type::getDoubleTy(Context), BB);
   Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
@@ -2874,6 +3274,11 @@ bool ARMLinearRaiserPass::raiseVCMPD(MachineInstr* MI) { // 2213 | VCMP.F64 Dd D
 
   BBStateMap[BB]->setFPSCRVFlag(ConstantInt::get(Type::getInt1Ty(Context), 0));
 
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseVDIVD(MachineInstr* MI) { // 2327 | VDIV.F64 Dd Dn Dm CC CPSR
@@ -2887,7 +3292,15 @@ bool ARMLinearRaiserPass::raiseVDIVD(MachineInstr* MI) { // 2327 | VDIV.F64 Dd D
   Register CPSR = MI->getOperand(4).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VDIVD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
   Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
@@ -2896,6 +3309,11 @@ bool ARMLinearRaiserPass::raiseVDIVD(MachineInstr* MI) { // 2327 | VDIV.F64 Dd D
   Monitor::event_Instruction(Result);
 
   setRegValue(Dd, Result, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -2909,7 +3327,15 @@ bool ARMLinearRaiserPass::raiseVLDMDIA_UPD(MachineInstr* MI) { // 2778 | VLDM.F6
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register Dn = MI->getOperand(4).getReg();
 
-  assert(!conditional_execution && "VLDMDIA_UPD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   if (Rt == ARM::SP) {
     Value* Ptr = getOrCreateStackAlloca(Rt, 0, Type::getDoubleTy(Context), BB);
@@ -2943,6 +3369,11 @@ bool ARMLinearRaiserPass::raiseVLDMDIA_UPD(MachineInstr* MI) { // 2778 | VLDM.F6
 
   setRegValue(Rt, Add, BB);
 
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseVLDRD(MachineInstr* MI) { // 2783 | VLDR.F64 Dd Rn Imm/4 CC CPSR
@@ -2956,7 +3387,15 @@ bool ARMLinearRaiserPass::raiseVLDRD(MachineInstr* MI) { // 2783 | VLDR.F64 Dd R
   Register CPSR = MI->getOperand(4).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VLDRD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   if (Rn == ARM::PC) { // Load PC-relative GlobalValue
     // A direct offset has to be a multiple of 4, and a PC-relative offset
@@ -2989,6 +3428,11 @@ bool ARMLinearRaiserPass::raiseVLDRD(MachineInstr* MI) { // 2783 | VLDR.F64 Dd R
 
   setRegValue(Dd, Load, BB);
 
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return false;
 }
 bool ARMLinearRaiserPass::raiseVMOVD(MachineInstr* MI) { // 2901 | VMOV.F64 Dd Dn CC CPSR
@@ -3001,11 +3445,24 @@ bool ARMLinearRaiserPass::raiseVMOVD(MachineInstr* MI) { // 2901 | VMOV.F64 Dd D
   Register CPSR = MI->getOperand(3).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VMOVD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
   Monitor::event_raw() << "Reg: " << Dn << " <= " << DnVal << "\n";
   setRegValue(Dd, DnVal, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -3019,13 +3476,24 @@ bool ARMLinearRaiserPass::raiseVMOVRS(MachineInstr* MI) { // 2917 | VMOV.F32 Rd 
   Register CPSR = MI->getOperand(3).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VMOVR conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* SnVal = getRegValue(Sn, Type::getFloatTy(Context), BB);
-
   Monitor::event_raw() << "Reg: " << Rd << " <= " << SnVal << "\n";
-
   setRegValue(Rd, SnVal, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -3039,13 +3507,24 @@ bool ARMLinearRaiserPass::raiseVMOVSR(MachineInstr* MI) { // 2919 VMOV.F32 St Rn
   Register CPSR = MI->getOperand(3).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VMOVS conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* RnVal = getRegValue(Rn,  nullptr, BB);
-
   Monitor::event_raw() << "Reg: " << St << " <= " << RnVal << "\n";
-
   setRegValue(St, RnVal, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -3059,13 +3538,25 @@ bool ARMLinearRaiserPass::raiseVMOVv2i32(MachineInstr* MI) { // 2924 | VMOV.I32 
   Register CPSR = MI->getOperand(3).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VMOVv2i32 conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   double_t DImm; memcpy(&DImm, &Imm, sizeof(DImm));
   Value* ImmVal = ConstantFP::get(Type::getDoubleTy(Context), DImm);
-
   Monitor::event_raw() << "Reg: " << Dd << " <= " << ImmVal << "\n";
   setRegValue(Dd, ImmVal, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -3080,15 +3571,27 @@ bool ARMLinearRaiserPass::raiseVMULD(MachineInstr* MI) { // 2954 | VMUL.F64 Dd D
   Register CPSR = MI->getOperand(4).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VMULD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
   Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
 
   Instruction* Result = BinaryOperator::Create(Instruction::FMul, DnVal, DmVal, "VMULD", BB);
   Monitor::event_Instruction(Result);
-
   setRegValue(Dd, Result, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -3102,14 +3605,26 @@ bool ARMLinearRaiserPass::raiseVSITOD(MachineInstr* MI) { // 3463 | VCVT.F64.S32
   Register CPSR = MI->getOperand(3).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VSITOD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* SmVal = getRegValue(Sm, Type::getInt32Ty(Context), BB);
 
   Instruction* Cast = CastInst::Create(Instruction::SIToFP, SmVal, Type::getDoubleTy(Context), "VSITOD", BB);
   Monitor::event_Instruction(Cast);
-
   setRegValue(Dd, Cast, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -3123,7 +3638,15 @@ bool ARMLinearRaiserPass::raiseVSTMDDB_UPD(MachineInstr* MI) { // 3763 VSTM.F64 
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register Dn = MI->getOperand(4).getReg();
 
-  assert(!conditional_execution && "VSTMDDB_UPD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   assert(Rt == ARM::SP && "VSTMDDB_UPD not yet implemented for non SP registers");
 
@@ -3133,6 +3656,12 @@ bool ARMLinearRaiserPass::raiseVSTMDDB_UPD(MachineInstr* MI) { // 3763 VSTM.F64 
   BBStateMap[BB]->SP_offset -= 8;
 
   Monitor::event_raw() << "stack[" << BBStateMap[BB]->SP_offset << "] ~ Reg " << Dn << ", ignored under assumption of function prologue\n";
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseVSTMDIA_UPD(MachineInstr* MI) { // 3765 | VSTM.F64 Rt! {Rwb} CC CPSR Dn
@@ -3145,7 +3674,15 @@ bool ARMLinearRaiserPass::raiseVSTMDIA_UPD(MachineInstr* MI) { // 3765 | VSTM.F6
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
   Register Dn = MI->getOperand(4).getReg();
 
-  assert(!conditional_execution && "VSTMDIA_UPD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   assert(Rt != ARM::SP && "VSTMDIA_UPD not yet implemented for SP registers");
 
@@ -3164,6 +3701,11 @@ bool ARMLinearRaiserPass::raiseVSTMDIA_UPD(MachineInstr* MI) { // 3765 | VSTM.F6
 
   setRegValue(Rt, Add, BB);
 
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseVSTRD(MachineInstr* MI) { // 3770 | VSTR.F64 Dd Rn Imm/4 CC CPSR
@@ -3177,7 +3719,15 @@ bool ARMLinearRaiserPass::raiseVSTRD(MachineInstr* MI) { // 3770 | VSTR.F64 Dd R
   Register CPSR = MI->getOperand(4).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VSTRD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   assert(Rn == ARM::SP && "VSTRD not yet implemented for non SP registers");
 
@@ -3186,6 +3736,11 @@ bool ARMLinearRaiserPass::raiseVSTRD(MachineInstr* MI) { // 3770 | VSTR.F64 Dd R
 
   Instruction* Store = new StoreInst(DdVal, Ptr, false, BB);
   Monitor::event_Instruction(Store);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
@@ -3200,7 +3755,15 @@ bool ARMLinearRaiserPass::raiseVSUBD(MachineInstr* MI) { // 3791 | VSUB.F64 Dd D
   Register CPSR = MI->getOperand(4).getReg();
   bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
 
-  assert(!conditional_execution && "VSUBD conditional execution not yet implemented");
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
 
   Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
   Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
@@ -3209,6 +3772,11 @@ bool ARMLinearRaiserPass::raiseVSUBD(MachineInstr* MI) { // 3791 | VSUB.F64 Dd D
   Monitor::event_Instruction(Result);
 
   setRegValue(Dd, Result, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
 
   return true;
 }
