@@ -98,6 +98,7 @@ private:
   bool raiseVDIVD(MachineInstr* MI);
   bool raiseVLDMDIA_UPD(MachineInstr* MI);
   bool raiseVLDRD(MachineInstr* MI);
+  bool raiseVMLAD(MachineInstr* MI);
   bool raiseVMOVD(MachineInstr* MI);
   bool raiseVMOVRS(MachineInstr* MI);
   bool raiseVMOVSR(MachineInstr* MI);

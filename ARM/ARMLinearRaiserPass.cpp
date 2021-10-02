@@ -636,6 +636,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::VDIVD:         raiseVDIVD(MI);         break; // 2327 | VDIV.F64 Dd Dn Dm CC CPSR
     case ARM::VLDMDIA_UPD:   raiseVLDMDIA_UPD(MI);   break; // 2778 | VLDM.F64 Rt! {Rwb} CC CPSR Dn
     case ARM::VLDRD:         raiseVLDRD(MI);         break; // 2783 | VLDR.F64 Dd Rn Imm/4 CC CPSR
+    case ARM::VMLAD:         raiseVMLAD(MI);         break; // 2838 | VMLA.F64 Dd {Dwb} Dn Dm CC CPSR
     case ARM::VMOVD:         raiseVMOVD(MI);         break; // 2901 | VMOV.F64 Dd Dn CC CPSR
     case ARM::VMOVRS:        raiseVMOVRS(MI);        break; // 2917 | VMOV.F32 Rd Sn CC CPSR
     case ARM::VMOVSR:        raiseVMOVSR(MI);        break; // 2919 | VMOV.F32 St Rn CC CPSR
@@ -3480,6 +3481,44 @@ bool ARMLinearRaiserPass::raiseVLDRD(MachineInstr* MI) { // 2783 | VLDR.F64 Dd R
   }
 
   return false;
+}
+bool ARMLinearRaiserPass::raiseVMLAD(MachineInstr* MI) { // 2838 | VMLA.F64 Dd {Dwb} Dn Dm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Dd = MI->getOperand(0).getReg();
+  Register Dn = MI->getOperand(2).getReg();
+  Register Dm = MI->getOperand(3).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(4).getImm();
+  Register CPSR = MI->getOperand(5).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
+
+  Value* DdVal = getRegValue(Dd, Type::getDoubleTy(Context), BB);
+  Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
+  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+
+  Instruction* Mul = BinaryOperator::Create(Instruction::FMul, DnVal, DmVal, "VMLA.F64", BB);
+  Monitor::event_Instruction(Mul);
+  Instruction* Add = BinaryOperator::Create(Instruction::FAdd, DdVal, Mul, "VMLA.F64", BB);
+  Monitor::event_Instruction(Add);
+  setRegValue(Dd, Add, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
+  return true;
 }
 bool ARMLinearRaiserPass::raiseVMOVD(MachineInstr* MI) { // 2901 | VMOV.F64 Dd Dn CC CPSR
   MachineBasicBlock* MBB = MI->getParent();
