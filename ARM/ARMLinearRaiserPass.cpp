@@ -3774,10 +3774,18 @@ bool ARMLinearRaiserPass::raiseVSTRD(MachineInstr* MI) { // 3770 | VSTR.F64 Dd R
     BB = CondExecBB;
   }
 
-  assert(Rn == ARM::SP && "VSTRD not yet implemented for non SP registers");
-
   Value* DdVal = getRegValue(Dd, Type::getDoubleTy(Context), BB);
-  Value* Ptr = getOrCreateStackAlloca(Rn, Imm*4, Type::getDoubleTy(Context), BB);
+  Value* Ptr;
+  if (Rn == ARM::SP || (Rn == ARM::R11 && BBStateMap[BB]->R11_is_FP)) {
+    Ptr = getOrCreateStackAlloca(Rn, Imm*4, Type::getDoubleTy(Context), BB);
+  } else {
+    Ptr = getRegValue(Rn, Type::getDoublePtrTy(Context), BB);
+    if (Imm != 0) {
+      Instruction* GEP = GetElementPtrInst::Create(Type::getDoubleTy(Context), Ptr, ConstantInt::get(Type::getInt32Ty(Context), Imm*4, false), "VSTRDGEP", BB);
+      Monitor::event_Instruction(GEP);
+      Ptr = GEP;
+    }
+  }
 
   Instruction* Store = new StoreInst(DdVal, Ptr, false, BB);
   Monitor::event_Instruction(Store);
