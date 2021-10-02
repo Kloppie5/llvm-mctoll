@@ -103,6 +103,7 @@ private:
   bool raiseVMOVSR(MachineInstr* MI);
   bool raiseVMOVv2i32(MachineInstr* MI);
   bool raiseVMULD(MachineInstr* MI);
+  bool raiseVORRd(MachineInstr* MI);
   bool raiseVSITOD(MachineInstr* MI);
   bool raiseVSTMDDB_UPD(MachineInstr* MI);
   bool raiseVSTMDIA_UPD(MachineInstr* MI);

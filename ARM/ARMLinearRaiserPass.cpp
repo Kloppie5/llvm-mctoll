@@ -641,6 +641,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::VMOVSR:        raiseVMOVSR(MI);        break; // 2919 | VMOV.F32 St Rn CC CPSR
     case ARM::VMOVv2i32:     raiseVMOVv2i32(MI);     break; // 2924 | VMOV.I32 Dd Imm CC CPSR
     case ARM::VMULD:         raiseVMULD(MI);         break; // 2954 | VMUL.F64 Dd Dn Dm CC CPSR
+    case ARM::VORRd:         raiseVORRd(MI);         break; // 3019 | VORR Dd Dn Dm {CC CPSR}
     case ARM::VSITOD:        raiseVSITOD(MI);        break; // 3463 | VCVT.F64.S32 Dd Sm CC CPSR
     case ARM::VSTMDDB_UPD:   raiseVSTMDDB_UPD(MI);   break; // 3763 | VSTM.F64 Rt! {Rwb} CC CPSR Dn
     case ARM::VSTMDIA_UPD:   raiseVSTMDIA_UPD(MI);   break; // 3765 | VSTM.F64 Rt! {Rwb} CC CPSR Dn
@@ -3637,6 +3638,33 @@ bool ARMLinearRaiserPass::raiseVMULD(MachineInstr* MI) { // 2954 | VMUL.F64 Dd D
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
     Monitor::event_Instruction(Branch);
   }
+
+  return true;
+}
+bool ARMLinearRaiserPass::raiseVORRd(MachineInstr* MI) { // 3019 | VORR Dd Dn Dm {CC CPSR}
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Dd = MI->getOperand(0).getReg();
+  Register Dn = MI->getOperand(1).getReg();
+  Register Dm = MI->getOperand(2).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
+  Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+  assert(!conditional_execution && "ARM VORR must be unconditional");
+
+  Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
+  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+
+  Instruction* DnCast = CastInst::Create(Instruction::BitCast, DnVal, Type::getInt64Ty(Context), "DnCast", BB);
+  Monitor::event_Instruction(DnCast);
+  Instruction* DmCast = CastInst::Create(Instruction::BitCast, DmVal, Type::getInt64Ty(Context), "DmCast", BB);
+  Monitor::event_Instruction(DmCast);
+  Instruction* Result = BinaryOperator::Create(Instruction::Or, DnCast, DmCast, "VORR", BB);
+  Monitor::event_Instruction(Result);
+  Instruction* ResultCast = CastInst::Create(Instruction::BitCast, Result, Type::getDoubleTy(Context), "ResultCast", BB);
+  Monitor::event_Instruction(ResultCast);
+  setRegValue(Dd, ResultCast, BB);
 
   return true;
 }
