@@ -858,6 +858,8 @@ bool ARMLinearRaiserPass::raiseADDrsi(MachineInstr* MI) { // 686 | ADD Rd Rn Rm 
   Monitor::event_Instruction(Instr);
   setRegValue(Rd, Instr, BB);
 
+  assert(!update_flags && "ADDrsi: assuming no S flag for now");
+
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
     Monitor::event_Instruction(Branch);
@@ -1023,16 +1025,13 @@ bool ARMLinearRaiserPass::raiseBICri(MachineInstr* MI) { // 706 | BIC Rd Rn Op2 
     BB = CondExecBB;
   }
 
-  assert(
-    S == 0 &&
-    "something something S flag"
-  );
-
   Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
   Value* ImmVal = ConstantInt::get(Type::getInt32Ty(Context), -Imm);
   Instruction* Instr = BinaryOperator::Create(Instruction::And, RnVal, ImmVal, "BICri", BB);
   Monitor::event_Instruction(Instr);
   setRegValue(Rd, Instr, BB);
+
+  assert(!update_flags && "BICri: update flags not implemented");
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -2648,7 +2647,33 @@ bool ARMLinearRaiserPass::raiseRSBri(MachineInstr* MI) { // 1782 | RSB Rd Rn Op2
   Instruction* Result = BinaryOperator::Create(Instruction::Sub, ImmVal, RnVal, "RSBri", BB);
   Monitor::event_Instruction(Result);
 
-  assert(!update_flags);
+  if (update_flags) {
+    // Negative flag
+    Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, ImmVal, RnVal, "RSBSriNeg", BB);
+    Monitor::event_Instruction(CmpNeg);
+    BBStateMap[BB]->setCPSRNFlag(CmpNeg);
+
+    // Zero flag
+    Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, ImmVal, RnVal, "RSBSriZero", BB);
+    Monitor::event_Instruction(CmpZero);
+    BBStateMap[BB]->setCPSRZFlag(CmpZero);
+
+    // Carry flag
+    Function* USub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::usub_with_overflow, Type::getInt32Ty(Context));
+    Instruction* CallUSub = CallInst::Create(USub, {ImmVal, RnVal}, "USubInstrinsic", BB);
+    Monitor::event_Instruction(CallUSub);
+    Instruction* C_Flag = ExtractValueInst::Create(CallUSub, 1, "RSBSriCFlag", BB);
+    Monitor::event_Instruction(C_Flag);
+    BBStateMap[BB]->setCPSRCFlag(C_Flag);
+
+    // Overflow flag
+    Function* SSub = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ssub_with_overflow, Type::getInt32Ty(Context));
+    Instruction* CallSSub = CallInst::Create(SSub, {ImmVal, RnVal}, "SSubIntrinsic", BB);
+    Monitor::event_Instruction(CallSSub);
+    Instruction* V_Flag = ExtractValueInst::Create(CallSSub, 1, "RSBSriVFlag", BB);
+    Monitor::event_Instruction(V_Flag);
+    BBStateMap[BB]->setCPSRVFlag(V_Flag);
+  }
 
   setRegValue(Rd, Result, BB);
 
@@ -3176,11 +3201,6 @@ bool ARMLinearRaiserPass::raiseSUBrsi(MachineInstr* MI) { // 1930 | SUB Rd Rn Rm
     BB = CondExecBB;
   }
 
-  assert(
-    S == 0 &&
-    "SUBrsi: assuming no S flag for now"
-  );
-
   int64_t ShiftAmount = Shift >> 3;
   ARM_AM::ShiftOpc ShiftOpcode = (ARM_AM::ShiftOpc) (Shift & 0x7);
 
@@ -3201,6 +3221,8 @@ bool ARMLinearRaiserPass::raiseSUBrsi(MachineInstr* MI) { // 1930 | SUB Rd Rn Rm
   Instruction* Instr = BinaryOperator::Create(Instruction::Sub, RnVal, ShiftInstr, "SUBrsi", BB);
   Monitor::event_Instruction(Instr);
   setRegValue(Rd, Instr, BB);
+
+  assert(!update_flags);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
