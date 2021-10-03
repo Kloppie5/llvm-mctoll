@@ -79,6 +79,7 @@ private:
   bool raiseMVNi(MachineInstr* MI);
   bool raiseORRri(MachineInstr* MI);
   bool raiseORRrr(MachineInstr* MI);
+  bool raiseRSBri(MachineInstr* MI);
   bool raiseSMULL(MachineInstr* MI);
   bool raiseSTMDB_UPD(MachineInstr* MI);
   bool raiseSTRB_POST_IMM(MachineInstr* MI);

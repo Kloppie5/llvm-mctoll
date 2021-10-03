@@ -37,7 +37,7 @@ public:
       PHINode* phi = RegPHIPair.second;
 
       if (phi->getBasicBlockIndex(PBB) == -1) {
-        Value* V = PState->getRegValue(reg);
+        Value* V = PState->getRegValue(reg, phi->getType());
         {auto &OS=Monitor::event_raw(); OS << "Adding to reg " << reg << ", type "; phi->getType()->print(OS); OS << " <= "; V->getType()->print(OS); OS << "\n";}
         phi->addIncoming(V, PBB);
         changed = true;

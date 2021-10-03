@@ -264,80 +264,81 @@ GlobalValue* ARMLinearRaiserPass::getGlobalValueByOffset(int64_t MCInstOffset, u
     auto SymName = SymNameVal.get();
     Monitor::event_raw() << "Found symbol " << SymName << "\n";
     GlobVal = MR.getModule()->getGlobalVariable(SymName);
-    if (GlobVal == nullptr) {
-      Monitor::event_raw() << "Symbol is unregistered; creating GlobalValue\n";
-      DataRefImpl SymImpl = Symbol->getRawDataRefImpl();
-      auto SymbOrErr = ObjFile->getSymbol(SymImpl);
-      assert(SymbOrErr && "Failed to find symbol!");
-      auto Symb = SymbOrErr.get();
-      assert((Symb->getType() == ELF::STT_OBJECT) &&
-              "Object symbol type is expected. But not found!");
-      GlobalValue::LinkageTypes Linkage;
-      switch (Symb->getBinding()) {
-        case ELF::STB_LOCAL:
-          Linkage = GlobalValue::InternalLinkage;
-          break;
-        case ELF::STB_GLOBAL:
-          Linkage = GlobalValue::ExternalLinkage;
-          break;
-        default:
-          Monitor::event_raw() << "Unsupported symbol binding: " << ((int) Symb->st_info) << "\n";
-          assert(false && "Unhandled dynamic symbol");
-      }
-      uint64_t SymSz = Symb->st_size;
-      Type* GlobValTy = nullptr;
-      switch (SymSz) {
-        case 4:
-          GlobValTy = Type::getInt32Ty(Context);
-          break;
-        case 2:
-          GlobValTy = Type::getInt16Ty(Context);
-          break;
-        case 1:
-          GlobValTy = Type::getInt8Ty(Context);
-          break;
-        default:
-          GlobValTy = ArrayType::get(Type::getInt8Ty(Context), SymSz);
-          break;
-      }
+    if (GlobVal != nullptr)
+      return GlobVal;
 
-      auto SymOrErr = Symbol->getValue();
-      assert (SymOrErr && "Can not find the symbol!");
-
-      uint64_t SymVirtAddr =* SymOrErr;
-      auto SecOrErr = Symbol->getSection();
-      assert(SecOrErr && "Can not find the section which is the symbol in!");
-
-      section_iterator SecIter =* SecOrErr;
-      Constant* GlobInit = nullptr;
-      if (SecIter->isBSS()) {
-        Monitor::event_raw() << "Symbol in BSS section\n";
-        Linkage = GlobalValue::CommonLinkage;
-        if (ArrayType::classof(GlobValTy))
-          GlobInit = ConstantAggregateZero::get(GlobValTy);
-        else
-          GlobInit = ConstantInt::get(GlobValTy, 0);
-      } else {
-        auto StrOrErr = SecIter->getContents();
-        assert (StrOrErr && "Failed to get the content of section!");
-        StringRef SecData =* StrOrErr;
-        // Currently, Symbol->getValue() is virtual address.
-        unsigned Index = SymVirtAddr - SecIter->getAddress();
-        const unsigned char* Beg = SecData.bytes_begin() + Index;
-        char Shift = 0;
-        uint64_t InitVal = 0;
-        while (SymSz-- > 0) {
-          // We know this is little-endian
-          InitVal = ((*Beg++) << Shift) | InitVal;
-          Shift += 8;
-        }
-        Monitor::event_raw() << "Symbol with default value " << InitVal << "\n";
-        GlobInit = ConstantInt::get(GlobValTy, InitVal);
-      }
-
-      GlobVal = new GlobalVariable(*MR.getModule(), GlobValTy, false /* isConstant */,
-                                        Linkage, GlobInit, SymName);
+    Monitor::event_raw() << "Symbol is unregistered; creating GlobalValue\n";
+    DataRefImpl SymImpl = Symbol->getRawDataRefImpl();
+    auto SymbOrErr = ObjFile->getSymbol(SymImpl);
+    assert(SymbOrErr && "Failed to find symbol!");
+    auto Symb = SymbOrErr.get();
+    assert((Symb->getType() == ELF::STT_OBJECT) &&
+            "Object symbol type is expected. But not found!");
+    GlobalValue::LinkageTypes Linkage;
+    switch (Symb->getBinding()) {
+      case ELF::STB_LOCAL:
+        Linkage = GlobalValue::InternalLinkage;
+        break;
+      case ELF::STB_GLOBAL:
+        Linkage = GlobalValue::ExternalLinkage;
+        break;
+      default:
+        Monitor::event_raw() << "Unsupported symbol binding: " << ((int) Symb->st_info) << "\n";
+        assert(false && "Unhandled dynamic symbol");
     }
+    uint64_t SymSz = Symb->st_size;
+    Type* GlobValTy = nullptr;
+    switch (SymSz) {
+      case 4:
+        GlobValTy = Type::getInt32Ty(Context);
+        break;
+      case 2:
+        GlobValTy = Type::getInt16Ty(Context);
+        break;
+      case 1:
+        GlobValTy = Type::getInt8Ty(Context);
+        break;
+      default:
+        GlobValTy = ArrayType::get(Type::getInt8Ty(Context), SymSz);
+        break;
+    }
+
+    auto SymOrErr = Symbol->getValue();
+    assert (SymOrErr && "Can not find the symbol!");
+
+    uint64_t SymVirtAddr =* SymOrErr;
+    auto SecOrErr = Symbol->getSection();
+    assert(SecOrErr && "Can not find the section which is the symbol in!");
+
+    section_iterator SecIter =* SecOrErr;
+    Constant* GlobInit = nullptr;
+    if (SecIter->isBSS()) {
+      Monitor::event_raw() << "Symbol in BSS section\n";
+      Linkage = GlobalValue::CommonLinkage;
+      if (ArrayType::classof(GlobValTy))
+        GlobInit = ConstantAggregateZero::get(GlobValTy);
+      else
+        GlobInit = ConstantInt::get(GlobValTy, 0);
+    } else {
+      auto StrOrErr = SecIter->getContents();
+      assert (StrOrErr && "Failed to get the content of section!");
+      StringRef SecData =* StrOrErr;
+      // Currently, Symbol->getValue() is virtual address.
+      unsigned Index = SymVirtAddr - SecIter->getAddress();
+      const unsigned char* Beg = SecData.bytes_begin() + Index;
+      char Shift = 0;
+      uint64_t InitVal = 0;
+      while (SymSz-- > 0) {
+        // We know this is little-endian
+        InitVal = ((*Beg++) << Shift) | InitVal;
+        Shift += 8;
+      }
+      Monitor::event_raw() << "Symbol with default value " << InitVal << "\n";
+      GlobInit = ConstantInt::get(GlobValTy, InitVal);
+    }
+
+    return new GlobalVariable(*MR.getModule(), GlobValTy, false /* isConstant */,
+                                      Linkage, GlobInit, SymName);
   } else {
     Monitor::event_raw() << "Failed to find symbol associated with dynamic relocation, reading as ROData.\n";
     // If can not find the corresponding symbol.
@@ -617,6 +618,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::MVNi:          raiseMVNi(MI);          break; // 1736 | Rd Imm CC CPSR S
     case ARM::ORRri:         raiseORRri(MI);         break; // 1748 | ORR Rd Rn Op2 CC CPSR S
     case ARM::ORRrr:         raiseORRrr(MI);         break; // 1749 | ORR Rd Rn Rm CC CPSR S
+    case ARM::RSBri:         raiseRSBri(MI);         break; // 1782 | RSB Rd Rn Op2 CC CPSR S
     case ARM::SMULL:         raiseSMULL(MI);         break; // 1849 | SMULL RdLo RdHi Rn Rm CC CPSR S
     case ARM::STMDB_UPD:     raiseSTMDB_UPD(MI);     break; // 1895 | STMDB Rn Rn CC CPSR Reg
     case ARM::STRB_POST_IMM: raiseSTRB_POST_IMM(MI); break; // 1902 | STRB Rt Rn Rs Rm=0 AM2Shift CC CPSR
@@ -1239,6 +1241,7 @@ bool ARMLinearRaiserPass::raiseBcc(MachineInstr* MI) { // 720 | Bcc offset CC CP
   ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(1).getImm();
   Register CPSR = MI->getOperand(2).getReg();
 
+  Monitor::event_raw() << "Succ_size: " << MBB->succ_size() << "\n";
   if (MBB->succ_size() == 0) {
     // Folded call and return;
     ARMModuleRaiser &AMR = static_cast<ARMModuleRaiser &>(MR);
@@ -1272,6 +1275,7 @@ bool ARMLinearRaiserPass::raiseBcc(MachineInstr* MI) { // 720 | Bcc offset CC CP
         auto NameOrErr = SecIter->getName();
         assert(NameOrErr && "Failed to get section name");
         StringRef SecName =* NameOrErr;
+        Monitor::event_raw() << "Section name: " << SecName << "\n";
         if (SecName.compare(".plt") != 0)
           assert(false && "Unexpected section name of PLT offset");
 
@@ -2072,16 +2076,15 @@ bool ARMLinearRaiserPass::raiseLDRi12(MachineInstr* MI) { // 862 | LDR Rt Rn Imm
     return true;
   }
 
-  Value* Ptr = getRegValue(Rn, Type::getInt32PtrTy(Context), BB);
+  Value* Ptr = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+  Value* Offset = ConstantInt::get(Type::getInt32Ty(Context), Imm12);
 
-  // GEP if there is an offset
-  if (Imm12 != 0) {
-    Instruction* GEP = GetElementPtrInst::Create(Type::getInt32Ty(Context), Ptr, { ConstantInt::get(Type::getInt32Ty(Context), Imm12) }, "LDRi12GEP", BB);
-    Monitor::event_Instruction(GEP);
-    Ptr = GEP;
-  }
+  Instruction* Add = BinaryOperator::Create(Instruction::Add, Ptr, Offset, "LDRi12Add", BB);
+  Monitor::event_Instruction(Add);
+  Instruction* Cast = new IntToPtrInst(Add, Type::getInt32PtrTy(Context), "LDRi12Cast", BB);
+  Monitor::event_Instruction(Cast);
 
-  Instruction* Load = new LoadInst(Type::getInt32Ty(Context), Ptr, "LDRi12Load", BB);
+  Instruction* Load = new LoadInst(Type::getInt32Ty(Context), Cast, "LDRi12Load", BB);
   Monitor::event_Instruction(Load);
   setRegValue(Rt, Load, BB);
 
@@ -2567,6 +2570,49 @@ bool ARMLinearRaiserPass::raiseORRrr(MachineInstr* MI) { // 1749 | ORR Rd Rn Rm 
     // Carry flag update cant occur for direct register Op2
     // Overflow flag is not updated
   }
+
+  setRegValue(Rd, Result, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
+  return true;
+}
+bool ARMLinearRaiserPass::raiseRSBri(MachineInstr* MI) { // 1782 | RSB Rd Rn Op2 CC CPSR S
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Rd = MI->getOperand(0).getReg();
+  Register Rn = MI->getOperand(1).getReg();
+  int64_t Op2 = MI->getOperand(2).getImm();
+  unsigned Bits = Op2 & 0xFF;
+  unsigned Rot = (Op2 & 0xF00) >> 7;
+  int64_t Imm = static_cast<int64_t>(ARM_AM::rotr32(Bits, Rot));
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(3).getImm();
+  Register CPSR = MI->getOperand(4).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+  Register S = MI->getOperand(5).getReg();
+  bool update_flags = (S != 0);
+
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
+
+  Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+  Value* ImmVal = ConstantInt::get(Type::getInt32Ty(Context), Imm);
+
+  Instruction* Result = BinaryOperator::Create(Instruction::Sub, ImmVal, RnVal, "RSBri", BB);
+  Monitor::event_Instruction(Result);
+
+  assert(!update_flags);
 
   setRegValue(Rd, Result, BB);
 
