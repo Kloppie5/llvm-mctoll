@@ -53,6 +53,7 @@ private:
   bool raiseBL(MachineInstr* MI);
   bool raiseBX_RET(MachineInstr* MI);
   bool raiseBcc(MachineInstr* MI);
+  bool raiseCLZ(MachineInstr* MI);
   bool raiseCMNri(MachineInstr* MI);
   bool raiseCMPri(MachineInstr* MI);
   bool raiseCMPrr(MachineInstr* MI);

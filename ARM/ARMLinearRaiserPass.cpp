@@ -592,6 +592,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::BL:            raiseBL(MI);            break; //  711 | BL Imm
     case ARM::BX_RET:        raiseBX_RET(MI);        break; //  718 | BX_RET CC CPSR
     case ARM::Bcc:           raiseBcc(MI);           break; //  720 | Bcc offset CC CPSR
+    case ARM::CLZ:           raiseCLZ(MI);           break; //  754 | CLZ Rd Rm CC CPSR
     case ARM::CMNri:         raiseCMNri(MI);         break; //  755 | CMN Rn Op2 CC CPSR
     case ARM::CMPri:         raiseCMPri(MI);         break; //  759 | CMP Rn Op2 CC CPSR
     case ARM::CMPrr:         raiseCMPrr(MI);         break; //  760 | CMP Rn Rm CC CPSR
@@ -1427,6 +1428,40 @@ bool ARMLinearRaiserPass::raiseBcc(MachineInstr* MI) { // 720 | Bcc offset CC CP
     Instruction* Branch = BranchInst::Create(BranchBB, NextBB, Cond, BB);
     Monitor::event_Instruction(Branch);
   }
+  return true;
+}
+bool ARMLinearRaiserPass::raiseCLZ(MachineInstr* MI) { //  754 | CLZ Rd Rm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).front();
+
+  Register Rd = MI->getOperand(0).getReg();
+  Register Rm = MI->getOperand(1).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes)MI->getOperand(2).getImm();
+  Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
+
+  Function* Ctlz = Intrinsic::getDeclaration(MR.getModule(), Intrinsic::ctlz, Type::getInt32Ty(Context));
+  Value* RmVal = getRegValue(Rm, Type::getInt32Ty(Context), BB);
+  Instruction* Call = CallInst::Create(Ctlz, {RmVal, ConstantInt::get(Type::getInt1Ty(Context), 1)}, "CLZ", BB);
+  Monitor::event_Instruction(Call);
+
+  setRegValue(Rd, Call, BB);
+
+  if (conditional_execution) {
+    Instruction* MergeIf = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(MergeIf);
+  }
+
   return true;
 }
 bool ARMLinearRaiserPass::raiseCMNri(MachineInstr* MI) { // 755 | CMN Rn Op2 CC CPSR
