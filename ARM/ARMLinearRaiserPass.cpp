@@ -630,6 +630,7 @@ bool ARMLinearRaiserPass::raiseMachineInstr(MachineInstr* MI) {
     case ARM::SUBri:         raiseSUBri(MI);         break; // 1928 | SUB Rd Rn Op2 CC CPSR S
     case ARM::SUBrr:         raiseSUBrr(MI);         break; // 1929 | SUB Rd Rn Rm CC CPSR S
     case ARM::SUBrsi:        raiseSUBrsi(MI);        break; // 1930 | SUB Rd Rn Rm Shift CC CPSR S
+    case ARM::TSTrr:         raiseTSTrr(MI);         break; // 1949 | TST Rn Rm CC CPSR
     case ARM::VABSD:         raiseVABSD(MI);         break; // 2026 | VABS.F64 Dd Dm CC CPSR
     case ARM::VADDD:         raiseVADDD(MI);         break; // 2047 | VADD.F64 Dd Dn Dm CC CPSR
     case ARM::VADDS:         raiseVADDS(MI);         break; // 2058 | VADD.F32 Sd Sn Sm CC CPSR
@@ -3165,6 +3166,52 @@ bool ARMLinearRaiserPass::raiseSUBrsi(MachineInstr* MI) { // 1930 | SUB Rd Rn Rm
   Instruction* Instr = BinaryOperator::Create(Instruction::Sub, RnVal, ShiftInstr, "SUBrsi", BB);
   Monitor::event_Instruction(Instr);
   setRegValue(Rd, Instr, BB);
+
+  if (conditional_execution) {
+    Instruction* Branch = BranchInst::Create(MergeBB, BB);
+    Monitor::event_Instruction(Branch);
+  }
+
+  return true;
+}
+bool ARMLinearRaiserPass::raiseTSTrr(MachineInstr* MI) { // 1949 | TST Rn Rm CC CPSR
+  MachineBasicBlock* MBB = MI->getParent();
+  BasicBlock* BB = getBasicBlocks(MBB).back();
+
+  Register Rn = MI->getOperand(0).getReg();
+  Register Rm = MI->getOperand(1).getReg();
+  ARMCC::CondCodes CC = (ARMCC::CondCodes) MI->getOperand(2).getImm();
+  Register CPSR = MI->getOperand(3).getReg();
+  bool conditional_execution = (CC != ARMCC::AL) && (CPSR != 0);
+
+  BasicBlock* MergeBB;
+  if (conditional_execution) {
+    Value* Cond = ARMCCToValue(CC, BB);
+    BasicBlock* CondExecBB = createBasicBlock(MBB);
+    MergeBB = createBasicBlock(MBB);
+    Instruction* CondBranch = BranchInst::Create(CondExecBB, MergeBB, Cond, BB);
+    Monitor::event_Instruction(CondBranch);
+    BB = CondExecBB;
+  }
+
+  Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
+  Value* RmVal = getRegValue(Rm, Type::getInt32Ty(Context), BB);
+
+  Instruction* Result = BinaryOperator::Create(Instruction::And, RnVal, RmVal, "TSTrr", BB);
+  Monitor::event_Instruction(Result);
+
+  // Negative flag
+  Instruction* CmpNeg = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "TSTrrNeg", BB);
+  Monitor::event_Instruction(CmpNeg);
+  BBStateMap[BB]->setCPSRNFlag(CmpNeg);
+
+  // Zero flag
+  Instruction* CmpZero = ICmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_EQ, Result, ConstantInt::get(Type::getInt32Ty(Context), 0), "TSTrrZero", BB);
+  Monitor::event_Instruction(CmpZero);
+  BBStateMap[BB]->setCPSRZFlag(CmpZero);
+
+  // Carry flag update cant occur for constant Op2
+  // Overflow flag is not updated
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
