@@ -111,7 +111,7 @@ void MCInstRaiser::buildCFG(MachineFunction &MF, const MCInstrAnalysis *MIA,
       // Add raised MachineInstr to current MBB.
       MCInst Inst = mcInstorData.getMCInst();
       MachineInstr* MI = RaiseMCInst(*MII, MF, Inst, mcInstIndex);
-      
+
       MF.back().push_back(MI);
     }
   }

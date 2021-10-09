@@ -42,19 +42,24 @@ bool ARMFunctionPrototype::isUsedRegister(unsigned reg, MachineFunction *MF) {
 /// Check the first reference of the reg is DEF.
 void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
   assert(!MF->empty() && "The function body is empty!!!");
-  DenseMap<int, Type *> tarr; // assuming the number of parameters tends to be around 50?
-  int maxidx = -1; // When the maxidx is -1, means there is no argument.
   // Check register liveness at the beginning of the function.
   for (unsigned IReg = ARM::R0; IReg < ARM::R4; IReg++) {
-    if (!isUsedRegister(IReg, MF))
-      continue;
-
-    int idx = IReg - ARM::R0;
-    if (idx > maxidx)
-      maxidx = idx;
-
-    tarr[idx] = getDefaultType();
-    Monitor::event_raw() << "Found reg " << idx << "; maxidx = " << maxidx << "\n";
+    if (isUsedRegister(IReg, MF)) {
+      Monitor::event_raw() << "Found i32 Reg " << IReg << " as argument.\n";
+      paramTypes.push_back(Type::getInt32Ty(MF->getFunction().getContext()));
+    }
+  }
+  for (unsigned IReg = ARM::S0; IReg < ARM::S15; IReg++) {
+    if (isUsedRegister(IReg, MF)) {
+      Monitor::event_raw() << "Found float Reg " << IReg << " as argument.\n";
+      paramTypes.push_back(Type::getFloatTy(MF->getFunction().getContext()));
+    }
+  }
+  for (unsigned IReg = ARM::D0; IReg < ARM::D7; IReg++) {
+    if (isUsedRegister(IReg, MF)) {
+      Monitor::event_raw() << "Found double Reg " << IReg << " as argument.\n";
+      paramTypes.push_back(Type::getDoubleTy(MF->getFunction().getContext()));
+    }
   }
 
   // Because stack accesses are non-trivial, the only way to determine
@@ -65,7 +70,8 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
   // A somewhat stable way is to symbolically execute the stack access
   // related instructions and hope that no stack accesses are missed.
   int64_t stack_offset = 0;
-  std::map<int64_t, Type*> stack_offsets;
+  std::set<int64_t> stack_set;
+  std::map<int64_t, Type*> stack_type;
   for (MachineBasicBlock &MBB : *MF) {
     for (MachineInstr &MI : MBB) {
       switch(MI.getOpcode()) {
@@ -87,38 +93,56 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
             stack_offset += Imm;
           } break;
         case ARM::LDMIA_UPD: // 822
-          Monitor::event_raw() << "Incrementing stack offset: 4 to " << (stack_offset+4) << "\n";
-          stack_offsets[stack_offset] = Type::getInt32Ty(MF->getFunction().getContext());
-          stack_offset += 4;
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            if (stack_set.find(stack_offset) == stack_set.end()) {
+              Monitor::event_raw() << "Found LOAD from uninitialized offset " << stack_offset << ", adding type i32 argument.\n";
+              stack_set.insert(stack_offset);
+              stack_type[stack_offset] = Type::getInt32Ty(MF->getFunction().getContext());
+            }
+            Monitor::event_raw() << "Incrementing stack offset: 4 to " << (stack_offset+4) << "\n";
+            stack_offset += 4;
+          }
           break;
         case ARM::LDRBi12: // 831
           if(MI.getOperand(1).getReg() == ARM::SP) {
-            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(3).getImm()) << "\n";
-            stack_offsets[stack_offset + MI.getOperand(3).getImm()] = Type::getInt8Ty(MF->getFunction().getContext());
+            int64_t offset = stack_offset + MI.getOperand(3).getImm();
+            if (stack_set.find(offset) == stack_set.end()) {
+              Monitor::event_raw() << "Found LOAD from uninitialized offset " << offset << ", adding type i8 argument.\n";
+              stack_set.insert(offset);
+              stack_type[offset] = Type::getInt8Ty(MF->getFunction().getContext());
+            }
           } break;
         case ARM::LDRH: // 840
           if(MI.getOperand(1).getReg() == ARM::SP) {
-            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(3).getImm()) << "\n";
-            stack_offsets[stack_offset + MI.getOperand(3).getImm()] = Type::getInt16Ty(MF->getFunction().getContext());
+            int64_t offset = stack_offset + MI.getOperand(3).getImm();
+            if (stack_set.find(offset) == stack_set.end()) {
+              Monitor::event_raw() << "Found LOAD from uninitialized offset " << offset << ", adding type i16 argument.\n";
+              stack_set.insert(offset);
+              stack_type[offset] = Type::getInt16Ty(MF->getFunction().getContext());
+            }
           } break;
         case ARM::LDR_POST_IMM: // 857 { Reg:$R0 Reg:$SP Reg:$SP Reg:$ Imm:147460 Imm:14 Reg:$ }
-          if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP
-           && MI.getOperand(2).isReg() && MI.getOperand(2).getReg() == ARM::SP) {
+          if (MI.getOperand(1).getReg() == ARM::SP) {
             int64_t AM2Shift = MI.getOperand(4).getImm();
             unsigned Imm12 = AM2Shift & 0xFFF;
             bool isSub = (AM2Shift >> 12) & 0x1;
-            Monitor::event_raw() << "Found stack access: " << stack_offset << "\n";
-            stack_offsets[stack_offset + MI.getOperand(3).getImm()] = Type::getInt32Ty(MF->getFunction().getContext());
-            if (isSub)
-              stack_offset -= Imm12;
-            else
-              stack_offset += Imm12;
+            int64_t offset = stack_offset + (isSub ? -Imm12 : Imm12);
+            if (stack_set.find(offset) == stack_set.end()) {
+              Monitor::event_raw() << "Found LOAD from uninitialized offset " << offset << ", adding type i32 argument.\n";
+              stack_set.insert(offset);
+              stack_type[offset] = Type::getInt32Ty(MF->getFunction().getContext());
+            }
+            stack_offset = offset;
             Monitor::event_raw() << "Changing stack offset: " << Imm12 << " to " << stack_offset << "\n";
           } break;
         case ARM::LDRi12: // 862
-          if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP) {
-            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
-            stack_offsets[stack_offset + MI.getOperand(2).getImm()] = Type::getInt32Ty(MF->getFunction().getContext());
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            int64_t offset = stack_offset + MI.getOperand(2).getImm();
+            if (stack_set.find(offset) == stack_set.end()) {
+              Monitor::event_raw() << "Found LOAD from uninitialized offset " << offset << ", adding type i32 argument.\n";
+              stack_set.insert(offset);
+              stack_type[offset] = Type::getInt32Ty(MF->getFunction().getContext());
+            }
           } break;
         case ARM::MOVr: // 874
           if (MI.getOperand(0).getReg() == ARM::R11
@@ -126,36 +150,46 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
             Monitor::event_raw() << "Ignoring R11 = SP, assumed to be in stack setup\n";
            } break;
         case ARM::STMDB_UPD: // 1895
-          Monitor::event_raw() << "Decrementing stack offset: 4 to " << (stack_offset-4) << "\n";
-          stack_offset -= 4;
-          stack_offsets[stack_offset] = Type::getInt32Ty(MF->getFunction().getContext());
-          break;
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Decrementing stack offset: 4 to " << (stack_offset-4) << "\n";
+            stack_offset -= 4;
+            Monitor::event_raw() << "Found STORE to offset " << stack_offset << ".\n";
+            stack_set.insert(stack_offset);
+          } break;
         case ARM::STMIA: // 1896
           // Why does this exist?
-          stack_offsets[stack_offset] = Type::getInt32Ty(MF->getFunction().getContext());
-          Monitor::event_raw() << "Found stack access: " << stack_offset << "\n";
-          break;
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Found STORE to offset " << stack_offset << ".\n";
+            stack_set.insert(stack_offset);
+          } break;
+        case ARM::STMIB: // 1898
+          if (MI.getOperand(0).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Found STORE to offset " << (stack_offset + 4) << "\n";
+            stack_set.insert(stack_offset + 4);
+          } break;
         case ARM::STRBi12: // 1906
-          if (MI.getOperand(1).getReg() == ARM::SP) {
-            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
-            stack_offsets[stack_offset + MI.getOperand(2).getImm()] = Type::getInt8Ty(MF->getFunction().getContext());
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            int64_t offset = stack_offset + MI.getOperand(2).getImm();
+            Monitor::event_raw() << "Found STORE to offset " << offset << ".\n";
+            stack_set.insert(offset);
           } break;
         case ARM::STRH: // 1915
           if(MI.getOperand(1).getReg() == ARM::SP) {
-            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(3).getImm()) << "\n";
-            stack_offsets[stack_offset + MI.getOperand(3).getImm()] = Type::getInt16Ty(MF->getFunction().getContext());
-          }
-          break;
+            int64_t offset = stack_offset + MI.getOperand(3).getImm();
+            Monitor::event_raw() << "Found STORE to offset " << offset << ".\n";
+            stack_set.insert(offset);
+          } break;
         case ARM::STR_PRE_IMM: // 1924
-          if (MI.getOperand(2).isReg() && MI.getOperand(2).getReg() == ARM::SP) {
-            stack_offset += MI.getOperand(3).getImm();
-            stack_offsets[stack_offset] = Type::getInt32Ty(MF->getFunction().getContext());
-            Monitor::event_raw() << "Found stack access: " << stack_offset << "\n";
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            int64_t offset = stack_offset + MI.getOperand(3).getImm();
+            Monitor::event_raw() << "Found STORE to offset " << offset << ".\n";
+            stack_set.insert(offset);
           } break;
         case ARM::STRi12: // 1926
-          if (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == ARM::SP) {
-            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
-            stack_offsets[stack_offset + MI.getOperand(2).getImm()] = Type::getInt32Ty(MF->getFunction().getContext());
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            int64_t offset = stack_offset + MI.getOperand(2).getImm();
+            Monitor::event_raw() << "Found STORE to offset " << offset << ".\n";
+            stack_set.insert(offset);
           } break;
         case ARM::SUBri: // 1928
           if (MI.getOperand(0).isReg() && MI.getOperand(0).getReg() == ARM::SP
@@ -168,53 +202,60 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
             stack_offset -= Imm;
           } break;
         case ARM::VLDMDIA_UPD: // 2778
-          Monitor::event_raw() << "Incrementing stack offset: 8 to " << (stack_offset+8) << "\n";
-          stack_offsets[stack_offset] = Type::getDoubleTy(MF->getFunction().getContext());
-          stack_offset += 8;
-          break;
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            if (stack_set.find(stack_offset) == stack_set.end()) {
+              Monitor::event_raw() << "Found LOAD from uninitialized offset " << stack_offset << ", adding type double argument.\n";
+              stack_set.insert(stack_offset);
+              stack_type[stack_offset] = Type::getDoubleTy(MF->getFunction().getContext());
+            }
+            Monitor::event_raw() << "Incrementing stack offset: 8 to " << (stack_offset+8) << "\n";
+            stack_offset += 8;
+          } break;
         case ARM::VLDRD: // 2783
-          Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
-          stack_offsets[stack_offset + MI.getOperand(2).getImm()] = Type::getDoubleTy(MF->getFunction().getContext());
-          break;
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            int64_t offset = stack_offset + MI.getOperand(2).getImm();
+            if (stack_set.find(offset) == stack_set.end()) {
+              Monitor::event_raw() << "Found LOAD from uninitialized offset " << offset << ", adding type double argument.\n";
+              stack_set.insert(offset);
+              stack_type[offset] = Type::getDoubleTy(MF->getFunction().getContext());
+            }
+          } break;
+        case ARM::VLDRS: // 2785
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            int64_t offset = stack_offset + MI.getOperand(2).getImm();
+            if (stack_set.find(offset) == stack_set.end()) {
+              Monitor::event_raw() << "Found LOAD from uninitialized offset " << offset << ", adding type float argument.\n";
+              stack_set.insert(offset);
+              stack_type[offset] = Type::getFloatTy(MF->getFunction().getContext());
+            }
+          } break;
         case ARM::VSTMDDB_UPD: // 3763
-          Monitor::event_raw() << "Decrementing stack offset: 4 to " << (stack_offset-8) << "\n";
-          stack_offset -= 8;
-          stack_offsets[stack_offset] = Type::getDoubleTy(MF->getFunction().getContext());
-          break;
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            Monitor::event_raw() << "Decrementing stack offset: 8 to " << (stack_offset-8) << "\n";
+            stack_offset -= 8;
+            Monitor::event_raw() << "Found STORE to offset " << stack_offset << ".\n";
+            stack_set.insert(stack_offset);
+          } break;
         case ARM::VSTRD: // 3770
-          if (MI.getOperand(1).getReg() == ARM::SP) {
-            Monitor::event_raw() << "Found stack access: " << (stack_offset + MI.getOperand(2).getImm()) << "\n";
-            stack_offsets[stack_offset + MI.getOperand(2).getImm()] = Type::getDoubleTy(MF->getFunction().getContext());
+          if(MI.getOperand(1).getReg() == ARM::SP) {
+            int64_t offset = stack_offset + MI.getOperand(2).getImm();
+            Monitor::event_raw() << "Found STORE to offset " << offset << ".\n";
+            stack_set.insert(offset);
           } break;
       }
     }
   }
 
   // Add parameters on the stack to the function prototype
-  for (auto &stack_offset : stack_offsets) {
+  for (auto &stack_offset : stack_type) {
     int64_t offset = stack_offset.first;
     Type *type = stack_offset.second;
-
-    if (offset < 0)
-      continue;
-    int idx = offset / 4 + 4;
-
-    if (idx > 127) {
-      Monitor::ERROR("Stack index exceeds 127, assumed to be accessing pass by value struct");
+    {auto &OS=Monitor::event_raw(); OS << "Found argument at " << offset << " of type "; type->print(OS); OS << "\n";}
+    if (offset < 0) {
+      Monitor::event_raw() << "Offset is negative, skipping.\n";
       continue;
     }
-
-    if (idx > maxidx)
-      maxidx = idx;
-    tarr[idx] = type;
-  }
-
-  Monitor::event_raw() << "Found " << maxidx+1 << " parameters.\n";
-  for (int i = 0; i <= maxidx; ++i) {
-    if (tarr[i] == nullptr)
-      paramTypes.push_back(getDefaultType());
-    else
-      paramTypes.push_back(tarr[i]);
+    paramTypes.push_back(type);
   }
 }
 

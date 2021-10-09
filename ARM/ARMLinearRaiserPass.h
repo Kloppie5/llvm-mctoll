@@ -43,14 +43,17 @@ public:
 private:
   MCInstRaiser* MCIR;
 
+  bool raiseADCri(MachineInstr* MI);
   bool raiseADDri(MachineInstr* MI);
   bool raiseADDrr(MachineInstr* MI);
   bool raiseADDrsi(MachineInstr* MI);
   bool raiseANDri(MachineInstr* MI);
+  bool raiseANDrsi(MachineInstr* MI);
   bool raiseANDrr(MachineInstr* MI);
   bool raiseBFC(MachineInstr* MI);
   bool raiseBICri(MachineInstr* MI);
   bool raiseBL(MachineInstr* MI);
+  bool raiseBL_pred(MachineInstr* MI);
   bool raiseBX_RET(MachineInstr* MI);
   bool raiseBcc(MachineInstr* MI);
   bool raiseCLZ(MachineInstr* MI);
@@ -62,12 +65,15 @@ private:
   bool raiseFMSTAT(MachineInstr* MI);
   bool raiseFCONSTD(MachineInstr* MI);
   bool raiseFCONSTS(MachineInstr* MI);
+  bool raiseHINT(MachineInstr* MI);
+  bool raiseLDMIA(MachineInstr* MI);
   bool raiseLDMIA_UPD(MachineInstr* MI);
   bool raiseLDRB_PRE_REG(MachineInstr* MI);
   bool raiseLDRBi12(MachineInstr* MI);
   bool raiseLDREX(MachineInstr* MI);
   bool raiseLDRH(MachineInstr* MI);
   bool raiseLDR_POST_IMM(MachineInstr* MI);
+  bool raiseLDR_POST_REG(MachineInstr* MI);
   bool raiseLDRi12(MachineInstr* MI);
   bool raiseLDRrs(MachineInstr* MI);
   bool raiseMLA(MachineInstr* MI);
@@ -78,11 +84,16 @@ private:
   bool raiseMOVsi(MachineInstr* MI);
   bool raiseMUL(MachineInstr* MI);
   bool raiseMVNi(MachineInstr* MI);
+  bool raiseMVNr(MachineInstr* MI);
   bool raiseORRri(MachineInstr* MI);
   bool raiseORRrr(MachineInstr* MI);
   bool raiseRSBri(MachineInstr* MI);
+  bool raiseSBCrsi(MachineInstr* MI);
+  bool raiseSMMUL(MachineInstr* MI);
   bool raiseSMULL(MachineInstr* MI);
   bool raiseSTMDB_UPD(MachineInstr* MI);
+  bool raiseSTMIA(MachineInstr* MI);
+  bool raiseSTMIB(MachineInstr* MI);
   bool raiseSTRB_POST_IMM(MachineInstr* MI);
   bool raiseSTRBi12(MachineInstr* MI);
   bool raiseSTREX(MachineInstr* MI);
@@ -92,6 +103,8 @@ private:
   bool raiseSUBri(MachineInstr* MI);
   bool raiseSUBrr(MachineInstr* MI);
   bool raiseSUBrsi(MachineInstr* MI);
+  bool raiseTEQrr(MachineInstr* MI);
+  bool raiseTSTri(MachineInstr* MI);
   bool raiseTSTrr(MachineInstr* MI);
   bool raiseVABSD(MachineInstr* MI);
   bool raiseVADDD(MachineInstr* MI);
@@ -101,12 +114,16 @@ private:
   bool raiseVDIVD(MachineInstr* MI);
   bool raiseVLDMDIA_UPD(MachineInstr* MI);
   bool raiseVLDRD(MachineInstr* MI);
+  bool raiseVLDRS(MachineInstr* MI);
   bool raiseVMLAD(MachineInstr* MI);
   bool raiseVMOVD(MachineInstr* MI);
+  bool raiseVMOVDRR(MachineInstr* MI);
+  bool raiseVMOVRRD(MachineInstr* MI);
   bool raiseVMOVRS(MachineInstr* MI);
   bool raiseVMOVSR(MachineInstr* MI);
   bool raiseVMOVv2i32(MachineInstr* MI);
   bool raiseVMULD(MachineInstr* MI);
+  bool raiseVNEGD(MachineInstr* MI);
   bool raiseVORRd(MachineInstr* MI);
   bool raiseVSITOD(MachineInstr* MI);
   bool raiseVSTMDDB_UPD(MachineInstr* MI);

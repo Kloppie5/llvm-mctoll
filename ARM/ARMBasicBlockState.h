@@ -22,7 +22,7 @@ class ARMBasicBlockState {
 public:
   BasicBlock* BB;
 
-  bool R11_is_FP = false;
+  bool R11_is_FP = true;
   int64_t FP_offset = 0;
   int64_t SP_offset = 0;
 

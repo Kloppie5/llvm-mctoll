@@ -1,5 +1,5 @@
-// RUN: clang -O3 -target arm-linux-gnueabi -mfloat-abi=soft -o %t.o %s -I %S/../
-// RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I /usr/include/stdio.h -I /usr/include/fcntl.h -I /usr/include/sys/stat.h
+// RUN: clang -O0 -target armv7-linux-gnueabi -o %t.o %s -I %S/../
+// RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I %S/matrix_multiply.h
 // RUN: clang -o %t-res %t-dis.ll
 // RUN: %t-res 2>&1 | FileCheck %s
 
@@ -13,8 +13,8 @@
 *     * Redistributions in binary form must reproduce the above copyright
 *       notice, this list of conditions and the following disclaimer in the
 *       documentation and/or other materials provided with the distribution.
-*     * Neither the name of Stanford University nor the names of its 
-*       contributors may be used to endorse or promote products derived from 
+*     * Neither the name of Stanford University nor the names of its
+*       contributors may be used to endorse or promote products derived from
 *       this software without specific prior written permission.
 *
 * THIS SOFTWARE IS PROVIDED BY STANFORD UNIVERSITY ``AS IS'' AND ANY
@@ -27,7 +27,7 @@
 * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/ 
+*/
 
 #include <stdio.h>
 #include <strings.h>
@@ -86,8 +86,8 @@ void matrix_mult(mm_data_t *data_in)
       for (b = j; b < end_j && b < data_in->matrix_len; b++)
       for (c = k; c < end_k && c < data_in->matrix_len; c++)
       {
-               data_in->matrix_out[(data_in->matrix_len)*a + b] += 
-                  ( data_in->matrix_A[ (data_in->matrix_len)*a + c] * 
+               data_in->matrix_out[(data_in->matrix_len)*a + b] +=
+                  ( data_in->matrix_A[ (data_in->matrix_len)*a + c] *
                     data_in->matrix_B[ (data_in->matrix_len)*c + b]);
       }
    }
@@ -98,14 +98,14 @@ void matrix_mult(mm_data_t *data_in)
       {
          dprintf("%d  ", data_in->matrix_out[(data_in->matrix_len)*i + j]);
       }
-      
+
       dprintf("\n");
    }
 }
 
-int main(int argc, char *argv[]) 
+int main(int argc, char *argv[])
 {
-   
+
    int fd_A, fd_B, fd_out;
    char * fdata_A, *fdata_B, *fdata_out;
    int matrix_len, file_size;
@@ -145,7 +145,7 @@ int main(int argc, char *argv[])
    // Memory map the file
    CHECK_ERROR((fdata_B= mmap(0, file_size + 1,
       PROT_READ | PROT_WRITE, MAP_PRIVATE, fd_B, 0)) == NULL);
-   
+
    // Create File
    CHECK_ERROR((fd_out = open(fname_out,O_CREAT | O_RDWR,S_IRWXU)) < 0);
    // Resize
@@ -160,13 +160,13 @@ int main(int argc, char *argv[])
    mm_data.matrix_A  = ((int *)fdata_A);
    mm_data.matrix_B  = ((int *)fdata_B);
    mm_data.matrix_out  = ((int *)fdata_out);
-   
+
 
    printf("MatrixMult: Calling Serial Matrix Multiplication\n");
 
    //gettimeofday(&starttime,0);
-   
-   
+
+
    memset(mm_data.matrix_out, 0, file_size);
    matrix_mult(&mm_data);
 

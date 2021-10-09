@@ -1150,7 +1150,7 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
       if (isAFunctionSymbol(Obj, Symbols[si])) {
         auto &SymStr = Symbols[si].Name;
 
-        if ((FilterFunctionSet.getNumOccurrences() != 0)) {
+        if (FilterFunctionSet.getNumOccurrences() != 0) {
           // Check the symbol name whether it should be excluded or not.
           if (!FuncFilter->isFilterSetEmpty(FunctionFilter::FILTER_EXCLUDE)) {
             FunctionFilter::FuncInfo *FI = FuncFilter->findFuncInfoBySymbol(
@@ -1422,7 +1422,6 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
       FuncFilter->dump(FunctionFilter::FILTER_INCLUDE);
     }
   }
-
   // Add the pass manager
   Triple TheTriple = Triple(TripleName);
 

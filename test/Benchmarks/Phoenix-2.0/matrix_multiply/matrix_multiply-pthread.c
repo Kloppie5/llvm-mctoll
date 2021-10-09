@@ -1,5 +1,5 @@
 // RUN: clang -O3 -target arm-linux-gnueabi -mfloat-abi=soft -pthread -o %t.o %s -I %S/../
-// RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I /usr/include/stdio.h -I /usr/include/string.h -I /usr/include/fcntl.h -I /usr/include/sys/stat.h
+// RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I %S/matrix_multiply.h
 // RUN: clang -o %t-res %t-dis.ll
 // RUN: %t-res 2>&1 | FileCheck %s
 
@@ -13,8 +13,8 @@
 *     * Redistributions in binary form must reproduce the above copyright
 *       notice, this list of conditions and the following disclaimer in the
 *       documentation and/or other materials provided with the distribution.
-*     * Neither the name of Stanford University nor the names of its 
-*       contributors may be used to endorse or promote products derived from 
+*     * Neither the name of Stanford University nor the names of its
+*       contributors may be used to endorse or promote products derived from
 *       this software without specific prior written permission.
 *
 * THIS SOFTWARE IS PROVIDED BY STANFORD UNIVERSITY ``AS IS'' AND ANY
@@ -27,7 +27,7 @@
 * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/ 
+*/
 
 #include <stdio.h>
 #include <strings.h>
@@ -74,10 +74,10 @@ void matrixmult_splitter(void *data_in)
     int i, num_procs;
 
 	/* Make a copy of the mm_data structure */
-    mm_data_t * data = (mm_data_t *)data_in; 
+    mm_data_t * data = (mm_data_t *)data_in;
 
     /* Check whether the various terms exist */
-    assert(data_in);    
+    assert(data_in);
     assert(data->matrix_len >= 0);
     assert(data->matrix_A);
     assert(data->matrix_B);
@@ -92,7 +92,6 @@ void matrixmult_splitter(void *data_in)
     pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
 
     int req_rows = data->matrix_len / num_procs;
-
 
     for(i=0; i<num_procs; i++)
     {
@@ -133,10 +132,10 @@ void *matrixmult_map(void *args_in)
 
     int row_count = 0;
     int i,j, x_loc, y_loc, value;
-    int * a_ptr,* b_ptr;    
+    int * a_ptr,* b_ptr;
 
     assert(args);
-    
+
     mm_data_t* data = (mm_data_t*)(args->data);
     assert(data);
 
@@ -159,7 +158,7 @@ void *matrixmult_map(void *args_in)
 		    //printf("THe location is %d %d, value is %d\n",x_loc, y_loc, value);
 		    data->output[x_loc*data->matrix_len + i] = value;
 	    }
-	    row_count++;	
+	    row_count++;
     }
     free(args->data);
     free(args);
@@ -167,7 +166,7 @@ void *matrixmult_map(void *args_in)
 }
 
 int main(int argc, char *argv[]) {
-    
+
     int i,j, create_files;
     int fd_A, fd_B, fd_out,file_size;
     char * fdata_A, *fdata_B;
@@ -177,7 +176,7 @@ int main(int argc, char *argv[]) {
     int *matrix_A_ptr, *matrix_B_ptr;
 
     struct timeval starttime,endtime;
-    
+
     srand( (unsigned)time( NULL ) );
 
     // Make sure a filename is specified
@@ -213,7 +212,7 @@ int main(int argc, char *argv[]) {
 	    int value = 0;
 	    CHECK_ERROR((fd_A = open(fname_A,O_CREAT | O_RDWR,S_IRWXU)) < 0);
 	    CHECK_ERROR((fd_B = open(fname_B,O_CREAT | O_RDWR,S_IRWXU)) < 0);
-	    
+
 	    for(i=0;i<matrix_len;i++)
 	    {
 		    for(j=0;j<matrix_len;j++)
@@ -266,16 +265,15 @@ int main(int argc, char *argv[]) {
     mm_data.row_num = 0;
 
     mm_data.output = (int*)malloc(matrix_len*matrix_len*sizeof(int));
-    
+
     mm_data.matrix_A = matrix_A_ptr = ((int *)fdata_A);
     mm_data.matrix_B = matrix_B_ptr = ((int *)fdata_B);
 
     printf("MatrixMult_pthreads: Calling MapReduce Scheduler Matrix Multiplication\n");
 
 	gettimeofday(&starttime,0);
-    
+
     matrixmult_splitter(&mm_data);
-    
 
     gettimeofday(&endtime,0);
 

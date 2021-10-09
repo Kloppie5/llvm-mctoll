@@ -1,5 +1,5 @@
 // RUN: clang -O3 -target arm-linux-gnueabi -mfloat-abi=soft -o %t.o %s -I %S/../
-// RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I /usr/include/stdio.h -I /usr/include/fcntl.h -I /usr/include/sys/stat.h
+// RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I %S/linear_regression.h
 // RUN: clang -o %t-res %t-dis.ll
 // RUN: %t-res 2>&1 | FileCheck %s
 
@@ -15,8 +15,8 @@
 *     * Redistributions in binary form must reproduce the above copyright
 *       notice, this list of conditions and the following disclaimer in the
 *       documentation and/or other materials provided with the distribution.
-*     * Neither the name of Stanford University nor the names of its 
-*       contributors may be used to endorse or promote products derived from 
+*     * Neither the name of Stanford University nor the names of its
+*       contributors may be used to endorse or promote products derived from
 *       this software without specific prior written permission.
 *
 * THIS SOFTWARE IS PROVIDED BY STANFORD UNIVERSITY ``AS IS'' AND ANY
@@ -29,7 +29,7 @@
 * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/ 
+*/
 
 #include <stdio.h>
 #include <strings.h>
@@ -66,24 +66,24 @@ int main(int argc, char *argv[]) {
       printf("USAGE: %s <filename>\n", argv[0]);
       exit(1);
    }
-   
+
    fname = argv[1];
 
    printf("Linear Regression Serial: Running...\n");
-   
+
    // Read in the file
    CHECK_ERROR((fd = open(fname, O_RDONLY)) < 0);
    // Get the file info (for file length)
    CHECK_ERROR(fstat(fd, &finfo) < 0);
    // Memory map the file
-   CHECK_ERROR((fdata = mmap(0, finfo.st_size + 1, 
+   CHECK_ERROR((fdata = mmap(0, finfo.st_size + 1,
       PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) == NULL);
 
 
    POINT_T *points = (POINT_T*)fdata;
    long long n = (long long) finfo.st_size / sizeof(POINT_T);
    long long SX_ll = 0, SY_ll = 0, SXX_ll = 0, SYY_ll = 0, SXY_ll = 0;
-   
+
    // ADD UP RESULTS
    for (i = 0; i < n; i++)
    {
@@ -126,5 +126,3 @@ int main(int argc, char *argv[]) {
 
    return 0;
 }
-
-
