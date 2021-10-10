@@ -29,13 +29,21 @@ ARMFunctionPrototype::ARMFunctionPrototype() : MachineFunctionPass(ID) {}
 
 ARMFunctionPrototype::~ARMFunctionPrototype() {}
 
-/// Check the first reference of the reg is USE.
+/// Check whether the first instruction that references the reg uses it.
 bool ARMFunctionPrototype::isUsedRegister(unsigned reg, MachineFunction *MF) {
   for (MachineBasicBlock &MBB : *MF)
-    for (MachineInstr &MI : MBB)
+    for (MachineInstr &MI : MBB) {
+      bool found = false;
       for (MachineOperand &MO : MI.operands())
-        if (MO.isReg() && MO.getReg() == reg) // Find first reference of reg
-          return MO.isUse(); // Return true if it is a use
+        if (MO.isReg() && MO.getReg() == reg) {
+          found = true;
+          break;
+        }
+      if (found)
+        for (MachineOperand &MO : MI.operands())
+          if (MO.isReg() && MO.getReg() == reg && MO.isUse())
+            return true;
+    }
   return false;
 }
 
