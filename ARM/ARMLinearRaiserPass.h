@@ -29,6 +29,14 @@ public:
 
   Value* getRegValue(Register Reg, Type* Ty, BasicBlock* BB);
   void setRegValue(Register Reg, Value* V, BasicBlock* BB);
+  Value* getDRegValueF64(Register DReg, BasicBlock* BB);
+  std::pair<Value*, Value*> getDRegValueV2F32(Register DReg, BasicBlock* BB);
+  std::pair<Value*, Value*> getDRegValueV2I32(Register DReg, BasicBlock* BB);
+  void setDRegValueF64(Register DReg, Value* V, BasicBlock* BB);
+  void setDRegValueV2F32(Register DReg, Value* V1, Value* V2, BasicBlock* BB);
+  void setDRegValueV2I32(Register DReg, Value* V1, Value* V2, BasicBlock* BB);
+
+  std::pair<Register, Register> splitARMv7DRegister(Register DReg);
 
   Value* resolveAM2Shift(Register Rn, Register Rs, Register Rm, int64_t AM2Shift, BasicBlock* BB);
 

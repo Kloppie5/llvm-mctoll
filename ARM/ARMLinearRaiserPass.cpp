@@ -105,6 +105,17 @@ bool ARMLinearRaiserPass::run(MachineFunction* MF, Function* F) {
     }
   }
 
+  // Add returns to non terminated blocks | TODO: fix main function return type
+  for ( BasicBlock &BB : *F ) {
+    if (BB.getTerminator() == nullptr) {
+      Monitor::event_raw() << "LinearRaiser: add return to " << BB.getName() << "\n";
+      if (F->getReturnType() == Type::getVoidTy(Context))
+        ReturnInst::Create(Context, &BB);
+      else
+        ReturnInst::Create(Context, getRegValue(ARM::R0, F->getReturnType(), &BB), &BB);
+    }
+  }
+
   LLVM_DEBUG(F->dump());
   LLVM_DEBUG(dbgs() << "ARMLinearRaiserPass end.\n");
   Monitor::event_end("ARMLinearRaiserPass");
@@ -113,6 +124,8 @@ bool ARMLinearRaiserPass::run(MachineFunction* MF, Function* F) {
 
 Value* ARMLinearRaiserPass::getRegValue(Register Reg, Type* Ty, BasicBlock* BB) {
   assert(BBStateMap.count(BB) && "BBStateMap does not contain BB");
+  assert(Reg != ARM::PC && "getRegValue: PC is not allowed");
+  assert((Reg < ARM::D0 || Reg > ARM::D31) && "getRegValue: D register is not allowed");
   Value* V = BBStateMap[BB]->getRegValue(Reg, Ty->isPointerTy() ? Type::getInt32Ty(Context) : Ty);
   {auto &OS=Monitor::event_raw(); OS << "getRegValue: " << Reg << ": "; if(Ty) {Ty->print(OS); OS << " <= ";} V->getType()->print(OS); OS << "\n";}
   if (!Ty || V->getType() == Ty)
@@ -131,10 +144,103 @@ void ARMLinearRaiserPass::setRegValue(Register Reg, Value* V, BasicBlock* BB) {
   {auto &OS=Monitor::event_raw(); OS << "setRegValue: " << Reg << ": "; V->getType()->print(OS); OS << "\n";}
   assert(Reg != ARM::SP && "getRegValue: SP is not allowed");
   assert(Reg != ARM::PC && "getRegValue: PC is not allowed");
+  assert((Reg < ARM::D0 || Reg > ARM::D31) && "getRegValue: D register is not allowed");
   assert((V->getType() == Type::getInt32Ty(Context) || V->getType() == Type::getFloatTy(Context) || V->getType() == Type::getDoubleTy(Context))
          && "Value must be of type i32 or float");
   if (Reg == ARM::R11) BBStateMap[BB]->R11_is_FP = false;
   BBStateMap[BB]->setRegValue(Reg, V);
+}
+Value* ARMLinearRaiserPass::getDRegValueF64(Register DReg, BasicBlock* BB) {
+  assert(DReg >= ARM::D0 && DReg <= ARM::D31 && "DReg must be a D register");
+  std::pair<Register, Register> SRegs = splitARMv7DRegister(DReg);
+
+  Value* V1 = getRegValue(SRegs.first, Type::getInt32Ty(Context), BB);
+  Value* V2 = getRegValue(SRegs.second, Type::getInt32Ty(Context), BB);
+
+  Instruction* ZExt1 = new ZExtInst(V1, Type::getInt64Ty(Context), "", BB);
+  Monitor::event_Instruction(ZExt1);
+  Instruction* ZExt2 = new ZExtInst(V2, Type::getInt64Ty(Context), "", BB);
+  Monitor::event_Instruction(ZExt2);
+  Instruction* Shl = BinaryOperator::Create(Instruction::Shl, ZExt1, ConstantInt::get(Type::getInt64Ty(Context), 32), "", BB);
+  Monitor::event_Instruction(Shl);
+  Instruction* Add = BinaryOperator::Create(Instruction::Add, Shl, ZExt2, "", BB);
+  Monitor::event_Instruction(Add);
+
+  Instruction* Cast = new BitCastInst(Add, Type::getDoubleTy(Context), "", BB);
+  Monitor::event_Instruction(Cast);
+
+  return Cast;
+}
+std::pair<Value*, Value*> ARMLinearRaiserPass::getDRegValueV2F32(Register DReg, BasicBlock* BB) {
+  assert(DReg >= ARM::D0 && DReg <= ARM::D31 && "DReg must be a D register");
+  std::pair<Register, Register> SRegs = splitARMv7DRegister(DReg);
+
+  Value* V1 = getRegValue(SRegs.first, Type::getFloatTy(Context), BB);
+  Value* V2 = getRegValue(SRegs.second, Type::getFloatTy(Context), BB);
+
+  return std::make_pair(V1, V2);
+}
+std::pair<Value*, Value*> ARMLinearRaiserPass::getDRegValueV2I32(Register DReg, BasicBlock* BB) {
+  assert(DReg >= ARM::D0 && DReg <= ARM::D31 && "DReg must be a D register");
+  std::pair<Register, Register> SRegs = splitARMv7DRegister(DReg);
+
+  Value* V1 = getRegValue(SRegs.first, Type::getInt32Ty(Context), BB);
+  Value* V2 = getRegValue(SRegs.second, Type::getInt32Ty(Context), BB);
+
+  return std::make_pair(V1, V2);
+}
+void ARMLinearRaiserPass::setDRegValueF64(Register DReg, Value* V, BasicBlock* BB) {
+  assert(DReg >= ARM::D0 && DReg <= ARM::D31 && "setDRegValue: DReg must be a D register");
+  std::pair<Register, Register> SRegs = splitARMv7DRegister(DReg);
+
+  Instruction* Cast = new BitCastInst(V, Type::getInt64Ty(Context), "", BB);
+  Monitor::event_Instruction(Cast);
+
+  Instruction* Split = BinaryOperator::Create(Instruction::LShr, Cast, ConstantInt::get(Type::getInt64Ty(Context), 32), "", BB);
+  Monitor::event_Instruction(Split);
+  Instruction* Split1 = new TruncInst(Cast, Type::getInt32Ty(Context), "", BB);
+  Monitor::event_Instruction(Split1);
+  Instruction* Split2 = new TruncInst(Split, Type::getInt32Ty(Context), "", BB);
+  Monitor::event_Instruction(Split2);
+
+  setRegValue(SRegs.first, Split1, BB);
+  Monitor::event_raw() << "Setting " << SRegs.first << " to " << Split1 << "\n";
+
+  setRegValue(SRegs.second, Split2, BB);
+  Monitor::event_raw() << "Setting " << SRegs.second << " to " << Split2 << "\n";
+}
+void ARMLinearRaiserPass::setDRegValueV2F32(Register DReg, Value* V1, Value* V2, BasicBlock* BB) {
+  assert(DReg >= ARM::D0 && DReg <= ARM::D31 && "setDRegValue: DReg must be a D register");
+  std::pair<Register, Register> SRegs = splitARMv7DRegister(DReg);
+
+  Instruction* Cast1 = new BitCastInst(V1, Type::getInt32Ty(Context), "", BB);
+  Monitor::event_Instruction(Cast1);
+  Instruction* Cast2 = new BitCastInst(V2, Type::getInt32Ty(Context), "", BB);
+  Monitor::event_Instruction(Cast2);
+
+  setRegValue(SRegs.first, Cast1, BB);
+  Monitor::event_raw() << "Setting " << SRegs.first << " to " << Cast1 << "\n";
+
+  setRegValue(SRegs.second, Cast2, BB);
+  Monitor::event_raw() << "Setting " << SRegs.second << " to " << Cast2 << "\n";
+}
+void ARMLinearRaiserPass::setDRegValueV2I32(Register DReg, Value* V1, Value* V2, BasicBlock* BB) {
+  assert(DReg >= ARM::D0 && DReg <= ARM::D31 && "setDRegValue: DReg must be a D register");
+  std::pair<Register, Register> SRegs = splitARMv7DRegister(DReg);
+
+  setRegValue(SRegs.first, V1, BB);
+  Monitor::event_raw() << "Setting " << SRegs.first << " to " << V1 << "\n";
+
+  setRegValue(SRegs.second, V2, BB);
+  Monitor::event_raw() << "Setting " << SRegs.second << " to " << V2 << "\n";
+}
+
+std::pair<Register, Register> ARMLinearRaiserPass::splitARMv7DRegister(Register DReg) {
+  assert(DReg >= ARM::D0 && DReg <= ARM::D31 && "DReg must be a D register");
+  Register S1 = Register(ARM::S0 + (DReg - ARM::D0) / 2);
+  Register S2 = Register(ARM::S0 + (DReg - ARM::D0) / 2 + 1);
+  Monitor::event_raw() << "splitARMv7DRegister: " << DReg << ": " << S1 << " " << S2 << "\n";
+  return std::make_pair(S1, S2);
 }
 
 AllocaInst* ARMLinearRaiserPass::getOrCreateStackAlloca(Register Reg, int64_t Offset, Type* Ty, BasicBlock* BB) {
@@ -2059,7 +2165,7 @@ bool ARMLinearRaiserPass::raiseFCONSTD(MachineInstr* MI) { // 780 | VMOV.F64 Dd 
   uint8_t Sign = (Imm >> 7) & 0x1;
   uint8_t Exp = (Imm >> 4) & 0x7;
   uint8_t Mantissa = Imm & 0xf;
-  float F = bit_cast<float>(
+  float FImm = bit_cast<float>(
       (Sign << 31)
     | (((Exp & 0x4) != 0 ? 0 : 1) << 30)
     | (((Exp & 0x4) != 0 ? 0x1f : 0) << 25)
@@ -2080,10 +2186,8 @@ bool ARMLinearRaiserPass::raiseFCONSTD(MachineInstr* MI) { // 780 | VMOV.F64 Dd 
     BB = CondExecBB;
   }
 
-  Value* ImmVal = ConstantFP::get(Type::getDoubleTy(Context), F);
-  Monitor::event_raw() << "Reg: " << Dd << " <= " << F << "\n";
-
-  setRegValue(Dd, ImmVal, BB);
+  Value* ImmVal = ConstantFP::get(Type::getDoubleTy(Context), FImm);
+  setDRegValueF64(Dd, ImmVal, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -4130,7 +4234,7 @@ bool ARMLinearRaiserPass::raiseVABSD(MachineInstr* MI) { // 2026 | VABS.F64 Dd D
     BB = CondExecBB;
   }
 
-  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+  Value* DmVal = getDRegValueF64(Dm, BB);
 
   Instruction* Cmp = CmpInst::Create(Instruction::FCmp, CmpInst::FCMP_OLT, DmVal, ConstantFP::get(Context, APFloat(0.0)), "VABSDCmp", BB);
   Monitor::event_Instruction(Cmp);
@@ -4140,7 +4244,7 @@ bool ARMLinearRaiserPass::raiseVABSD(MachineInstr* MI) { // 2026 | VABS.F64 Dd D
   Instruction* Sel = SelectInst::Create(Cmp, Neg, DmVal, "VABSDSelect", BB);
   Monitor::event_Instruction(Sel);
 
-  setRegValue(Dd, Sel, BB);
+  setDRegValueF64(Dd, Sel, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -4170,13 +4274,13 @@ bool ARMLinearRaiserPass::raiseVADDD(MachineInstr* MI) { // 2047 | VADD.F64 Dd D
     BB = CondExecBB;
   }
 
-  Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
-  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+  Value* DnVal = getDRegValueF64(Dn, BB);
+  Value* DmVal = getDRegValueF64(Dm, BB);
 
   Instruction* Result = BinaryOperator::Create(Instruction::FAdd, DnVal, DmVal, "VADDD", BB);
   Monitor::event_Instruction(Result);
 
-  setRegValue(Dd, Result, BB);
+  setDRegValueF64(Dd, Result, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -4241,8 +4345,8 @@ bool ARMLinearRaiserPass::raiseVCMPD(MachineInstr* MI) { // 2213 | VCMP.F64 Dd D
     BB = CondExecBB;
   }
 
-  Value* DdVal = getRegValue(Dd, Type::getDoubleTy(Context), BB);
-  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+  Value* DdVal = getDRegValueF64(Dd, BB);
+  Value* DmVal = getDRegValueF64(Dm, BB);
 
   // TODO: Handle NaN
 
@@ -4286,7 +4390,7 @@ bool ARMLinearRaiserPass::raiseVCMPZD(MachineInstr* MI) { // 2222 | VCMP.F64 Dd 
     BB = CondExecBB;
   }
 
-  Value* DdVal = getRegValue(Dd, Type::getDoubleTy(Context), BB);
+  Value* DdVal = getDRegValueF64(Dd, BB);
 
   // TODO: Handle NaN
 
@@ -4332,13 +4436,13 @@ bool ARMLinearRaiserPass::raiseVDIVD(MachineInstr* MI) { // 2327 | VDIV.F64 Dd D
     BB = CondExecBB;
   }
 
-  Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
-  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+  Value* DnVal = getDRegValueF64(Dn, BB);
+  Value* DmVal = getDRegValueF64(Dm, BB);
 
   Instruction* Result = BinaryOperator::Create(Instruction::FDiv, DnVal, DmVal, "VDIVD", BB);
   Monitor::event_Instruction(Result);
 
-  setRegValue(Dd, Result, BB);
+  setDRegValueF64(Dd, Result, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -4437,7 +4541,7 @@ bool ARMLinearRaiserPass::raiseVLDRD(MachineInstr* MI) { // 2783 | VLDR.F64 Dd R
     Monitor::event_raw() << "Global Value: " << GV->getName() << "\n";
     Instruction* Load = new LoadInst(Type::getDoubleTy(Context), GV, "VLDRD", BB);
     Monitor::event_Instruction(Load);
-    setRegValue(Dd, Load, BB);
+    setDRegValueF64(Dd, Load, BB);
     return true;
   }
 
@@ -4448,7 +4552,7 @@ bool ARMLinearRaiserPass::raiseVLDRD(MachineInstr* MI) { // 2783 | VLDR.F64 Dd R
     Instruction* Load = new LoadInst(Type::getDoubleTy(Context), Ptr, "VLDRS", BB);
     Monitor::event_Instruction(Load);
 
-    setRegValue(Dd, Load, BB);
+    setDRegValueF64(Dd, Load, BB);
     return true;
   }
 
@@ -4466,7 +4570,7 @@ bool ARMLinearRaiserPass::raiseVLDRD(MachineInstr* MI) { // 2783 | VLDR.F64 Dd R
   Instruction* Load = new LoadInst(Type::getDoubleTy(Context), Ptr, "VLDRD", BB);
   Monitor::event_Instruction(Load);
 
-  setRegValue(Dd, Load, BB);
+  setDRegValueF64(Dd, Load, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -4537,15 +4641,15 @@ bool ARMLinearRaiserPass::raiseVMLAD(MachineInstr* MI) { // 2838 | VMLA.F64 Dd {
     BB = CondExecBB;
   }
 
-  Value* DdVal = getRegValue(Dd, Type::getDoubleTy(Context), BB);
-  Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
-  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+  Value* DdVal = getDRegValueF64(Dd, BB);
+  Value* DnVal = getDRegValueF64(Dn, BB);
+  Value* DmVal = getDRegValueF64(Dm, BB);
 
   Instruction* Mul = BinaryOperator::Create(Instruction::FMul, DnVal, DmVal, "VMLA.F64", BB);
   Monitor::event_Instruction(Mul);
   Instruction* Add = BinaryOperator::Create(Instruction::FAdd, DdVal, Mul, "VMLA.F64", BB);
   Monitor::event_Instruction(Add);
-  setRegValue(Dd, Add, BB);
+  setDRegValueF64(Dd, Add, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -4609,18 +4713,7 @@ bool ARMLinearRaiserPass::raiseVMOVDRR(MachineInstr* MI) { // 2902 | VMOV Dm Rd 
   Value* RdVal = getRegValue(Rd, Type::getInt32Ty(Context), BB);
   Value* RnVal = getRegValue(Rn, Type::getInt32Ty(Context), BB);
 
-  Instruction* ZExtRd = new ZExtInst(RdVal, Type::getInt64Ty(Context), "VMOV", BB);
-  Monitor::event_Instruction(ZExtRd);
-  Instruction* ZExtRn = new ZExtInst(RnVal, Type::getInt64Ty(Context), "VMOV", BB);
-  Monitor::event_Instruction(ZExtRn);
-  Instruction* Shl = BinaryOperator::Create(Instruction::Shl, ZExtRd, ConstantInt::get(Type::getInt64Ty(Context), 32), "VMOV", BB);
-  Monitor::event_Instruction(Shl);
-  Instruction* Add = BinaryOperator::Create(Instruction::Add, ZExtRn, Shl, "VMOV", BB);
-  Monitor::event_Instruction(Add);
-  Instruction* Cast = new BitCastInst(Add, Type::getDoubleTy(Context), "VMOV", BB);
-  Monitor::event_Instruction(Cast);
-
-  setRegValue(Dm, Cast, BB);
+  setDRegValueV2I32(Dm, RdVal, RnVal, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -4650,19 +4743,10 @@ bool ARMLinearRaiserPass::raiseVMOVRRD(MachineInstr* MI) { // 2915 | VMOV Rd Rn 
     BB = CondExecBB;
   }
 
-  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+  std::pair<Value*, Value*> DmVals = getDRegValueV2I32(Dm, BB);
 
-  Instruction* Cast = new BitCastInst(DmVal, Type::getInt64Ty(Context), "VMOV", BB);
-  Monitor::event_Instruction(Cast);
-  Instruction* TruncRd = new TruncInst(Cast, Type::getInt32Ty(Context), "VMOV", BB);
-  Monitor::event_Instruction(TruncRd);
-  Instruction* Shr = BinaryOperator::Create(Instruction::LShr, Cast, ConstantInt::get(Type::getInt64Ty(Context), 32), "VMOV", BB);
-  Monitor::event_Instruction(Shr);
-  Instruction* TruncRn = new TruncInst(Shr, Type::getInt32Ty(Context), "VMOV", BB);
-  Monitor::event_Instruction(TruncRn);
-
-  setRegValue(Rd, TruncRd, BB);
-  setRegValue(Rn, TruncRn, BB);
+  setRegValue(Rd, DmVals.first, BB);
+  setRegValue(Rn, DmVals.second, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -4786,12 +4870,12 @@ bool ARMLinearRaiserPass::raiseVMULD(MachineInstr* MI) { // 2954 | VMUL.F64 Dd D
     BB = CondExecBB;
   }
 
-  Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
-  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+  Value* DnVal = getDRegValueF64(Dn, BB);
+  Value* DmVal = getDRegValueF64(Dm, BB);
 
   Instruction* Result = BinaryOperator::Create(Instruction::FMul, DnVal, DmVal, "VMULD", BB);
   Monitor::event_Instruction(Result);
-  setRegValue(Dd, Result, BB);
+  setDRegValueF64(Dd, Result, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -4820,12 +4904,12 @@ bool ARMLinearRaiserPass::raiseVNEGD(MachineInstr* MI) { // 2995 | VNEG.F64 Dd D
     BB = CondExecBB;
   }
 
-  Value* DnVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+  Value* DnVal = getDRegValueF64(Dm, BB);
 
   Instruction* Result = BinaryOperator::Create(Instruction::FSub, ConstantFP::get(Type::getDoubleTy(Context), 0), DnVal, "VNEGD", BB);
   Monitor::event_Instruction(Result);
 
-  setRegValue(Dd, Result, BB);
+  setDRegValueF64(Dd, Result, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -4885,7 +4969,7 @@ bool ARMLinearRaiserPass::raiseVSITOD(MachineInstr* MI) { // 3463 | VCVT.F64.S32
 
   Instruction* Cast = CastInst::Create(Instruction::SIToFP, SmVal, Type::getDoubleTy(Context), "VSITOD", BB);
   Monitor::event_Instruction(Cast);
-  setRegValue(Dd, Cast, BB);
+  setDRegValueF64(Dd, Cast, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
@@ -4995,7 +5079,7 @@ bool ARMLinearRaiserPass::raiseVSTRD(MachineInstr* MI) { // 3770 | VSTR.F64 Dd R
     BB = CondExecBB;
   }
 
-  Value* DdVal = getRegValue(Dd, Type::getDoubleTy(Context), BB);
+  Value* DdVal = getDRegValueF64(Dd, BB);
   Value* Ptr;
   if (Rn == ARM::SP || (Rn == ARM::R11 && BBStateMap[BB]->R11_is_FP)) {
     Ptr = getOrCreateStackAlloca(Rn, Imm*4, Type::getDoubleTy(Context), BB);
@@ -5039,13 +5123,13 @@ bool ARMLinearRaiserPass::raiseVSUBD(MachineInstr* MI) { // 3791 | VSUB.F64 Dd D
     BB = CondExecBB;
   }
 
-  Value* DnVal = getRegValue(Dn, Type::getDoubleTy(Context), BB);
-  Value* DmVal = getRegValue(Dm, Type::getDoubleTy(Context), BB);
+  Value* DnVal = getDRegValueF64(Dn, BB);
+  Value* DmVal = getDRegValueF64(Dm, BB);
 
   Instruction* Result = BinaryOperator::Create(Instruction::FSub, DnVal, DmVal, "VSUBD", BB);
   Monitor::event_Instruction(Result);
 
-  setRegValue(Dd, Result, BB);
+  setDRegValueF64(Dd, Result, BB);
 
   if (conditional_execution) {
     Instruction* Branch = BranchInst::Create(MergeBB, BB);
