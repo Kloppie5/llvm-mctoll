@@ -3,7 +3,6 @@ include_directories(
   ${LLVM_BINARY_DIR}/lib/Target/ARM
   ${CMAKE_CURRENT_SOURCE_DIR}/..
   ${CMAKE_CURRENT_SOURCE_DIR}/.
-  ${CMAKE_CURRENT_SOURCE_DIR}/DAG
 )
 
 if(NOT LLVM_MCTOLL_BUILT_STANDALONE)
@@ -15,6 +14,14 @@ add_llvm_library(ARMRaiser
   ARMFunctionPrototype.cpp
   ARMBenchmarker.cpp
   ARMLinearRaiserPass.cpp
+  ARMRaiser/ARMRaiser.cpp
+  ARMRaiser/ARMRaiserCDE.cpp
+  ARMRaiser/ARMRaiserMVE.cpp
+  ARMRaiser/ARMRaiserNEON.cpp
+  ARMRaiser/ARMRaiserThumb.cpp
+  ARMRaiser/ARMRaiserThumb2.cpp
+  ARMRaiser/ARMRaiserVFP.cpp
+  ARMDisassembler.cpp
   ARMConcurrencyPatternMatcher.cpp
   ARMMachineInstructionRaiser.cpp
 

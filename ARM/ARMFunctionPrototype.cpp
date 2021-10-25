@@ -57,18 +57,14 @@ void ARMFunctionPrototype::genParameterTypes(std::vector<Type *> &paramTypes) {
       paramTypes.push_back(Type::getInt32Ty(MF->getFunction().getContext()));
     }
   }
+
   for (unsigned IReg = ARM::S0; IReg < ARM::S15; IReg++) {
     if (isUsedRegister(IReg, MF)) {
       Monitor::event_raw() << "Found float Reg " << IReg << " as argument.\n";
       paramTypes.push_back(Type::getFloatTy(MF->getFunction().getContext()));
     }
   }
-  for (unsigned IReg = ARM::D0; IReg < ARM::D7; IReg++) {
-    if (isUsedRegister(IReg, MF)) {
-      Monitor::event_raw() << "Found double Reg " << IReg << " as argument.\n";
-      paramTypes.push_back(Type::getDoubleTy(MF->getFunction().getContext()));
-    }
-  }
+  /**/
 
   // Because stack accesses are non-trivial, the only way to determine
   // stack arguments beforehand is via symbolic execution.

@@ -15,8 +15,8 @@
 *     * Redistributions in binary form must reproduce the above copyright
 *       notice, this list of conditions and the following disclaimer in the
 *       documentation and/or other materials provided with the distribution.
-*     * Neither the name of Stanford University nor the names of its 
-*       contributors may be used to endorse or promote products derived from 
+*     * Neither the name of Stanford University nor the names of its
+*       contributors may be used to endorse or promote products derived from
 *       this software without specific prior written permission.
 *
 * THIS SOFTWARE IS PROVIDED BY STANFORD UNIVERSITY ``AS IS'' AND ANY
@@ -29,7 +29,7 @@
 * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/ 
+*/
 
 #include <stdio.h>
 #include <strings.h>
@@ -64,23 +64,23 @@ void test_endianess() {
    else {
       printf("Error: Invalid value found in memory\n");
       exit(1);
-   } 
+   }
 }
 
 void swap_bytes(char *bytes, int num_bytes) {
    int i;
    char tmp;
-   
+
    for (i = 0; i < num_bytes/2; i++) {
       dprintf("Swapping %d and %d\n", bytes[i], bytes[num_bytes - i - 1]);
       tmp = bytes[i];
       bytes[i] = bytes[num_bytes - i - 1];
-      bytes[num_bytes - i - 1] = tmp;   
+      bytes[num_bytes - i - 1] = tmp;
    }
 }
 
 int main(int argc, char *argv[]) {
-      
+
    int i;
    int fd;
    char *fdata;
@@ -94,21 +94,21 @@ int main(int argc, char *argv[]) {
       printf("USAGE: %s <bitmap filename>\n", argv[0]);
       exit(1);
    }
-   
+
    fname = argv[1];
-   
+
    CHECK_ERROR((fd = open(fname, O_RDONLY)) < 0);
    CHECK_ERROR(fstat(fd, &finfo) < 0);
-   CHECK_ERROR((fdata = mmap(0, finfo.st_size + 1, 
+   CHECK_ERROR((fdata = mmap(0, finfo.st_size + 1,
       PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) == NULL);
-   
+
    if ((fdata[0] != 'B') || (fdata[1] != 'M')) {
       printf("File is not a valid bitmap file. Exiting\n");
       exit(1);
    }
-   
+
    test_endianess();
-   
+
    unsigned short *bitsperpixel = (unsigned short *)(&(fdata[BITS_PER_PIXEL_POS]));
    if (swap) {
       swap_bytes((char *)(bitsperpixel), sizeof(*bitsperpixel));
@@ -118,50 +118,50 @@ int main(int argc, char *argv[]) {
       printf("This application only accepts 24-bit pictures. Exiting\n");
       exit(1);
    }
-   
+
    unsigned short *data_pos = (unsigned short *)(&(fdata[IMG_DATA_OFFSET_POS]));
    if (swap) {
       swap_bytes((char *)(data_pos), sizeof(*data_pos));
    }
-   
+
    int imgdata_bytes = (int)finfo.st_size - (int)(*(data_pos));
    printf("This file has %d bytes of image data, %d pixels\n", imgdata_bytes,
                                                             imgdata_bytes / 3);
-                                                            
-   printf("Starting sequential histogram\n");                                                            
 
-   
+   printf("Starting sequential histogram\n");
+
+
    memset(&(red[0]), 0, sizeof(int) * 256);
    memset(&(green[0]), 0, sizeof(int) * 256);
    memset(&(blue[0]), 0, sizeof(int) * 256);
-   
-   for (i=*data_pos; i < finfo.st_size; i+=3) {      
+
+   for (i=*data_pos; i < finfo.st_size; i+=3) {
       unsigned char *val = (unsigned char *)&(fdata[i]);
       blue[*val]++;
-      
+
       val = (unsigned char *)&(fdata[i+1]);
       green[*val]++;
-      
+
       val = (unsigned char *)&(fdata[i+2]);
-      red[*val]++;   
+      red[*val]++;
    }
-   
+
    dprintf("\n\nBlue\n");
    dprintf("----------\n\n");
    for (i = 0; i < 256; i++) {
-      dprintf("%d - %d\n", i, blue[i]);        
+      dprintf("%d - %d\n", i, blue[i]);
    }
-   
+
    dprintf("\n\nGreen\n");
    dprintf("----------\n\n");
    for (i = 0; i < 256; i++) {
-      dprintf("%d - %d\n", i, green[i]);        
+      dprintf("%d - %d\n", i, green[i]);
    }
-   
+
    dprintf("\n\nRed\n");
    dprintf("----------\n\n");
    for (i = 0; i < 256; i++) {
-      dprintf("%d - %d\n", i, red[i]);        
+      dprintf("%d - %d\n", i, red[i]);
    }
 
    CHECK_ERROR(munmap(fdata, finfo.st_size + 1) < 0);

@@ -1,0 +1,176 @@
+
+CCCC 0000 ooo S nnnn dddd sssss tt 0 mmmm | Integer Data Processing RRRIS
+---- ---- 000 - ---- ---- ----- -- - ---- | AND<CC><S> Rd, Rn, Rm OP #
+---- ---- 001 - ---- ---- ----- -- - ---- | EOR<CC><S> Rd, Rn, Rm OP #
+---- ---- 010 - ---- ---- ----- -- - ---- | SUB<CC><S> Rd, Rn, Rm OP #
+---- ---- 011 - ---- ---- ----- -- - ---- | RSB<CC><S> Rd, Rn, Rm OP #
+---- ---- 100 - ---- ---- ----- -- - ---- | ADD<CC><S> Rd, Rn, Rm OP #
+---- ---- 101 - ---- ---- ----- -- - ---- | ADC<CC><S> Rd, Rn, Rm OP #
+---- ---- 110 - ---- ---- ----- -- - ---- | SBC<CC><S> Rd, Rn, Rm OP #
+---- ---- 111 - ---- ---- ----- -- - ---- | RSC<CC><S> Rd, Rn, Rm OP #
+
+CCCC 00010 oo 1 nnnn 0000 sssss tt 0 mmmm | Integer Test and Compare RRIS
+---- ----- 00 - ---- ---- ----- -- - ---- | TST<CC><S> Rn, Rm OP #
+---- ----- 01 - ---- ---- ----- -- - ---- | TEQ<CC><S> Rn, Rm OP #
+---- ----- 10 - ---- ---- ----- -- - ---- | CMP<CC><S> Rn, Rm OP #
+---- ----- 11 - ---- ---- ----- -- - ---- | CMN<CC><S> Rn, Rm OP #
+
+CCCC 00011 oo S nnnn dddd sssss tt 0 mmmm | Logical Arithmetic RRRIS
+---- ----- 00 - ---- ---- ----- -- - ---- | ORR<CC><S> Rd, Rn, Rm OP #
+---- ----- 01 - 0000 ---- ----- -- - ---- | MOV<CC><S> Rd, Rm OP #
+---- ----- 10 - ---- ---- ----- -- - ---- | BIC<CC><S> Rd, Rn, Rm OP #
+---- ----- 11 - 0000 ---- ----- -- - ---- | MVN<CC><S> Rd, Rm OP #
+
+CCCC 0000 ooo S nnnn dddd ssss 0 tt 1 mmmm | Integer Data Processing RRRRS
+---- ---- 000 - ---- ---- ---- - -- - ---- | AND<CC><S> Rd, Rn, Rm OP Rs
+---- ---- 001 - ---- ---- ---- - -- - ---- | EOR<CC><S> Rd, Rn, Rm OP Rs
+---- ---- 010 - ---- ---- ---- - -- - ---- | SUB<CC><S> Rd, Rn, Rm OP Rs
+---- ---- 011 - ---- ---- ---- - -- - ---- | RSB<CC><S> Rd, Rn, Rm OP Rs
+---- ---- 100 - ---- ---- ---- - -- - ---- | ADD<CC><S> Rd, Rn, Rm OP Rs
+---- ---- 101 - ---- ---- ---- - -- - ---- | ADC<CC><S> Rd, Rn, Rm OP Rs
+---- ---- 110 - ---- ---- ---- - -- - ---- | SBC<CC><S> Rd, Rn, Rm OP Rs
+---- ---- 111 - ---- ---- ---- - -- - ---- | RSC<CC><S> Rd, Rn, Rm OP Rs
+
+CCCC 00010 oo 1 nnnn 0000 ssss 0 tt 1 mmmm | Integer Test and Compare RRRS
+---- ----- 00 - ---- ---- ---- - -- - ---- | TST<CC><S> Rn, Rm OP Rs
+---- ----- 01 - ---- ---- ---- - -- - ---- | TEQ<CC><S> Rn, Rm OP Rs
+---- ----- 10 - ---- ---- ---- - -- - ---- | CMP<CC><S> Rn, Rm OP Rs
+---- ----- 11 - ---- ---- ---- - -- - ---- | CMN<CC><S> Rn, Rm OP Rs
+
+CCCC 00011 oo S nnnn dddd ssss 0 tt 1 mmmm | Logical Arithmetic RRRRS
+---- ----- 00 - ---- ---- ---- - -- - ---- | ORR<CC><S> Rd, Rn, Rm OP Rs
+---- ----- 01 - 0000 ---- ---- - -- - ---- | MOV<CC><S> Rd, Rm OP Rs
+---- ----- 10 - ---- ---- ---- - -- - ---- | BIC<CC><S> Rd, Rn, Rm OP Rs
+---- ----- 11 - 0000 ---- ---- - -- - ---- | MVN<CC><S> Rd, Rm OP Rs
+
+CCCC 0010 ooo S nnnn dddd iiiiiiiiiiii | Integer Data Processing RRI
+---- ---- 000 - ---- ---- ------------ | AND<CC><S> Rd, Rn, #
+---- ---- 001 - ---- ---- ------------ | EOR<CC><S> Rd, Rn, #
+---- ---- 010 - ---- ---- ------------ | SUB<CC><S> Rd, Rn, #
+---- ---- 011 - ---- ---- ------------ | RSB<CC><S> Rd, Rn, #
+---- ---- 100 - ---- ---- ------------ | ADD<CC><S> Rd, Rn, #
+---- ---- 101 - ---- ---- ------------ | ADC<CC><S> Rd, Rn, #
+---- ---- 110 - ---- ---- ------------ | SBC<CC><S> Rd, Rn, #
+---- ---- 111 - ---- ---- ------------ | RSC<CC><S> Rd, Rn, #
+
+CCCC 00110 H 00 iiii dddd iiiiiiiiiiii | Move Halfword
+---- ----- 0 -- ---- ---- ------------ | MOV<CC> Rd, # | Rd = ZeroExtend(imm4:imm12, 32);
+---- ----- 1 -- ---- ---- ------------ | MOVT<CC> Rd, # | Rd<31:16> = imm4:imm12
+
+CCCC 00110 R 10 mmmm 1111 rrrr aaaaaaaa | Move Special Register and Hints
+---- ----- 0 -- ---- ---- ---- -------- | MSR<CC> CPSR_mmmm, #
+---- ----- 1 -- ---- ---- ---- -------- | MSR<CC> SPSR_mmmm, #
+
+CCCC 00110 oo 1 nnnn 0000 rrrr aaaaaaaa | Integer Test and Compare RI
+---- ----- 00 - ---- ---- ---- -------- | TST<CC><S> Rn, #
+---- ----- 01 - ---- ---- ---- -------- | TEQ<CC><S> Rn, #
+---- ----- 10 - ---- ---- ---- -------- | CMP<CC><S> Rn, #
+---- ----- 11 - ---- ---- ---- -------- | CMN<CC><S> Rn, #
+
+CCCC 00111 oo S nnnn dddd rrrr aaaaaaaa | Logical Arithmetic RRI
+---- ----- 00 - ---- ---- ---- -------- | ORR<CC><S> Rd, Rn, #
+---- ----- 01 - 0000 ---- ---- -------- | MOV<CC><S> Rd #
+---- ----- 10 - ---- ---- ---- -------- | BIC<CC><S> Rd, Rn, #
+---- ----- 11 - 0000 ---- ---- -------- | MVN<CC><S> Rd, #
+
+CCCC 000 P U 0 W o nnnn dddd 00001 oo 1 mmmm |
+CCCC 000 1 0 0 0 0 nnnn dddd 0000 1 00 1 mmmm | SWP<CC> Rd, Rm, [Rn]
+CCCC 000 1 0 1 0 0 nnnn dddd 0000 1 00 1 mmmm | SWP<CC>B Rd, Rm, [Rn]
+
+CCCC 00010 oo 0 mmmm dddd 00 B M 0000 nnnn | Move special register
+CCCC 00010 00 0 1111 dddd 00 0 0 0000 0000 | MRS<CC> Rd, CPSR
+CCCC 00010 10 0 1111 dddd 00 0 0 0000 0000 | MRS<CC> Rd, SPSR
+CCCC 00010 01 0 ffff 1111 00 0 0 0000 mmmm | MSR<CC> CPSR_ffff, Rm
+CCCC 00010 11 0 ffff 1111 00 0 0 0000 mmmm | MSR<CC> SPSR_ffff, Rm
+
+
+CCCC 0000 ooo S nnnn dddd ssss 1 00 1 nnnn | Multiply and Accumulate
+---- ---- 000 - ---- ---- ---- - -- - ---- | MUL<CC><S> Rn, Rm, Rs
+---- ---- 001 - ---- ---- ---- - -- - ---- | MLA<CC><S> Rn, Rm, Rs, Rd
+---- ---- 010 0 ---- ---- ---- - -- - ---- | UMAAL<CC> Rn, Rm, Rs, Rd
+---- ---- 011 0 ---- ---- ---- - -- - ---- | MLS<CC> Rn, Rm, Rs, Rd
+---- ---- 100 - ---- ---- ---- - -- - ---- | UMULL<CC><S> Rd, Rn, Rm, Rs
+---- ---- 101 - ---- ---- ---- - -- - ---- | UMLAL<CC><S> Rd, Rn, Rm, Rs
+---- ---- 110 - ---- ---- ---- - -- - ---- | SMULL<CC><S> Rd, Rn, Rm, Rs
+---- ---- 111 - ---- ---- ---- - -- - ---- | SMLAL<CC><S> Rd, Rn, Rm, Rs
+
+CCCC 0001 o xxxxxxxxxxx 11 xx 1001 xxxx | Synchronization and Load-Acquire/Store-Release
+CCCC 00011 ss L nnnn dddd 11 e o 1001 tttt
+---- ----- -- 0 ---- ---- -- - - ---- ---- | Store
+---- ----- -- 1 ---- ---- -- - - ---- ---- | Load
+---- ----- -- - ---- ---- -- - 0 ---- ---- | Literal
+---- ----- -- - ---- ---- -- - 1 ---- ---- | Register
+---- ----- -- - ---- ---- -- 1 - ---- ---- | EX
+---- ----- 00 - ---- ---- -- - - ---- ---- | Word
+---- ----- 01 - ---- ---- -- - - ---- ---- | Doubleword
+---- ----- 10 - ---- ---- -- - - ---- ---- | Byte
+---- ----- 11 - ---- ---- -- - - ---- ---- | Half
+
+CCCC 00010 oo 0 xxxxxxxxxxxx 0 ooo xxxx | Miscellaneous
+---- ----- 01 - ------------ - 001 ---- | BX
+---- ----- 01 - ------------ - 010 ---- | BXJ
+---- ----- 01 - ------------ - 011 ---- | BLX
+---- ----- 11 - ------------ - 010 ---- | CLZ
+
+CCCC 000 P U 0 W o nnnn dddd 0000 1 oo 1 mmmm | Load and Store Dual
+CCCC 000 P U I W 0 nnnn dddd aaaa 1 01 1 aaaa | STR<CC>H Rd, address
+CCCC 000 P U I W 1 nnnn dddd aaaa 1 01 1 aaaa | LDR<CC>H Rd, address
+CCCC 000 P U I W 1 nnnn dddd aaaa 1 10 1 aaaa | LDR<CC>SB Rd, address
+CCCC 000 P U I W 1 nnnn dddd aaaa 1 11 1 aaaa | LDR<CC>SH Rd, address
+
+CCCC 010 P A B W D nnnn dddd aaaaaaaaaaaa | Load and Store I
+---- --- - - - - 0 ---- ---- ------------ | STR<CC> Rd, Rn, #
+---- --- - - - - 1 ---- ---- ------------ | LDR
+---- --- - - 1 - - ---- ---- ------------ | B
+---- --- - 0 - - - ---- ---- ------------ | sub
+---- --- - 1 - - - ---- ---- ------------ | add
+---- --- 0 - - 0 - ---- ---- ------------ | post-indexed
+---- --- 0 - - 1 - ---- ---- ------------ | T
+---- --- 1 - - 0 - ---- ---- ------------ | offset
+---- --- 1 - - 1 - ---- ---- ------------ | pre-indexed
+
+CCCC 011 P A B W D nnnn dddd sssss tt 0 mmmm | Load and Store R
+---- --- - - - - 0 ---- ---- ------------ | STR<CC> Rd, Rn, Rm OP #
+---- --- - - - - 1 ---- ---- ------------ | LDR
+---- --- - - 1 - - ---- ---- ------------ | B
+---- --- - 0 - - - ---- ---- ------------ | sub
+---- --- - 1 - - - ---- ---- ------------ | add
+---- --- 0 - - 0 - ---- ---- ------------ | post-indexed
+---- --- 0 - - 1 - ---- ---- ------------ | T
+---- --- 1 - - - - ---- ---- ------------ | pre-indexed
+
+CCCC 011 ooooo xxxxxxxxxxxx ooo 1 xxxx | Media
+---- --- 00--- ------------ --- - ---- | Parallel Arithmetic [...]
+
+CCCC 01100 ooo nnnn dddd 1111 B oo 1 mmmm | Parallel Arithmetic
+CCCC 01110 ooo dddd aaaa mmmm ooo 1 nnnn | Signed Multiply and Divide
+
+1111100 P U S W L nnnn ooooooooooo mmmm | Exception Save and Restore
+CCCC 100 P U o W L nnnn rrrrrrrrrrrrrrrr | Load and Store Multiple
+---- --- - - - - 0 ---- ---------------- | STM<CC><AN> Rm<!>, regs<^>
+---- --- - - - - 1 ---- ---------------- | LDM<CC><AN> Rm<!>, regs<^>
+---- --- 0 0 - - - ---- ---------------- | DA / FA
+---- --- 0 1 - - - ---- ---------------- | IA / FD
+---- --- 1 0 - - - ---- ---------------- | DB / EA
+---- --- 1 1 - - - ---- ---------------- | IB / ED
+
+xxxx 101 H aaaaaaaaaaaaaaaaaaaaaaaa | Branch
+CCCC --- 0 ------------------------ | B<CC> address
+CCCC --- 1 ------------------------ | BL<CC> address
+1111 --- a ------------------------ | BLX<CC> address
+
+CCCC 11 oo xxxxxxxxxxxx oo xxxxx o xxxx |
+1111 -- 11 ------------ -- ----- - ---- | SVC
+
+111111 ooo x oooooo xxxx 1 o oo x o x o xxxx |
+------ 0-- - ------ ---- - - 0- - - - - ---- | Advanced SIMD RRR
+------ 100 - ------ ---- - 0 -- - 0 - 0 ---- | Floating-point conditional select
+
+CCCC 110 P U N W 0 nnnn dddd pppp aaaaaaaa | STC<CC> p<p>, CRd, #
+CCCC 110 P U N W 1 nnnn dddd pppp aaaaaaaa | LDC<CC> p<p>, CRd, #
+
+CCCC 111 0 pppp nnnn dddd iiii sss 0 mmmm | CDP<CC> p<i>, p, CRd, CRn, CRm, s
+CCCC 111 0 ppp 0 nnnn dddd iiii sss 1 mmmm | MCR<CC> p<i>, p, Rd, Crn, CRm, s
+CCCC 111 0 ppp 0 nnnn dddd iiii sss 1 mmmm | MRC<CC> p<i>, p, Rd, CRn, CRm, s
+
+CCCC 111 1 nnnnnnnnnnnnnnnnnnnnnnnn | SWI n

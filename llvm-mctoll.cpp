@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm-mctoll.h"
+#include "ARM/ARMDisassembler.h"
 #include "EmitRaisedOutputPass.h"
 #include "ExternalFunctions.h"
 #include "MCInstOrData.h"
@@ -1476,6 +1477,18 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
   PM.run(module);
 }
 
+static void DumpARMObject(ObjectFile *o) {
+  // Avoid other output when using a raw option.
+  LLVM_DEBUG(dbgs() << '\n');
+  LLVM_DEBUG(dbgs() << "; " << o->getFileName());
+  LLVM_DEBUG(dbgs() << ":\tfile format " << o->getFileFormatName() << "\n\n");
+
+  // (char* triple, uint8_t* Data, uint64_t Size)
+  ARMDisassembler* DisAsm = new ARMDisassembler((uint8_t*) o->getData().data(),
+                                                (uint64_t) o->getData().size());
+  DisAsm->dump();
+}
+
 static void DumpObject(ObjectFile *o, const Archive *a = nullptr) {
   // Avoid other output when using a raw option.
   LLVM_DEBUG(dbgs() << '\n');
@@ -1553,7 +1566,7 @@ static void DumpInput(StringRef file) {
         exit(1);
       }
     } else if (o->getArch() == Triple::arm)
-      DumpObject(o);
+      DumpARMObject(o);
     else {
       errs() << "\n\n*** No support to raise Binaries other than x64 and ARM\n"
              << "*** Please consider contributing support to raise other "
