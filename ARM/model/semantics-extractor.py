@@ -24,8 +24,7 @@ def parse_semantics(semantics_file):
     isa = iclass.attrib['isa']
     instruction['isa'] = isa
 
-    match_pattern = []
-    print_pattern = []
+    pattern = []
     constraints = []
     for box in iclass.find('regdiagram').findall('box'):
       hibit = box.get('hibit')
@@ -34,23 +33,23 @@ def parse_semantics(semantics_file):
         width = 1
       name = box.get('name')
       if name is None:
-        name = hibit
+        name = "%s/%s" % (hibit, width)
       settings = box.get('settings')
       constraint = box.get('constraint')
 
-      pattern = ""
-      if settings is None or constraint is not None:
-        match_pattern.append('-' * int(width))
-      pattern += "%s/%s" % (name, width)
+      element = {}
+      element['name'] = name
+      element['hibit'] = hibit
+      element['width'] = width
       if settings is not None and constraint is None:
         contents = ''.join(c.text for c in box.findall('c'))
-        match_pattern.append(contents.replace('(', '').replace(')', ''))
-        pattern += ":%s" % contents
+        element['contents'] = contents
+      else:
+        element['contents'] = '-' * int(width)
       if constraint is not None:
         constraints.append("%s %s" % (name, constraint))
-      print_pattern.append(pattern)
-    instruction['match_pattern'] = match_pattern
-    instruction['print_pattern'] = print_pattern
+      pattern.append(element)
+    instruction['pattern'] = pattern
     instruction['constraints'] = constraints
 
     mnemonics = set()
@@ -82,6 +81,41 @@ def cleanup_ASL(asl):
 
   return asl
 
+def build_trie(instructions):
+  trie = {}
+  for instruction in instructions:
+    l = trie
+    for element in instruction['pattern']:
+      cont = element['contents']
+      if cont not in l:
+        l[cont] = {}
+      l = l[cont]
+    l['instruction'] = instruction
+  return trie
+
+def simplify_trie(trie):
+  for key in list(trie.keys()):
+    if key == 'instruction':
+      continue
+    trie[key] = simplify_trie(trie[key])
+
+    if len(trie[key]) == 1:
+      subkey = list(trie[key].keys())[0]
+      if subkey == 'instruction':
+        continue
+
+      trie[key + subkey] = trie[key][subkey]
+      del trie[key]
+  return trie
+
+def print_trie(trie, indent=0):
+  for key in trie:
+    if key == 'instruction':
+      print("%s%s" % (" " * indent, trie['instruction']['mnemonics']))
+    else:
+      print("%s%s" % (" " * indent, key.replace('(', '').replace(')', '')))
+      print_trie(trie[key], indent + len(key.replace('(', '').replace(')', '')))
+
 semantics_files = get_files("./operational_semantics/")
 
 ISAs = {}
@@ -94,10 +128,8 @@ for semantics_file in semantics_files:
 
 for isa in ISAs:
   print("%s:" % isa)
-  for instruction in ISAs[isa]:
-    print("%s" % '/'.join(instruction["mnemonics"]))
-    print("  %s" % ''.join(instruction["match_pattern"]))
-    print("  %s" % ' '.join(instruction["print_pattern"]))
-    print("  %s" % ', '.join(instruction["constraints"]))
-    print("  %s" % instruction["psuedocode"][0])
-    print("  %s" % instruction["psuedocode"][1])
+  trie = build_trie(ISAs[isa])
+  print("  %d instructions" % len(ISAs[isa]))
+  print_trie(trie)
+  trie = simplify_trie(trie)
+  print_trie(trie)
