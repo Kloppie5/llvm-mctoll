@@ -2,3 +2,10 @@ build
 *.swp
 *~
 ARM/model/operational_semantics/
+ARM/model/A32Disassembler.cpp
+ARM/model/A32Raiser.cpp
+ARM/model/A32Raiser.h
+ARM/model/T32Disassembler.cpp
+ARM/model/T32Raiser.cpp
+ARM/model/T32Raiser.h
+ARM/model/__pycache__/
