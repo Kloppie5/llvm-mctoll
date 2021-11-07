@@ -3,9 +3,15 @@ build
 *~
 ARM/model/operational_semantics/
 ARM/model/A32Disassembler.cpp
+ARM/model/A32Disassembler.h
+ARM/model/A32Instruction.cpp
+ARM/model/A32Instruction.h
 ARM/model/A32Raiser.cpp
 ARM/model/A32Raiser.h
 ARM/model/T32Disassembler.cpp
+ARM/model/T32Disassembler.h
+ARM/model/T32Instruction.cpp
+ARM/model/T32Instruction.h
 ARM/model/T32Raiser.cpp
 ARM/model/T32Raiser.h
 ARM/model/__pycache__/

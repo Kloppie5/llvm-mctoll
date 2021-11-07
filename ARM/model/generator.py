@@ -1,71 +1,100 @@
 
+from asl_parser import ASLParser
+
 #--- Disassembler ---#
-def generate_disasm(tree, name):
-  with open(f"{name}.cpp", 'w') as f:
-    f.write(f"""
-/** This file is generated, do not edit **/
+def generate_disasm(tree, isa):
+  with open(f"{isa}Instruction.cpp", 'w') as fcpp:
+    with open(f"{isa}Instruction.h", 'w') as fh:
+      fcpp.write(f"""/** This file is generated, do not edit **/\n""")
+      fh.write  (f"""/** This file is generated, do not edit **/\n""")
 
-#include <cstdio>
-#include <cstdint>
-#include <map>
-#include <string>
-#include <vector>
+      fh.write  (f"""#ifndef LLVM_MCTOLL_{isa.upper()}INSTRUCTION_H\n"""
+                +f"""#define LLVM_MCTOLL_{isa.upper()}INSTRUCTION_H\n"""
+                +f"""\n"""
+                +f"""#include <iostream>\n"""
+                +f"""#include <map>\n"""
+                +f"""#include <string>\n"""
+                +f"""\n"""
+                +f"""class {isa}Instruction {{\n"""
+                +f"""  public:\n"""
+                +f"""    uint64_t address;\n"""
+                +f"""    const uint8_t* data;\n"""
+                +f"""\n"""
+                +f"""    std::string mnemonic;\n"""
+                +f"""    std::string constraints;\n"""
+                +f"""    std::string pseudocode;\n"""
+                +f"""    std::map<std::string, uint64_t> fields;\n"""
+                +f"""}};\n"""
+                +f"""\n"""
+                +f"""std::ostream& operator<<(std::ostream& os, const {isa}Instruction& instruction);\n"""
+                +f"""\n"""
+                +f"""#endif // LLVM_MCTOLL_{isa.upper()}INSTRUCTION_H\n""")
 
-class {name} {{
-  public:
-    class Instruction {{
-      public:
-        uint64_t address;
-        uint8_t* data;
+      fcpp.write(f"""#include "{isa}Instruction.h"\n"""
+                +f"""\n"""
+                +f"""std::ostream& operator<<(std::ostream& os, const {isa}Instruction& instruction) {{\n"""
+                +f"""  os << "{{"\n"""
+                +f"""     << instruction.mnemonic << " at "\n"""
+                +f"""     << instruction.address << ", "\n"""
+                +f"""     << instruction.constraints << ", "\n"""
+                +f"""     << instruction.pseudocode << "}}";\n"""
+                +f"""  return os;\n"""
+                +f"""}}\n"""
+                +f"""\n""")
 
-        // Debug
-        std::string mnemonic;
-        std::string constraints;
-        std::string pseudocode;
-        std::map<std::string, uint64_t> fields;
-    }};
+  with open(f"{isa}Disassembler.cpp", 'w') as fcpp:
+    with open(f"{isa}Disassembler.h", 'w') as fh:
+      fcpp.write(f"""/** This file is generated, do not edit **/\n""")
+      fh.write  (f"""/** This file is generated, do not edit **/\n""")
 
-  private:
-    uint8_t* data;
-    uint64_t size;
-    std::vector<Instruction> instructions;
-    std::map<uint64_t, Instruction*> address_map;
+      fh.write  (f"""#include <cstdio>\n"""
+                +f"""#include <cstdint>\n"""
+                +f"""#include <map>\n"""
+                +f"""#include <string>\n"""
+                +f"""#include <vector>\n"""
+                +f"""\n"""
+                +f"""#include "{isa}Instruction.h"\n"""
+                +f"""\n"""
+                +f"""class {isa}Disassembler {{\n"""
+                +f"""  \n"""
+                +f"""  private:\n"""
+                +f"""    std::map<uint64_t, {isa}Instruction> instructions;\n"""
+                +f"""  \n"""
+                +f"""  public:\n"""
+                +f"""    {isa}Disassembler();\n"""
+                +f"""    void add_instruction({isa}Instruction instruction);\n"""
+                +f"""    {isa}Instruction* disassemble(const uint64_t address, const uint8_t* data);\n"""
+                +f"""}};\n""")
 
-  public:
+      fcpp.write(f"""#include "{isa}Disassembler.h"\n"""
+                +f"""\n"""
+                +f"""{isa}Disassembler::{isa}Disassembler() {{\n"""
+                +f"""}}\n"""
+                +f"""\n"""
+                +f"""void {isa}Disassembler::add_instruction({isa}Instruction instruction) {{\n"""
+                +f"""  instructions[instruction.address] = instruction;\n"""
+                +f"""}}\n"""
+                +f"""\n"""
+                +f"""{isa}Instruction* {isa}Disassembler::disassemble(const uint64_t address, const uint8_t* data) {{\n"""
+                +f"""  {isa}Instruction* instruction = new {isa}Instruction();\n"""
+                +f"""  if (instructions.find(address) != instructions.end()) {{\n"""
+                +f"""    instruction = &instructions[address];\n"""
+                +f"""    return instruction;\n"""
+                +f"""  }}\n"""
+                +f"""  \n"""
+                +f"""  instruction->address = address;\n"""
+                +f"""  instruction->data = data;\n""")
 
-    {name}(uint8_t* data, uint64_t size) {{
-      this->data = data;
-      this->size = size;
-    }}
+      generate_match(tree, fcpp, '  ')
 
-    void add_instruction(Instruction instruction) {{
-      instructions.push_back(instruction);
-      address_map[instruction.address] = &instructions.back();
-    }}
-
-    Instruction* get_instruction(uint64_t address) {{
-      auto it = address_map.find(address);
-      if (it == address_map.end()) {{
-        return nullptr;
-      }}
-      return it->second;
-    }}
-
-    Instruction* disassemble(uint64_t address) {{
-      Instruction* instruction = new Instruction();\n""")
-
-    generate_match(tree, f, '      ')
-
-    f.write(f"    }}\n"
-           +f"}};\n")
+      fcpp.write(f"""  return nullptr;\n"""
+                +f"""}}\n""")
 
 def generate_match(tree, f, indent = '', debug = False):
   if 'instructions' in tree:
     for instruction in tree['instructions']:
       if len(instruction['constraints']) > 0:
         f.write(f"{indent}// if {instruction['constraints']}\n")
-      f.write(f"{indent}instruction->address = address;\n")
-      f.write(f"{indent}instruction->data = data;\n")
       f.write(f"{indent}instruction->mnemonic = \"{('_'.join(instruction['mnemonics'])).replace('{', '').replace('}', '')}\";\n")
       f.write(f"{indent}instruction->constraints = \"{', '.join(instruction['constraints'])}\";\n")
 
@@ -81,6 +110,7 @@ def generate_match(tree, f, indent = '', debug = False):
       f.write(f"{indent}add_instruction(*instruction);\n"
              +f"{indent}return instruction;\n")
     return
+  # else
 
   patterns = list(tree.keys())
   patterns.sort(reverse = True)
@@ -104,28 +134,31 @@ def generate_match(tree, f, indent = '', debug = False):
     f.write(f"{indent}}}\n")
 
 #--- Raiser ---#
-def generate_raiser(instructions, name):
-  with open(f"{name}.cpp", 'w') as fcpp:
-    with open(f"{name}.h", 'w') as fh:
+def generate_raiser(instructions, isa):
+  parser = ASLParser()
+  with open(f"{isa}Raiser.cpp", 'w') as fcpp:
+    with open(f"{isa}Raiser.h", 'w') as fh:
       fcpp.write(f"""/** This file is generated, do not edit **/\n""")
       fh.write  (f"""/** This file is generated, do not edit **/\n""")
 
-      fcpp.write(f"""#include "{name}.h"\n"""
+      fcpp.write(f"""#include "{isa}Raiser.h"\n"""
                 +f"""\n""")
-      fh.write  (f"""#ifndef LLVM_MCTOLL_{name.upper()}_H\n"""
-                +f"""#define LLVM_MCTOLL_{name.upper()}_H\n"""
+      fh.write  (f"""#ifndef LLVM_MCTOLL_{isa.upper()}RAISER_H\n"""
+                +f"""#define LLVM_MCTOLL_{isa.upper()}RAISER_H\n"""
                 +f"""\n"""
                 +f"""#include "llvm/IR/Instruction.h"\n"""
                 +f"""\n"""
                 +f"""using namespace llvm;\n"""
                 +f"""\n"""
-                +f"""class {name} {{\n"""
+                +f"""class {isa}Raiser {{\n"""
                 +f"""  public:\n""")
 
       for instruction in instructions:
         fh.write  (f"""    Instruction* raise_{('_'.join(instruction['mnemonics']).replace('{', '').replace('}', ''))} (uint8_t* data, uint64_t address);\n""")
-        fcpp.write(f"""Instruction* {name}::raise_{('_'.join(instruction['mnemonics']).replace('{', '').replace('}', ''))} (uint8_t* data, uint64_t address) {{\n"""
+        fcpp.write(f"""Instruction* {isa}Raiser::raise_{('_'.join(instruction['mnemonics']).replace('{', '').replace('}', ''))} (uint8_t* data, uint64_t address) {{\n"""
                   +f"""/**\n""")
+
+        parser.parse(instruction['pseudocode'][0], instruction['pseudocode'][1])
 
         pattern = ''
         for part in instruction['pattern']:
@@ -134,6 +167,9 @@ def generate_raiser(instructions, name):
           else:
             pattern += '-' * int(part['width'])
         fcpp.write(f"""  // {pattern}\n""")
+
+
+
 
         fcpp.write(f"""/**\n"""
                   +f"""{instruction['pseudocode'][0]}\n"""
@@ -144,4 +180,4 @@ def generate_raiser(instructions, name):
 
       fh.write  (f"""}};\n"""
                 +f"""\n"""
-                +f"""#endif // LLVM_MCTOLL_{name.upper()}_H\n""")
+                +f"""#endif // LLVM_MCTOLL_{isa.upper()}RAISER_H\n""")

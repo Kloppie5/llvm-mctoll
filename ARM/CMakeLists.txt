@@ -14,14 +14,18 @@ add_llvm_library(ARMRaiser
   ARMFunctionPrototype.cpp
   ARMBenchmarker.cpp
   ARMLinearRaiserPass.cpp
-  ARMRaiser/ARMRaiser.cpp
+  ARMRaiser.cpp
   ARMRaiser/ARMRaiserCDE.cpp
   ARMRaiser/ARMRaiserMVE.cpp
   ARMRaiser/ARMRaiserNEON.cpp
   ARMRaiser/ARMRaiserThumb.cpp
   ARMRaiser/ARMRaiserThumb2.cpp
   ARMRaiser/ARMRaiserVFP.cpp
-  ARMDisassembler.cpp
+  model/A32Disassembler.cpp
+  model/A32Instruction.cpp
+  model/T32Disassembler.cpp
+  model/T32Instruction.cpp
+  ARMv7MRaiser.cpp
   ARMConcurrencyPatternMatcher.cpp
   ARMMachineInstructionRaiser.cpp
 

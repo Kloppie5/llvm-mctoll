@@ -1,4 +1,4 @@
-// RUN: clang -O0 -target armv7-unknown-linux-gnueabisf -o %t.o %s
+// RUN: clang -O0 -target armv7m-unknown-linux-gnueabisf -o %t.o %s
 // RUN: llvm-mctoll -d -debug -o %t-dis.ll %t.o -I %S/linpack.h
 // RUN: clang -o %t-res %t-dis.ll
 // UN: %t-res 2>&1 | FileCheck %s

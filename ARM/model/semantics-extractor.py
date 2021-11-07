@@ -113,5 +113,5 @@ for isa in ISAs:
   instructions = ISAs[isa]
   tree = process_semantics(instructions)
 
-  disasm = Gen.generate_disasm(tree, f"{isa}Disassembler")
-  disasm = Gen.generate_raiser(instructions, f"{isa}Raiser")
+  disasm = Gen.generate_disasm(tree, f"{isa}")
+  disasm = Gen.generate_raiser(instructions, f"{isa}")
