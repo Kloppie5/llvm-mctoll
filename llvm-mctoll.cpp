@@ -11,7 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm-mctoll.h"
-#include "ARM/ARMv7MRaiser.h"
+#include "ARM/ARMv8Raiser.h"
 #include "EmitRaisedOutputPass.h"
 #include "ExternalFunctions.h"
 #include "MCInstOrData.h"
@@ -1478,7 +1478,7 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
 }
 
 static void DumpARMObject (ObjectFile *o) {
-  ARMv7MRaiser* Raiser = new ARMv7MRaiser(o);
+  ARMv8Raiser* Raiser = new ARMv8Raiser(o);
   Raiser->disassemble();
 }
 

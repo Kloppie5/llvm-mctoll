@@ -1,5 +1,4 @@
-
-from asl_parser import ASLParser
+import re
 
 #--- Disassembler ---#
 def generate_disasm(tree, isa):
@@ -33,11 +32,10 @@ def generate_disasm(tree, isa):
       fcpp.write(f"""#include "{isa}Instruction.h"\n"""
                 +f"""\n"""
                 +f"""std::ostream& operator<<(std::ostream& os, const {isa}Instruction& instruction) {{\n"""
-                +f"""  os << "{{"\n"""
-                +f"""     << instruction.mnemonic << " at "\n"""
-                +f"""     << instruction.address << ", "\n"""
-                +f"""     << instruction.constraints << ", "\n"""
-                +f"""     << instruction.pseudocode << "}}";\n"""
+                +f"""  os << "0x" << std::hex << instruction.address << ": " << instruction.mnemonic << " ";\n"""
+                +f"""  for (auto& field : instruction.fields) {{\n"""
+                +f"""    os << field.first << "=" << std::hex << field.second << " ";\n"""
+                +f"""  }}\n"""
                 +f"""  return os;\n"""
                 +f"""}}\n"""
                 +f"""\n""")
@@ -62,7 +60,10 @@ def generate_disasm(tree, isa):
                 +f"""  \n"""
                 +f"""  public:\n"""
                 +f"""    {isa}Disassembler();\n"""
-                +f"""    void add_instruction({isa}Instruction instruction);\n"""
+                +f"""    void addInstruction({isa}Instruction instruction);\n"""
+                +f"""    {isa}Instruction* getInstruction(uint64_t address);\n"""
+                +f"""\n"""
+                +f"""    void disassemble(const char* data, size_t size);\n"""
                 +f"""    {isa}Instruction* disassemble(const uint64_t address, const uint8_t* data);\n"""
                 +f"""}};\n""")
 
@@ -71,8 +72,19 @@ def generate_disasm(tree, isa):
                 +f"""{isa}Disassembler::{isa}Disassembler() {{\n"""
                 +f"""}}\n"""
                 +f"""\n"""
-                +f"""void {isa}Disassembler::add_instruction({isa}Instruction instruction) {{\n"""
+                +f"""void {isa}Disassembler::addInstruction({isa}Instruction instruction) {{\n"""
                 +f"""  instructions[instruction.address] = instruction;\n"""
+                +f"""}}\n"""
+                +f"""\n"""
+                +f"""{isa}Instruction* {isa}Disassembler::getInstruction(uint64_t address) {{\n"""
+                +f"""  return &instructions[address];\n"""
+                +f"""}}\n"""
+                +f"""void {isa}Disassembler::disassemble(const char* data, uint64_t size) {{\n"""
+                +f"""  for (uint64_t i = 0; i < size; i += 4) {{\n"""
+                +f"""    /** {isa}Instruction* instruction = */ disassemble(i, (const uint8_t*)data + i);\n"""
+                +f"""    // if (instruction)\n"""
+                +f"""    //   std::cout << *instruction << std::endl;\n"""
+                +f"""  }}\n"""
                 +f"""}}\n"""
                 +f"""\n"""
                 +f"""{isa}Instruction* {isa}Disassembler::disassemble(const uint64_t address, const uint8_t* data) {{\n"""
@@ -97,7 +109,7 @@ def generate_match(tree, f, indent = '', debug = False):
         f.write(f"{indent}// if {instruction['constraints']}\n")
       f.write(f"{indent}instruction->mnemonic = \"{('_'.join(instruction['mnemonics'])).replace('{', '').replace('}', '')}\";\n")
       f.write(f"{indent}instruction->constraints = \"{', '.join(instruction['constraints'])}\";\n")
-
+      f.write(f"{indent}instruction->pseudocode = R\"\"\"({instruction['pseudocode']})\"\"\";\n")
       f.write(f"{indent}uint32_t BE = data[address + 3] << 24 | data[address + 2] << 16 | data[address + 1] << 8 | data[address];\n""")
       f.write(f"{indent}instruction->fields = {{\n")
       for part in instruction['pattern']:
@@ -107,7 +119,7 @@ def generate_match(tree, f, indent = '', debug = False):
           f.write(f"{indent}  {{\"{part['name']}\", 0b{part['contents'].replace('(', '').replace(')', '')}}},\n")
       f.write(f"{indent}}};\n")
 
-      f.write(f"{indent}add_instruction(*instruction);\n"
+      f.write(f"{indent}addInstruction(*instruction);\n"
              +f"{indent}return instruction;\n")
     return
   # else
@@ -135,7 +147,6 @@ def generate_match(tree, f, indent = '', debug = False):
 
 #--- Raiser ---#
 def generate_raiser(instructions, isa):
-  parser = ASLParser()
   with open(f"{isa}Raiser.cpp", 'w') as fcpp:
     with open(f"{isa}Raiser.h", 'w') as fh:
       fcpp.write(f"""/** This file is generated, do not edit **/\n""")
@@ -158,7 +169,29 @@ def generate_raiser(instructions, isa):
         fcpp.write(f"""Instruction* {isa}Raiser::raise_{('_'.join(instruction['mnemonics']).replace('{', '').replace('}', ''))} (uint8_t* data, uint64_t address) {{\n"""
                   +f"""/**\n""")
 
-        parser.parse(instruction['pseudocode'][0], instruction['pseudocode'][1])
+        def asl_to_cpp(asl):
+          output = []
+          for line in asl.split('\n'):
+
+            if line.find('//') != -1:
+              line = line[:line.find('//')]
+
+            line = line.rstrip(" ")
+            indent = (len(line) - len(line.lstrip(" ")))//4
+            line = line.lstrip(" ")
+
+            line = re.sub(' {2,}', ' ', line)
+
+            lines = line.split(";")
+            for line in lines:
+              line = line.strip()
+              if len(line) == 0:
+                continue
+
+              output.append(f"{'    '*indent}{line}")
+          return '\n'.join(output)
+
+        print(asl_to_cpp(instruction['pseudocode']))
 
         pattern = ''
         for part in instruction['pattern']:
@@ -172,8 +205,7 @@ def generate_raiser(instructions, isa):
 
 
         fcpp.write(f"""/**\n"""
-                  +f"""{instruction['pseudocode'][0]}\n"""
-                  +f"""{instruction['pseudocode'][1]}\n"""
+                  +f"""{instruction['pseudocode']}\n"""
                   +f"""**/\n"""
                   +f"""  return nullptr;\n"""
                   +f"""}}\n""")

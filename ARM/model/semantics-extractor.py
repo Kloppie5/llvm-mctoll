@@ -66,7 +66,7 @@ def parse_semantics(semantics_file, debug = False):
     pseudocode_decode = cleanup_ASL(ET.tostring(iclass.find('ps_section/ps/pstext')).decode())
     pseudocode_execute = cleanup_ASL(ET.tostring(xml.find('ps_section/ps/pstext')).decode())
 
-    instruction['pseudocode'] = (pseudocode_decode, pseudocode_execute)
+    instruction['pseudocode'] = pseudocode_decode + "\n" + pseudocode_execute
 
     instructions.append(instruction)
   return instructions

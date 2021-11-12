@@ -25,7 +25,7 @@ add_llvm_library(ARMRaiser
   model/A32Instruction.cpp
   model/T32Disassembler.cpp
   model/T32Instruction.cpp
-  ARMv7MRaiser.cpp
+  ARMv8Raiser.cpp
   ARMConcurrencyPatternMatcher.cpp
   ARMMachineInstructionRaiser.cpp
 
