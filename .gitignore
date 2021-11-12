@@ -15,3 +15,10 @@ ARM/model/T32Instruction.h
 ARM/model/T32Raiser.cpp
 ARM/model/T32Raiser.h
 ARM/model/__pycache__/
+ARM/model/ASL.interp
+ARM/model/ASL.tokens
+ARM/model/ASLLexer.py
+ARM/model/ASLLexer.interp
+ARM/model/ASLLexer.tokens
+ARM/model/ASLParser.py
+ARM/model/ASLVisitor.py
