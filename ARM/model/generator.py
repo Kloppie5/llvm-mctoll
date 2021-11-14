@@ -1,4 +1,5 @@
 import re
+import ASLToULDLVisitor
 
 #--- Disassembler ---#
 def generate_disasm(tree, isa):
@@ -164,34 +165,22 @@ def generate_raiser(instructions, isa):
                 +f"""class {isa}Raiser {{\n"""
                 +f"""  public:\n""")
 
+      counter = 0
+      failed = []
       for instruction in instructions:
+        counter += 1
         fh.write  (f"""    Instruction* raise_{('_'.join(instruction['mnemonics']).replace('{', '').replace('}', ''))} (uint8_t* data, uint64_t address);\n""")
         fcpp.write(f"""Instruction* {isa}Raiser::raise_{('_'.join(instruction['mnemonics']).replace('{', '').replace('}', ''))} (uint8_t* data, uint64_t address) {{\n"""
                   +f"""/**\n""")
 
-        def asl_to_cpp(asl):
-          output = []
-          for line in asl.split('\n'):
+        print(f"({counter}/{len(instructions)}): {'_'.join(instruction['mnemonics']).replace('{', '').replace('}', '')}")
+        errors = ASLToULDLVisitor.ASLToULDLVisitor().generateULDL(instruction['pseudocode'])
+        if errors != 0:
+          print(f"{isa}Raiser: Pseudocode for {('_'.join(instruction['mnemonics']).replace('{', '').replace('}', ''))} is invalid")
+          for line in instruction['pseudocode'].split('\n'):
+            print(f"\"{line}\"")
+          failed.append(instruction)
 
-            if line.find('//') != -1:
-              line = line[:line.find('//')]
-
-            line = line.rstrip(" ")
-            indent = (len(line) - len(line.lstrip(" ")))//4
-            line = line.lstrip(" ")
-
-            line = re.sub(' {2,}', ' ', line)
-
-            lines = line.split(";")
-            for line in lines:
-              line = line.strip()
-              if len(line) == 0:
-                continue
-
-              output.append(f"{'    '*indent}{line}")
-          return '\n'.join(output)
-
-        print(asl_to_cpp(instruction['pseudocode']))
 
         pattern = ''
         for part in instruction['pattern']:
@@ -209,6 +198,12 @@ def generate_raiser(instructions, isa):
                   +f"""**/\n"""
                   +f"""  return nullptr;\n"""
                   +f"""}}\n""")
+
+      print(f"{isa}Raiser: {len(failed)} instructions failed to be generated")
+      for instruction in failed:
+        print(f"{('_'.join(instruction['mnemonics']).replace('{', '').replace('}', ''))}")
+      if len(failed) > 0:
+        exit(1)
 
       fh.write  (f"""}};\n"""
                 +f"""\n"""

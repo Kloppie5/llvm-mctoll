@@ -1,10 +1,16 @@
 grammar ASL;
 
+/*
+  This grammar is technically a subset of the ASL grammar;
+  - line comments are not allowed
+  - empty lines are not allowed
+  - tabs are not allowed
+*/
+
 tokens { INDENT, DEDENT }
 
 @lexer::header{
 from antlr4.Token import CommonToken
-import re
 import importlib
 # Allow languages to extend the lexer and parser, by loading the parser dynamically
 module_path = __name__[:-5]
@@ -79,155 +85,125 @@ def commonToken(self, type, text, indent=0):
     stop = self.getCharIndex()-1-indent
     start = (stop - len(text) + 1) if text else stop
     return CommonToken(self._tokenFactorySourcePair, type, super().DEFAULT_TOKEN_CHANNEL, start, stop)
-@staticmethod
-def getIndentationCount(spaces):
-    count = 0
-    for ch in spaces:
-        if ch == '\t':
-            count += 8 - (count % 8)
-        else:
-            count += 1
-    return count
 }
 
-start : (NEWLINE | stmt)*;
+start : stmt* EOF;
 
 stmt
   : caseStmt
   | forStmt
   | ifStmt
-  | (simpleStmt SEMICOLON)+
+  | simpleStmt ';' NEWLINE?
 ;
 
 caseStmt
-  : CASE lvalue OF NEWLINE
-    INDENT (WHEN literal stmtBlock)+
-           (OTHERWISE stmtBlock)?
+  : 'case' rvalue 'of' NEWLINE
+    INDENT ('when' literal stmtBlock)+
+           ('otherwise' stmtBlock)?
     DEDENT
 ;
 forStmt
-  : FOR lvalue
-      ASSIGN rvalue
-      TO rvalue stmtBlock
+  : 'for' lvalue
+      '=' rvalue
+      'to' rvalue stmtBlock
 ;
 ifStmt
-  : IF rvalue
-      THEN stmtBlock
-    (ELSIF rvalue
-      THEN stmtBlock)*
-    (ELSE stmtBlock)?
+  : 'if' rvalue
+      'then' stmtBlock
+    ('elsif' rvalue
+      'then' stmtBlock)*
+    ('else' stmtBlock)?
 ;
 
 stmtBlock
   : NEWLINE INDENT stmt+ DEDENT
-  | (simpleStmt SEMICOLON)+
+  | (simpleStmt ';')* NEWLINE?
 ;
 
 simpleStmt
-  : typeDecl ID
-  | typeDecl? lvalue ASSIGN rvalue
+  : typeDecl ID (',' ID)*
+  | 'enumeration' ID LEFT_CURLY_BRACKET (ID (',' ID)*)? RIGHT_CURLY_BRACKET
+  | 'assert' rvalue
+  | typeDecl? lvalue '=' rvalue
   | '-' '=' functionCall
   | functionCall
-  | UNDEFINED
-  | UNPREDICTABLE
-  | SEE STRING
+  | 'UNDEFINED'
+  | 'UNPREDICTABLE'
+  | 'SEE' STRING
 ;
 
 lvalue
   : ID
-  | '(' ID ',' ID ')'
+  | LEFT_BRACKET lvalue ',' lvalue RIGHT_BRACKET
   | lvalue '.' ID
   | ID '.' '<' ID (',' ID)* '>'
-  | lvalue '[' (rvalue (COMMA rvalue)*)? ']'
-  | lvalue '<' NUMBER (COLON NUMBER)? '>'
+  | lvalue LEFT_SQUARE_BRACKET (rvalue (',' rvalue)*)? RIGHT_SQUARE_BRACKET
+  | lvalue '<' rvalue (':' rvalue)? '>'
+  | '<' rvalue ',' rvalue '>'
   | '-'
 ;
 
 rvalue
   : lvalue
-  | '(' rvalue ')'
+  | LEFT_BRACKET rvalue RIGHT_BRACKET
+  | LEFT_BRACKET rvalue ',' rvalue RIGHT_BRACKET
+  | rvalue '<' rvalue (':' rvalue)? '>'
   | functionCall
-  | typeDecl UNKNOWN
-  | IF rvalue THEN rvalue ELSE rvalue
-  | rvalue IN LEFT_CURLY_BRACKET rvalue (COMMA rvalue)* RIGHT_CURLY_BRACKET
-  | rvalue COLON rvalue
+  | typeDecl 'UNKNOWN'
+  | 'if' rvalue 'then' rvalue 'else' rvalue
+  | rvalue 'IN' LEFT_CURLY_BRACKET rvalue (',' rvalue)* RIGHT_CURLY_BRACKET
+  | rvalue ':' rvalue
   | rvalue ('&&' | '||') rvalue
-  | '!' rvalue
+  | rvalue ('AND' | 'OR' | 'EOR') rvalue
+  | ('!' | '-') rvalue
   | rvalue ('==' | '!=') rvalue
-  | rvalue ('>=' | '>') rvalue
+  | rvalue ('<' | '<=' | '>=' | '>') rvalue
   | rvalue ('<<' | '>>') rvalue
-  | rvalue ('+' | '-' | '*') rvalue
-  | rvalue DIV rvalue
+  | rvalue ('+' | '-' | '*' | '/') rvalue
+  | rvalue 'DIV' rvalue
   | literal
 ;
 
 functionCall
-  : lvalue LEFT_BRACKET (rvalue (COMMA rvalue)*)? RIGHT_BRACKET
+  : lvalue LEFT_BRACKET (rvalue (',' rvalue)*)? RIGHT_BRACKET
 ;
 
 typeDecl
-  : BITS LEFT_BRACKET literal RIGHT_BRACKET
-  | INTEGERTYPEDECL
+  : 'bits' LEFT_BRACKET rvalue RIGHT_BRACKET
+  | 'bit'
+  | 'integer'
+  | 'boolean'
+  | 'Constraint'
 ;
 
 literal
   : BITPATTERN
   | ID
   | NUMBER
+  | HEXNUMBER
 ;
 
 /*
   LEXING
 */
 
-ASSIGN : '=';
-COLON : ':';
-COMMA : ',';
-DOT : '.';
-INTEGERTYPEDECL : 'integer';
-LEFT_ANGLE_BRACKET : '<' {self.opened += 1};
 LEFT_BRACKET : '(' {self.opened += 1};
 LEFT_CURLY_BRACKET : '{' {self.opened += 1};
 LEFT_SQUARE_BRACKET : '[' {self.opened += 1};
-RIGHT_ANGLE_BRACKET : '>' {self.opened -= 1};
 RIGHT_BRACKET : ')' {self.opened -= 1};
 RIGHT_CURLY_BRACKET : '}' {self.opened -= 1};
 RIGHT_SQUARE_BRACKET : ']' {self.opened -= 1};
-SEMICOLON : ';';
-TIMES : '*';
-
-BITS : 'bits';
-CASE : 'case';
-DIV : 'DIV';
-ELSE : 'else';
-ELSIF : 'elsif';
-FOR : 'for';
-IF : 'if';
-IN : 'IN';
-OF : 'of';
-OTHERWISE : 'otherwise';
-SEE : 'SEE';
-THEN : 'then';
-TO : 'to';
-UNDEFINED : 'UNDEFINED';
-UNKNOWN : 'UNKNOWN';
-UNPREDICTABLE : 'UNPREDICTABLE';
-WHEN : 'when';
 
 NEWLINE
-  : ('\r'? '\n' | '\r' | '\f' ) [ \t]*
+  : '\n' [ ]*
   {
 tempt = Lexer.text.fget(self)
-newLine = re.sub("[^\r\n\f]+", "", tempt)
-spaces = re.sub("[\r\n\f]+", "", tempt)
 la_char = ""
 try:
     la = self._input.LA(1)
     la_char = chr(la)       # Python does not compare char to ints directly
 except ValueError:          # End of file
     pass
-# Strip newlines inside open clauses except if we are near EOF. We keep NEWLINEs near EOF to
-# satisfy the final newline needed by the single_put rule used by the REPL.
 try:
     nextnext_la = self._input.LA(2)
     nextnext_la_char = chr(nextnext_la)
@@ -235,17 +211,17 @@ except ValueError:
     nextnext_eof = True
 else:
     nextnext_eof = False
-if self.opened > 0 or nextnext_eof is False and (la_char == '\r' or la_char == '\n' or la_char == '\f' or la_char == '#'):
+if self.opened > 0 or nextnext_eof is False and la_char == '\n':
     self.skip()
 else:
-    indent = self.getIndentationCount(spaces)
+    indent = len(tempt)-1
     previous = self.indents[-1] if self.indents else 0
-    self.emitToken(self.commonToken(self.NEWLINE, newLine, indent=indent))      # NEWLINE is actually the '\n' char
+    self.emitToken(self.commonToken(self.NEWLINE, '\n', indent=indent))
     if indent == previous:
         self.skip()
     elif indent > previous:
         self.indents.append(indent)
-        self.emitToken(self.commonToken(LanguageParser.INDENT, spaces))
+        self.emitToken(self.commonToken(LanguageParser.INDENT, tempt[1:]))
     else:
         while self.indents and self.indents[-1] > indent:
             self.emitToken(self.createDedent())
@@ -270,8 +246,10 @@ NUMBER
   | [1-9][0-9]*
 ;
 
+HEXNUMBER
+  : '0x' [0-9a-fA-F]+
+;
+
 Whitespace
-  : ([ \t]+
-    | '//' ~[\r\n]*
-  ) -> skip
+  : [ ]+ -> skip
 ;
