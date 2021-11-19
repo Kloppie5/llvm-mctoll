@@ -1479,7 +1479,7 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
 
 static void DumpARMObject (ObjectFile *o) {
   ARMv8Raiser* Raiser = new ARMv8Raiser(o);
-  Raiser->disassemble();
+  Raiser->raise();
 }
 
 static void DumpObject(ObjectFile *o, const Archive *a = nullptr) {

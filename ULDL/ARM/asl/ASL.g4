@@ -121,47 +121,46 @@ stmtBlock
 ;
 
 simpleStmt
-  : typeDecl ID (',' ID)*
-  | 'enumeration' ID LEFT_CURLY_BRACKET (ID (',' ID)*)? RIGHT_CURLY_BRACKET
-  | 'assert' rvalue
-  | typeDecl? lvalue '=' rvalue
-  | '-' '=' functionCall
-  | functionCall
-  | 'UNDEFINED'
-  | 'UNPREDICTABLE'
-  | 'SEE' STRING
+  : typeDecl ID (',' ID)* # DeclarationStatement
+  | 'enumeration' ID LEFT_CURLY_BRACKET (ID (',' ID)*)? RIGHT_CURLY_BRACKET # EnumerationStatement
+  | 'assert' rvalue # AssertStatement
+  | typeDecl? lvalue '=' rvalue # AssignmentStatement
+  | functionCall # FunctionCallStatement
+  | 'UNDEFINED' # UndefinedStatement
+  | 'UNPREDICTABLE' # UndefinedStatement
+  | 'SEE' STRING # SeeStatement
 ;
 
 lvalue
-  : ID
-  | LEFT_BRACKET lvalue ',' lvalue RIGHT_BRACKET
-  | lvalue '.' ID
-  | ID '.' '<' ID (',' ID)* '>'
-  | lvalue LEFT_SQUARE_BRACKET (rvalue (',' rvalue)*)? RIGHT_SQUARE_BRACKET
-  | lvalue '<' rvalue (':' rvalue)? '>'
-  | '<' rvalue ',' rvalue '>'
-  | '-'
+  : ID # Identifier
+  | LEFT_BRACKET lvalue ',' lvalue RIGHT_BRACKET # LPairValue
+  | lvalue '.' ID # FieldValue
+  | ID '.' '<' ID (',' ID)* '>' # FieldGroupValue
+  | lvalue LEFT_SQUARE_BRACKET (rvalue (',' rvalue)*)? RIGHT_SQUARE_BRACKET # ArrayValue
+  | lvalue '<' rvalue (':' rvalue)? '>' # LSubValue
+  | '<' rvalue ',' rvalue '>' # SquareBracketPairValue
+  | '-' # IgnoredValue
 ;
 
 rvalue
-  : lvalue
-  | LEFT_BRACKET rvalue RIGHT_BRACKET
-  | LEFT_BRACKET rvalue ',' rvalue RIGHT_BRACKET
-  | rvalue '<' rvalue (':' rvalue)? '>'
-  | functionCall
-  | typeDecl 'UNKNOWN'
-  | 'if' rvalue 'then' rvalue 'else' rvalue
-  | rvalue 'IN' LEFT_CURLY_BRACKET rvalue (',' rvalue)* RIGHT_CURLY_BRACKET
-  | rvalue ':' rvalue
-  | rvalue ('&&' | '||') rvalue
-  | rvalue ('AND' | 'OR' | 'EOR') rvalue
-  | ('!' | '-') rvalue
-  | rvalue ('==' | '!=') rvalue
-  | rvalue ('<' | '<=' | '>=' | '>') rvalue
-  | rvalue ('<<' | '>>') rvalue
-  | rvalue ('+' | '-' | '*' | '/') rvalue
-  | rvalue 'DIV' rvalue
-  | literal
+  : lvalue # RLValue
+  | LEFT_BRACKET rvalue RIGHT_BRACKET # NestedValue
+  | LEFT_BRACKET rvalue ',' rvalue RIGHT_BRACKET # RPairValue
+  | rvalue '<' rvalue (':' rvalue)? '>' # RSubValue
+  | functionCall # FunctionCallValue
+  | typeDecl 'UNKNOWN' # UnknownValue
+  | 'if' rvalue 'then' rvalue 'else' rvalue # TernaryValue
+  | rvalue 'IN' LEFT_CURLY_BRACKET rvalue (',' rvalue)* RIGHT_CURLY_BRACKET # InValue
+  | rvalue ':' rvalue # ConcatValue
+  | rvalue ('&&' | '||') rvalue # MetaLogicalValue
+  | rvalue ('AND' | 'OR' | 'EOR') rvalue # LogicalValue
+  | ('!' | '-') rvalue # UnaryValue
+  | rvalue ('==' | '!=') rvalue # EqualityValue
+  | rvalue ('<' | '<=' | '>=' | '>') rvalue # RelationalValue
+  | rvalue ('<<' | '>>') rvalue # ShiftValue
+  | rvalue ('+' | '-' | '*' | '/') rvalue # ArithmeticValue
+  | rvalue 'DIV' rvalue # DivValue
+  | literal # LiteralValue
 ;
 
 functionCall

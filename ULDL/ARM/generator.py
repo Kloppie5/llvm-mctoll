@@ -15,14 +15,15 @@ def generate_disasm(tree, isa):
                 +f"""#include <map>\n"""
                 +f"""#include <string>\n"""
                 +f"""\n"""
+                +f"""#include "ULDL/Operation.h"\n"""
                 +f"""class {isa}Instruction {{\n"""
                 +f"""  public:\n"""
                 +f"""    uint64_t address;\n"""
                 +f"""    const uint8_t* data;\n"""
+                +f"""    Operation* operation;\n"""
                 +f"""\n"""
                 +f"""    std::string mnemonic;\n"""
                 +f"""    std::string constraints;\n"""
-                +f"""    std::string pseudocode;\n"""
                 +f"""    std::map<std::string, uint64_t> fields;\n"""
                 +f"""}};\n"""
                 +f"""\n"""
@@ -110,7 +111,6 @@ def generate_match(tree, f, indent = '', debug = False):
         f.write(f"{indent}// if {instruction['constraints']}\n")
       f.write(f"{indent}instruction->mnemonic = \"{('_'.join(instruction['mnemonics'])).replace('{', '').replace('}', '')}\";\n")
       f.write(f"{indent}instruction->constraints = \"{', '.join(instruction['constraints'])}\";\n")
-      f.write(f"{indent}instruction->pseudocode = R\"\"\"({instruction['pseudocode']})\"\"\";\n")
       f.write(f"{indent}uint32_t BE = data[address + 3] << 24 | data[address + 2] << 16 | data[address + 1] << 8 | data[address];\n""")
       f.write(f"{indent}instruction->fields = {{\n")
       for part in instruction['pattern']:
@@ -169,18 +169,32 @@ def generate_raiser(instructions, isa):
       failed = []
       for instruction in instructions:
         counter += 1
-        fh.write  (f"""    Instruction* raise_{('_'.join(instruction['mnemonics']).replace('{', '').replace('}', ''))} (uint8_t* data, uint64_t address);\n""")
-        fcpp.write(f"""Instruction* {isa}Raiser::raise_{('_'.join(instruction['mnemonics']).replace('{', '').replace('}', ''))} (uint8_t* data, uint64_t address) {{\n"""
+        identifier = []
+        for pattern in instruction['pattern']:
+          if 'contents' in pattern:
+            identifier.append(pattern['contents'])
+          else:
+            identifier.append(f"{pattern['name']}")
+        identifier = re.sub('[\{\}\(\)<>:]', '', 'I_'+'_'.join(identifier))
+        mnemonics = re.sub('[\{\}\(\)<>:]', '', '_'.join(instruction['mnemonics']))
+        print(f"{counter}/{len(instructions)}: {mnemonics} | {identifier}")
+        fh.write  (f"""    Instruction* raise_{identifier} (uint8_t* data, uint64_t address);\n""")
+        fcpp.write(f"""Instruction* {isa}Raiser::raise_{identifier} (uint8_t* data, uint64_t address) {{\n"""
                   +f"""/**\n""")
 
-        print(f"({counter}/{len(instructions)}): {'_'.join(instruction['mnemonics']).replace('{', '').replace('}', '')}")
-        errors = ASLToULDLVisitor.ASLToULDLVisitor().generateULDL(instruction['pseudocode'])
+        errors = ASLToULDLVisitor.ASLToULDLVisitor().generateULDL(instruction['pseudocode'], instruction['pattern'])
         if errors != 0:
-          print(f"{isa}Raiser: Pseudocode for {('_'.join(instruction['mnemonics']).replace('{', '').replace('}', ''))} is invalid")
+          print(f"{isa}Raiser: Pseudocode for {mnemonics} is invalid")
           for line in instruction['pseudocode'].split('\n'):
             print(f"\"{line}\"")
           failed.append(instruction)
 
+        errors = ASLToULDLVisitor.ASLToULDLVisitor().generateULDL(instruction['pseudocode_decode'], instruction['pattern'])
+        if errors != 0:
+          print(f"{isa}Raiser: Pseudocode for {mnemonics} decode is invalid")
+          for line in instruction['pseudocode_decode'].split('\n'):
+            print(f"\"{line}\"")
+          failed.append(instruction)
 
         pattern = ''
         for part in instruction['pattern']:
