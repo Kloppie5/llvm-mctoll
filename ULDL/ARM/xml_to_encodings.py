@@ -7,6 +7,7 @@ shared_pseudocode.xml
 t32_encindex.xml
 """
 
+import json
 import os
 import sys
 
@@ -173,6 +174,8 @@ def print_match_tree(tree, indent = 0):
 
 if __name__ == "__main__":
   MTa32 = build_match_tree('./xml_files/a32_encindex.xml')
+  with open('./a32_encoding.json', 'w') as f:
+    json.dump(MTa32, f, indent=2)
   MTt32 = build_match_tree('./xml_files/t32_encindex.xml')
-  print_match_tree(MTa32)
-  print_match_tree(MTt32)
+  with open('./t32_encoding.json', 'w') as f:
+    json.dump(MTt32, f, indent=2)
