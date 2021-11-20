@@ -104,4 +104,7 @@ if __name__ == "__main__":
   files = read_index('./xml_files/index.xml')
   for f in files:
     extract_asl_instruction(f'./xml_files/{f}')
+  files = read_index('./xml_files/fpsimdindex.xml')
+  for f in files:
+    extract_asl_instruction(f'./xml_files/{f}')
   extract_shared_pseudocode('./xml_files/shared_pseudocode.xml')
