@@ -11,7 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm-mctoll.h"
-#include "ARM/ARMv8Raiser.h"
+#include "ARM/ARMv8Parser.h"
 #include "EmitRaisedOutputPass.h"
 #include "ExternalFunctions.h"
 #include "MCInstOrData.h"
@@ -1478,8 +1478,13 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
 }
 
 static void DumpARMObject (ObjectFile *o) {
-  ARMv8Raiser* Raiser = new ARMv8Raiser(o);
-  Raiser->raise();
+  ARMv8Parser* parser = new ARMv8Parser();
+  std::vector<uint8_t> bytes;
+  auto data = o->getData();
+  for (auto i = data.begin(); i != data.end(); ++i) {
+    bytes.push_back(*i);
+  }
+  parser->parse(bytes);
 }
 
 static void DumpObject(ObjectFile *o, const Archive *a = nullptr) {

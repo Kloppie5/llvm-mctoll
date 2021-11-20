@@ -10,24 +10,8 @@ if(NOT LLVM_MCTOLL_BUILT_STANDALONE)
 endif()
 
 add_llvm_library(ARMRaiser
-  ARMModuleRaiser.cpp
-  ARMFunctionPrototype.cpp
-  ARMBenchmarker.cpp
-  ARMLinearRaiserPass.cpp
-  ARMRaiser.cpp
-  ARMRaiser/ARMRaiserCDE.cpp
-  ARMRaiser/ARMRaiserMVE.cpp
-  ARMRaiser/ARMRaiserNEON.cpp
-  ARMRaiser/ARMRaiserThumb.cpp
-  ARMRaiser/ARMRaiserThumb2.cpp
-  ARMRaiser/ARMRaiserVFP.cpp
-  model/A32Disassembler.cpp
-  model/A32Instruction.cpp
-  model/T32Disassembler.cpp
-  model/T32Instruction.cpp
+
   ARMv8Raiser.cpp
-  ARMConcurrencyPatternMatcher.cpp
-  ARMMachineInstructionRaiser.cpp
 
   DEPENDS
     ${LLVM_MCTOLL_DEPS}

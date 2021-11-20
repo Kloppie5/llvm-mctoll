@@ -48,5 +48,10 @@ class CopyOperation : public Operation {
 /**
  * ConditionalOperation is an operation that executes one of two operations
  * depending on the value of a resource.
+ */
+class ConditionalOperation : public Operation {
+
+};
+
 
 #endif // ULDL_OPERATION_H

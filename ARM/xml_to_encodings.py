@@ -13,7 +13,7 @@ import sys
 
 from lxml import etree as ET
 
-def read_boxes(boxes, debug = True):
+def read_boxes(boxes, debug = False):
   fields = {}
   contents = {}
   for box in boxes.findall('box'):
@@ -99,6 +99,7 @@ def node_sub_match_tree(root, node, pattern_length, debug = True):
 
   return {
     'name': name,
+    'fields': fields,
     'include': include_pattern,
     'exclude': exclude_pattern,
     'children': children,

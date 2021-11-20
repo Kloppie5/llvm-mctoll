@@ -1,14 +1,3 @@
 build
 *.swp
 *~
-
-ULDL/ARM/asl_files/
-ULDL/ARM/xml_files/
-
-ULDL/ARM/asl/ASL.interp
-ULDL/ARM/asl/ASL.tokens
-ULDL/ARM/asl/ASLLexer.py
-ULDL/ARM/asl/ASLLexer.interp
-ULDL/ARM/asl/ASLLexer.tokens
-ULDL/ARM/asl/ASLListener.py
-ULDL/ARM/asl/ASLParser.py
