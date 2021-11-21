@@ -97,14 +97,14 @@ def atStartOfInput(self):
 start: (stmt | NEWLINE)* EOF;
 
 stmt
-  : (simple_stmt ';')+ NEWLINE
+  : simple_stmt ';' NEWLINE?
   | case_stmt
   | for_stmt
   | if_stmt
 ;
 
 case_stmt
-  : 'case' lvalue 'of' NEWLINE
+  : 'case' rvalue 'of' NEWLINE
     INDENT ('when' literal (NEWLINE | stmt_block))+
            ('otherwise' stmt_block)?
     DEDENT
@@ -146,7 +146,7 @@ simple_stmt
 rvalue
   : lvalue
   | literal
-  | '(' rvalue ')'
+  | '(' rvalue (',' rvalue)* ')'
   | un_op rvalue
   | rvalue bin_op rvalue
   | rvalue 'IN' '{' rvalue (',' rvalue)* '}'
@@ -214,6 +214,8 @@ type_decl
   : 'bits' '(' rvalue ')'
   | 'bit'
   | 'integer'
+  | 'boolean'
+  | 'Constraint'
 ;
 
 IDENTIFIER
