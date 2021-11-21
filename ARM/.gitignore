@@ -1,3 +1,5 @@
+__pycache__/
+
 asl_files/
 xml_files/
 
@@ -8,6 +10,7 @@ asl/ASLLexer.interp
 asl/ASLLexer.tokens
 asl/ASLListener.py
 asl/ASLParser.py
+asl/ASLVisitor.py
 
 a32_encoding.json
 t32_encoding.json
