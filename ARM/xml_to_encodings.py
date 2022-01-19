@@ -1,12 +1,3 @@
-
-"""
-a32_encindex.xml
-fpsimdindex.xml
-index.xml
-shared_pseudocode.xml
-t32_encindex.xml
-"""
-
 import json
 import os
 import sys

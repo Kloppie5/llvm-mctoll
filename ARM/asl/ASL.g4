@@ -94,7 +94,15 @@ def atStartOfInput(self):
     return Lexer.column.fget(self) == 0 and Lexer.line.fget(self) == 1
 }
 
-start: (stmt | NEWLINE)* EOF;
+start: (
+    stmt
+  | type_def
+  | function_def
+  | read_form_square_function_def
+  | write_form_square_function_def
+  | function_decl
+  | NEWLINE
+)* EOF;
 
 stmt
   : simple_stmt ';' NEWLINE?
@@ -103,25 +111,54 @@ stmt
   | if_stmt
 ;
 
+type_def
+  : 'type' IDENTIFIER 'is' '(' NEWLINE
+    INDENT type_name IDENTIFIER (',' NEWLINE
+           type_name IDENTIFIER)* NEWLINE
+    DEDENT ')'
+;
+function_def
+  : type_name? IDENTIFIER ('.' IDENTIFIER)? '('
+    (type_name IDENTIFIER (',' type_name IDENTIFIER)*)? ')'
+      NEWLINE INDENT stmt+ DEDENT
+;
+read_form_square_function_def
+  : type_name? IDENTIFIER ('.' IDENTIFIER)? '['
+    (type_name IDENTIFIER (',' type_name IDENTIFIER)*)? ']'
+      NEWLINE INDENT stmt+ DEDENT
+;
+write_form_square_function_def
+  : IDENTIFIER ('.' IDENTIFIER)? '['
+    (type_name IDENTIFIER (',' type_name IDENTIFIER)*)? ']'
+      '=' type_name IDENTIFIER
+      NEWLINE INDENT stmt+ DEDENT
+;
+
+function_decl
+  : type_name? IDENTIFIER ('.' IDENTIFIER)? '('
+    (type_name IDENTIFIER (',' type_name IDENTIFIER)*)? ')'
+      ';'
+;
+
 case_stmt
-  : 'case' rvalue 'of' NEWLINE
-    INDENT ('when' literal (NEWLINE | stmt_block))+
+  : 'case' expr 'of' NEWLINE
+    INDENT ('when' literal (',' literal)* (NEWLINE | stmt_block))+
            ('otherwise' stmt_block)?
     DEDENT
 ;
 
 for_stmt
-  : 'for' lvalue
-      '=' rvalue
-      'to' rvalue
+  : 'for' expr
+      '=' expr
+      'to' expr
       stmt_block
 ;
 
 if_stmt
-  : 'if' rvalue
-      'then' stmt_block
-    ('elsif' rvalue
-      'then' stmt_block)*
+  : IF expr
+      THEN stmt_block
+    (ELSIF expr
+      THEN stmt_block)*
     ('else' stmt_block)?
 ;
 
@@ -131,29 +168,37 @@ stmt_block
 ;
 
 simple_stmt
-  : lvalue '=' rvalue
-  | type_decl IDENTIFIER (',' IDENTIFIER)*
-  | type_decl IDENTIFIER '=' rvalue
+  : expr '=' expr
+  | type_name IDENTIFIER (',' IDENTIFIER)*
+  | 'constant'? type_name IDENTIFIER '=' expr
+  | 'constant' IDENTIFIER '=' expr
   | 'enumeration' IDENTIFIER '{' IDENTIFIER (',' IDENTIFIER)* '}'
   | function_call
   | '-' '=' function_call
-  | 'assert' rvalue
+  | 'assert' expr
+  | 'return' expr?
   | 'SEE' STRING
   | 'UNDEFINED'
   | 'UNPREDICTABLE'
 ;
 
-rvalue
-  : lvalue
-  | literal
-  | '(' rvalue (',' rvalue)* ')'
-  | un_op rvalue
-  | rvalue bin_op rvalue
-  | rvalue 'IN' '{' rvalue (',' rvalue)* '}'
+expr
+  : literal
+  | '(' expr ')'
+  | '(' expr (',' expr)+ ')'
+  | '<' expr (',' expr)* '>'
+  | expr '<' expr ((','|':') expr)* '>'
+  | expr '[' (expr (',' expr)*)? ']'
+  | expr ('.' expr)+
+  | un_op expr
+  | expr bin_op expr
+  | expr 'IN' '{' expr (',' expr)* '}'
+  | type_name 'IMPLEMENTATION_DEFINED' STRING
+  | type_name 'UNKNOWN'
   | function_call
-  | rvalue '<' rvalue '>'
-  | rvalue ':' rvalue
-  | 'if' rvalue 'then' rvalue 'else' rvalue
+  | expr '<' expr ((','|':') expr)* '>'
+  | expr ':' expr
+  | IF expr THEN expr 'else' expr
 ;
 
 un_op
@@ -180,46 +225,35 @@ bin_op
   | '-'
   | '*'
   | '/'
-;
-
-lvalue
-  : IDENTIFIER
-  | IDENTIFIER '.' IDENTIFIER
-  | IDENTIFIER '.' '<' IDENTIFIER (',' IDENTIFIER)* '>'
-  | IDENTIFIER '[' ']' '.' IDENTIFIER
-  | IDENTIFIER '[' (rvalue (',' rvalue)*)? ']'
-  | '(' lvalue ')'
-  | '(' lvalue ',' lvalue ')'
-  | '<' lvalue ',' lvalue '>'
-  | lvalue '<' rvalue '>'
-  | lvalue '<' rvalue ':' rvalue '>'
+  | '^'
 ;
 
 function_call
-  : IDENTIFIER '(' (rvalue (',' rvalue)*)? ')'
-  | IDENTIFIER '.' IDENTIFIER '(' (rvalue (',' rvalue)*)? ')'
+  : IDENTIFIER ('.' IDENTIFIER)? '(' (expr (',' expr)*)? ')'
 ;
 
 literal
   : IDENTIFIER
+  | '-'
   | INTEGER
   | HEX
   | BIT_VALUE
   | BIT_MASK
   | STRING
-  | 'bits' '(' rvalue ')' 'UNKNOWN'
 ;
 
-type_decl
-  : 'bits' '(' rvalue ')'
-  | 'bit'
-  | 'integer'
-  | 'boolean'
-  | 'Constraint'
+type_name
+  : 'bits' '(' expr ')'
+  | IDENTIFIER
+  | '(' type_name (',' type_name)* ')'
 ;
+
+IF : 'if' {self.opened += 1};
+ELSIF : 'elsif' {self.opened += 1};
+THEN : 'then' {self.opened -= 1};
 
 IDENTIFIER
-  : [a-zA-Z_][a-zA-Z0-9_]*
+  : ('AArch32.' | 'AArch64.')? [a-zA-Z_][a-zA-Z0-9_]*
 ;
 
 INTEGER
