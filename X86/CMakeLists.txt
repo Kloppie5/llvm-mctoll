@@ -11,9 +11,9 @@ endif()
 llvm_add_library(X86Raiser STATIC
   X86AdditionalInstrInfo.cpp
   X86ModuleRaiser.cpp
-  X86MachineInstructionRaiser.cpp
-  X86MachineInstructionRaiserUtils.cpp
-  X86MachineInstructionRaiserSSE.cpp
+  X86MachineFunctionRaiser.cpp
+  X86MachineFunctionRaiserUtils.cpp
+  X86MachineFunctionRaiserSSE.cpp
   X86JumpTables.cpp
   X86RaisedValueTracker.cpp
   X86RegisterUtils.cpp

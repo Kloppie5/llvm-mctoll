@@ -7,7 +7,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCInstRaiser.h"
+#include "Monitor.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
@@ -108,8 +110,17 @@ void MCInstRaiser::buildCFG(MachineFunction &MF, const MCInstrAnalysis *MIA,
     }
     if (mcInstorData.isMCInst()) {
       // Add raised MachineInstr to current MBB.
-      MF.back().push_back(
-          RaiseMCInst(*MII, MF, mcInstorData.getMCInst(), mcInstIndex));
+      MCInst Inst = mcInstorData.getMCInst();
+      MachineInstr* MI = RaiseMCInst(*MII, MF, Inst, mcInstIndex);
+      
+      MF.back().push_back(MI);
+      
+      LLVM_DEBUG(
+        Monitor::event_RaisedMachineInstr(&Inst, MI);
+      );
+      // The event is raised after adding it to the MBB, because it relies on MI having a link to its MF.
+      // Even though MF is provided in the constructor of MCInst, it isn't saved and instead; getMF()
+      // relies on the getParent() methods.
     }
   }
 

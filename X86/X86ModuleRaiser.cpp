@@ -37,6 +37,17 @@ bool X86ModuleRaiser::collectDynamicRelocations() {
   return true;
 }
 
+// Create a new MachineFunctionRaiser object and add it to the list of
+// MachineFunction raiser objects of this module.
+MachineFunctionRaiser* X86ModuleRaiser::NewMachineFunctionRaiser(StringRef FunctionName, MCInstRaiser *MCIR) {
+  FunctionType *FTy = FunctionType::get(Type::getVoidTy(M->getContext()), false);
+  Function *Func = Function::Create(FTy, GlobalValue::ExternalLinkage, FunctionName, M);
+  MachineFunction &MF = getMachineModuleInfo()->getOrCreateMachineFunction(*Func);
+  MachineFunctionRaiser* mfRaiser = new X86MachineFunctionRaiser(MF, MCIR);
+  mfRaiserVector.push_back(mfRaiser);
+  return mfRaiser;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif

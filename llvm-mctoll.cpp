@@ -16,6 +16,7 @@
 #include "MCInstOrData.h"
 #include "MachineFunctionRaiser.h"
 #include "ModuleRaiser.h"
+#include "Monitor.h"
 #include "PeepholeOptimizationPass.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
@@ -120,18 +121,6 @@ cl::opt<CodeGenFileType> OutputFormat(
                           "Emit nothing, for performance testing")),
     cl::cat(LLVMMCToLLCategory), cl::NotHidden);
 
-cl::opt<bool> llvm::Disassemble("raise", cl::desc("Raise machine instruction"),
-                                cl::cat(LLVMMCToLLCategory), cl::NotHidden);
-
-cl::alias Disassembled("d", cl::desc("Alias for -raise"),
-                       cl::aliasopt(Disassemble), cl::cat(LLVMMCToLLCategory),
-                       cl::NotHidden);
-
-static cl::opt<bool>
-    MachOOpt("macho", cl::desc("Use MachO specific object file parser"));
-static cl::alias MachOm("m", cl::desc("Alias for --macho"),
-                        cl::aliasopt(MachOOpt));
-
 static cl::opt<bool> NoVerify("disable-verify", cl::Hidden,
                               cl::desc("Do not verify input module"));
 
@@ -164,9 +153,6 @@ cl::alias static FilterSectionsj("j", cl::desc("Alias for --section"),
 cl::opt<bool>
     llvm::PrintImmHex("print-imm-hex",
                       cl::desc("Use hex format for immediate values"));
-
-cl::opt<bool> PrintFaultMaps("fault-map-section",
-                             cl::desc("Display contents of faultmap section"));
 
 cl::opt<unsigned long long>
     StartAddress("start-address", cl::desc("Disassemble beginning at address"),
@@ -514,27 +500,6 @@ static bool isArmElf(const ObjectFile *Obj) {
            Obj->getArch() == Triple::thumbeb));
 }
 
-class PrettyPrinter {
-public:
-  virtual ~PrettyPrinter() {}
-  virtual void printInst(MCInstPrinter &IP, const MCInst *MI,
-                         ArrayRef<uint8_t> Bytes, uint64_t Address,
-                         raw_ostream &OS, StringRef Annot,
-                         MCSubtargetInfo const &STI) {
-    OS << format("%8" PRIx64 ":", Address);
-    OS << "\t";
-    dumpBytes(Bytes, OS);
-    if (MI)
-      IP.printInst(MI, 0, "", STI, OS);
-    else
-      OS << " <unknown>";
-  }
-};
-PrettyPrinter PrettyPrinterInst;
-
-PrettyPrinter &selectPrettyPrinter(Triple const &Triple) {
-  return PrettyPrinterInst;
-}
 } // namespace
 
 bool llvm::isRelocAddressLess(RelocationRef A, RelocationRef B) {
@@ -826,7 +791,7 @@ ModuleRaiser *getModuleRaiser(const TargetMachine *tm) {
 
 } // namespace RaiserContext
 
-static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
+static void RaiseELFObjectFile(const ObjectFile *Obj) {
   if (StartAddress > StopAddress)
     error("Start address should be less than stop address");
 
@@ -839,16 +804,17 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
       Features.AddFeature(MAttrs[i]);
   }
 
-  std::unique_ptr<const MCRegisterInfo> MRI(
+  std::unique_ptr<const MCRegisterInfo> MCRI(
       TheTarget->createMCRegInfo(TripleName));
-  if (!MRI)
+  if (!MCRI)
     report_error(Obj->getFileName(),
                  "no register info for target " + TripleName);
+  Monitor::registerMCRegisterInfo(MCRI.get());
 
   MCTargetOptions MCOptions;
   // Set up disassembler.
   std::unique_ptr<const MCAsmInfo> AsmInfo(
-      TheTarget->createMCAsmInfo(*MRI, TripleName, MCOptions));
+      TheTarget->createMCAsmInfo(*MCRI, TripleName, MCOptions));
   if (!AsmInfo)
     report_error(Obj->getFileName(),
                  "no assembly info for target " + TripleName);
@@ -861,8 +827,10 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
   if (!MII)
     report_error(Obj->getFileName(),
                  "no instruction info for target " + TripleName);
+  Monitor::registerMCInstrInfo(MII.get());
+
   MCObjectFileInfo MOFI;
-  MCContext Ctx(Triple(TripleName), AsmInfo.get(), MRI.get(), STI.get());
+  MCContext Ctx(Triple(TripleName), AsmInfo.get(), MCRI.get(), STI.get());
   // FIXME: for now initialize MCObjectFileInfo with default values
   MOFI.initMCObjectFileInfo(Ctx, /*PIC=*/false);
 
@@ -877,12 +845,11 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
 
   int AsmPrinterVariant = AsmInfo->getAssemblerDialect();
   std::unique_ptr<MCInstPrinter> IP(TheTarget->createMCInstPrinter(
-      Triple(TripleName), AsmPrinterVariant, *AsmInfo, *MII, *MRI));
+      Triple(TripleName), AsmPrinterVariant, *AsmInfo, *MII, *MCRI));
   if (!IP)
     report_error(Obj->getFileName(),
                  "no instruction printer for target " + TripleName);
   IP->setPrintImmHex(PrintImmHex);
-  PrettyPrinter &PIP = selectPrettyPrinter(Triple(TripleName));
 
   LLVMContext llvmCtx;
   std::unique_ptr<TargetMachine> Target(
@@ -1044,19 +1011,6 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
       }
     }
 
-    // Make a list of all the relocations for this section.
-    std::vector<RelocationRef> Rels;
-    if (InlineRelocs) {
-      for (const SectionRef &RelocSec : SectionRelocMap[Section]) {
-        for (const RelocationRef &Reloc : RelocSec.relocations()) {
-          Rels.push_back(Reloc);
-        }
-      }
-    }
-
-    // Sort relocations by address.
-    std::sort(Rels.begin(), Rels.end(), RelocAddressLess);
-
     // If the section has no symbol at the start, just insert a dummy one.
     StringRef name;
     if (Symbols.empty() || Symbols[0].Addr != 0) {
@@ -1092,7 +1046,7 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
 
     // Set used to record all branch targets of a function.
     std::set<uint64_t> branchTargetSet;
-    MachineFunctionRaiser *curMFRaiser = nullptr;
+    MachineFunctionRaiser *MFRaiser = nullptr;
 
     // Disassemble symbol by symbol.
     LLVM_DEBUG(dbgs() << "BEGIN Disassembly of Functions in Section : "
@@ -1178,50 +1132,35 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
         if (!raiseFuncSymbol)
           continue;
 
-        // Note that since LLVM infrastructure was built to be used to build a
-        // conventional compiler pipeline, MachineFunction is built well after
-        // Function object was created and populated fully. Hence, creation of
-        // a Function object is necessary to build MachineFunction.
-        // However, in a raiser, we are conceptually walking the traditional
-        // compiler pipeline backwards. So we build MachineFunction from
-        // the binary before building Function object. Given the dependency,
-        // build a place holder Function object to allow for building the
-        // MachineFunction object.
-        // This Function object is NOT populated when raising MachineFunction
-        // abstraction of the binary function. Instead, a new Function is
-        // created using the LLVMContext and name of this Function object.
-        FunctionType *FTy = FunctionType::get(Type::getVoidTy(llvmCtx), false);
+        // New function symbol encountered. Record all targets collected to
+        // current MachineFunctionRaiser before we start parsing the new
+        // function bytes.
+        MFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
+        for (auto target : branchTargetSet) {
+          assert(MFRaiser != nullptr &&
+                 "Encountered unintialized MachineFunction raiser object");
+          MFRaiser->MCIR->addTarget(target);
+        }
+
+        // Clear the set used to record all branch targets of this function.
+        branchTargetSet.clear();
+
         StringRef FunctionName(Symbols[si].Name);
         // Strip leading underscore if the binary is MachO
         if (Obj->isMachO()) {
           FunctionName.consume_front("_");
         }
-        Function *Func = Function::Create(FTy, GlobalValue::ExternalLinkage,
-                                          FunctionName, &module);
 
-        // New function symbol encountered. Record all targets collected to
-        // current MachineFunctionRaiser before we start parsing the new
-        // function bytes.
-        curMFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
-        for (auto target : branchTargetSet) {
-          assert(curMFRaiser != nullptr &&
-                 "Encountered unintialized MachineFunction raiser object");
-          curMFRaiser->getMCInstRaiser()->addTarget(target);
-        }
-
-        // Clear the set used to record all branch targets of this function.
-        branchTargetSet.clear();
         // Create a new MachineFunction raiser
-        curMFRaiser = moduleRaiser->CreateAndAddMachineFunctionRaiser(
-            Func, moduleRaiser, Start, End);
+        MFRaiser = moduleRaiser->NewMachineFunctionRaiser(FunctionName, new MCInstRaiser(Start, End));
         LLVM_DEBUG(dbgs() << "\nFunction " << Symbols[si].Name << ":\n");
       } else {
         // Continue using to the most recent MachineFunctionRaiser
         // Get current MachineFunctionRaiser
-        curMFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
+        MFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
         // assert(curMFRaiser != nullptr && "Current Machine Function Raiser not
         // initialized");
-        if (curMFRaiser == nullptr) {
+        if (MFRaiser == nullptr) {
           // At this point in the instruction stream, we do not have a function
           // symbol to which the bytes being parsed can be made part of. So skip
           // parsing the bytes of this symbol.
@@ -1232,15 +1171,11 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
         // current symbol. This represents a situation where we have discovered
         // bytes (most likely data bytes) that belong to the most recent
         // function being parsed.
-        MCInstRaiser *mcInstRaiser = curMFRaiser->getMCInstRaiser();
-        if (mcInstRaiser->getFuncEnd() < End) {
-          assert(mcInstRaiser->adjustFuncEnd(End) &&
+        if (MFRaiser->MCIR->getFuncEnd() < End) {
+          assert(MFRaiser->MCIR->adjustFuncEnd(End) &&
                  "Unable to adjust function end value");
         }
       }
-
-      // Get the associated MCInstRaiser
-      MCInstRaiser *mcInstRaiser = curMFRaiser->getMCInstRaiser();
 
       // Start new basic block at the symbol.
       branchTargetSet.insert(Start);
@@ -1280,7 +1215,7 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
                       Bytes.data() + Index);
                   Data = *Word;
                 }
-                mcInstRaiser->addMCInstOrData(Index, Data);
+                MFRaiser->MCIR->addMCInstOrData(Index, Data);
               } else if (Index + 2 <= End) {
                 Stride = 2;
                 uint16_t Data = 0;
@@ -1295,10 +1230,10 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
                                                                   Index);
                   Data = *Short;
                 }
-                mcInstRaiser->addMCInstOrData(Index, Data);
+                MFRaiser->MCIR->addMCInstOrData(Index, Data);
               } else {
                 Stride = 1;
-                mcInstRaiser->addMCInstOrData(Index, Bytes.slice(Index, 1)[0]);
+                MFRaiser->MCIR->addMCInstOrData(Index, Bytes.slice(Index, 1)[0]);
               }
               Index += Stride;
 
@@ -1310,119 +1245,68 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
           }
         }
 
-        // If there is a data symbol inside an ELF text section and we are
-        // only disassembling text, we are in a situation where we must print
-        // the data and not disassemble it.
-        // TODO : Get rid of the following code in the if-block.
-        if (Obj->isELF() && Symbols[si].Type == ELF::STT_OBJECT &&
-            Section.isText()) {
-          // parse data up to 8 bytes at a time
-          uint8_t AsciiData[9] = {'\0'};
-          uint8_t Byte;
-          int NumBytes = 0;
-
-          for (Index = Start; Index < End; Index += 1) {
-            if (((SectionAddr + Index) < StartAddress) ||
-                ((SectionAddr + Index) > StopAddress))
-              continue;
-            if (NumBytes == 0) {
-              outs() << format("%8" PRIx64 ":", SectionAddr + Index);
-              outs() << "\t";
-            }
-            Byte = Bytes.slice(Index)[0];
-            outs() << format(" %02x", Byte);
-            AsciiData[NumBytes] = isprint(Byte) ? Byte : '.';
-
-            uint8_t IndentOffset = 0;
-            NumBytes++;
-            if (Index == End - 1 || NumBytes > 8) {
-              // Indent the space for less than 8 bytes data.
-              // 2 spaces for byte and one for space between bytes
-              IndentOffset = 3 * (8 - NumBytes);
-              for (int Excess = 8 - NumBytes; Excess < 8; Excess++)
-                AsciiData[Excess] = '\0';
-              NumBytes = 8;
-            }
-            if (NumBytes == 8) {
-              AsciiData[8] = '\0';
-              outs() << std::string(IndentOffset, ' ') << "         ";
-              outs() << reinterpret_cast<char *>(AsciiData);
-              outs() << '\n';
-              NumBytes = 0;
-            }
-          }
-        }
-
         if (Index >= End)
           break;
 
-        // Disassemble a real instruction or a data
-        bool Disassembled = DisAsm->getInstruction(
+        MCDisassembler::DecodeStatus Status = DisAsm->getInstruction(
             Inst, Size, Bytes.slice(Index), SectionAddr + Index, CommentStream);
+        if (Status != MCDisassembler::Success) {
+          auto OS = WithColor(errs(), HighlightColor::Error);
+          OS << "MCDisassembler failed to parse [ ";
+            dumpBytes(Bytes.slice(Index, Size), OS);
+          OS << " ]\n";
+          exit(1);
+        }
         if (Size == 0)
           Size = 1;
 
-        if (!Disassembled) {
-          errs() << "**** Warning: Failed to decode instruction\n";
-          PIP.printInst(*IP, Disassembled ? &Inst : nullptr,
-                        Bytes.slice(Index, Size), SectionAddr + Index, outs(),
-                        "", *STI);
-          outs() << CommentStream.str();
-          Comments.clear();
-          errs() << "\n";
-        }
+        LLVM_DEBUG(
+          Monitor::event_ParsedMCInst(Bytes.slice(Index, Size), &Inst);
+        );
+        MFRaiser->MCIR->addMCInstOrData(Index, Inst);
 
-        // Add MCInst to the list if all instructions were decoded
-        // successfully till now. Else, do not bother adding since no attempt
-        // will be made to raise this function.
-        if (Disassembled) {
-          mcInstRaiser->addMCInstOrData(Index, Inst);
-
-          // Find branch target and record it. Call targets are not
-          // recorded as they are not needed to build per-function CFG.
-          if (MIA && MIA->isBranch(Inst)) {
-            uint64_t Target;
-            if (MIA->evaluateBranch(Inst, Index, Size, Target)) {
-              // In a relocatable object, the target's section must reside in
-              // the same section as the call instruction or it is accessed
-              // through a relocation.
-              //
-              // In a non-relocatable object, the target may be in any
-              // section.
-              //
-              // N.B. We don't walk the relocations in the relocatable case
-              // yet.
-              if (!Obj->isRelocatableObject()) {
-                auto SectionAddress = std::upper_bound(
-                    SectionAddresses.begin(), SectionAddresses.end(), Target,
-                    [](uint64_t LHS,
-                       const std::pair<uint64_t, SectionRef> &RHS) {
-                      return LHS < RHS.first;
-                    });
-                if (SectionAddress != SectionAddresses.begin()) {
-                  --SectionAddress;
-                }
+        // Find branch target and record it. Call targets are not
+        // recorded as they are not needed to build per-function CFG.
+        if (MIA && MIA->isBranch(Inst)) {
+          uint64_t Target;
+          if (MIA->evaluateBranch(Inst, Index, Size, Target)) {
+            // In a relocatable object, the target's section must reside in
+            // the same section as the call instruction or it is accessed
+            // through a relocation.
+            //
+            // In a non-relocatable object, the target may be in any
+            // section.
+            //
+            // N.B. We don't walk the relocations in the relocatable case
+            // yet.
+            if (!Obj->isRelocatableObject()) {
+              auto SectionAddress = std::upper_bound(
+                  SectionAddresses.begin(), SectionAddresses.end(), Target,
+                  [](uint64_t LHS,
+                      const std::pair<uint64_t, SectionRef> &RHS) {
+                    return LHS < RHS.first;
+                  });
+              if (SectionAddress != SectionAddresses.begin()) {
+                --SectionAddress;
               }
-              // Add the index Target to target indices set.
-              branchTargetSet.insert(Target);
             }
-
-            // Mark the next instruction as a target.
-            uint64_t fallThruIndex = Index + Size;
-            branchTargetSet.insert(fallThruIndex);
+            // Add the index Target to target indices set.
+            branchTargetSet.insert(Target);
           }
+
+          // Mark the next instruction as a target.
+          uint64_t fallThruIndex = Index + Size;
+          branchTargetSet.insert(fallThruIndex);
         }
       }
       FuncFilter->eraseFunctionBySymbol(Symbols[si].Name,
                                         FunctionFilter::FILTER_INCLUDE);
     }
-    LLVM_DEBUG(dbgs() << "END Disassembly of Functions in Section : "
-                      << SectionName.data() << "\n");
 
     // Record all targets of the last function parsed
-    curMFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
+    MFRaiser = moduleRaiser->getCurrentMachineFunctionRaiser();
     for (auto target : branchTargetSet)
-      curMFRaiser->getMCInstRaiser()->addTarget(target);
+      MFRaiser->MCIR->addTarget(target);
 
     moduleRaiser->runMachineFunctionPasses();
 
@@ -1475,7 +1359,7 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
     }
 
     TPC.setInitialized();
-  } else if (Target->addPassesToEmitFile(
+  } else if (!Target->addPassesToEmitFile(
                  PM, *OS, nullptr, /* no dwarf output file stream*/
                  OutputFormat, NoVerify, machineModuleInfo)) {
     outs() << ToolName << "run system pass!\n";
@@ -1485,92 +1369,35 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
   PM.run(module);
 }
 
-static void DumpObject(ObjectFile *o, const Archive *a = nullptr) {
-  // Avoid other output when using a raw option.
-  LLVM_DEBUG(dbgs() << '\n');
-  if (a)
-    LLVM_DEBUG(dbgs() << a->getFileName() << "(" << o->getFileName() << ")");
-  else
-    LLVM_DEBUG(dbgs() << "; " << o->getFileName());
-  LLVM_DEBUG(dbgs() << ":\tfile format " << o->getFileFormatName() << "\n\n");
+static void RaiseInput(StringRef Filename) {
+  ErrorOr<std::unique_ptr<MemoryBuffer>> BufferPtrOrError = MemoryBuffer::getFile(Filename, false, false, false);
+  if (std::error_code EC = BufferPtrOrError.getError()) {
+    WithColor(errs(), HighlightColor::Error) << "Failed to create MemoryBuffer for file; " << EC.message() << "\n";
+    exit(1);
+  }
+  std::unique_ptr<MemoryBuffer> &BufferPtr = BufferPtrOrError.get();
 
-  assert(Disassemble && "Disassemble not set!");
-  DisassembleObject(o, /* InlineRelocations */ false);
-}
-
-static void DumpObject(const COFFImportFile *I, const Archive *A) {
-  assert(false &&
-         "This function needs to be deleted and is not expected to be called.");
-}
-
-/// @brief Dump each object file in \a a;
-static void DumpArchive(const Archive *a) {
-  Error Err = Error::success();
-  for (auto &C : a->children(Err)) {
-    Expected<std::unique_ptr<Binary>> ChildOrErr = C.getAsBinary();
-    if (!ChildOrErr) {
-      if (auto E = isNotObjectErrorInvalidFileType(ChildOrErr.takeError()))
-        report_error(std::move(E), a->getFileName(), C);
-      continue;
+  file_magic Type = identify_magic(BufferPtr->getBuffer());
+  switch (Type) {
+    case file_magic::elf:
+    case file_magic::elf_relocatable:
+    case file_magic::elf_executable:
+    case file_magic::elf_shared_object:
+    case file_magic::elf_core:
+    {
+      Expected<std::unique_ptr<ObjectFile>> FilePtrExpected = ObjectFile::createELFObjectFile(BufferPtr->getMemBufferRef());
+      if(Error E = FilePtrExpected.takeError()) {
+        WithColor(errs(), HighlightColor::Error) << "Encountered an error initializing ELFObjectFile; " << E << "\n";
+        exit(1);
+      }
+      RaiseELFObjectFile(FilePtrExpected->get());
+      break;
     }
-    if (ObjectFile *o = dyn_cast<ObjectFile>(&*ChildOrErr.get()))
-      DumpObject(o, a);
-    else if (COFFImportFile *I = dyn_cast<COFFImportFile>(&*ChildOrErr.get()))
-      DumpObject(I, a);
-    else
-      report_error(errorCodeToError(object_error::invalid_file_type),
-                   a->getFileName());
-  }
-  if (Err)
-    report_error(std::move(Err), a->getFileName());
-}
-
-/// @brief Open file and figure out how to dump it.
-static void DumpInput(StringRef file) {
-  // If we are using the Mach-O specific object file parser, then let it parse
-  // the file and process the command line options.  So the -arch flags can
-  // be used to select specific slices, etc.
-  if (MachOOpt) {
-    parseInputMachO(file);
-    return;
-  }
-
-  // Attempt to open the binary.
-  Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(file);
-  if (!BinaryOrErr)
-    report_error(BinaryOrErr.takeError(), file);
-  Binary &Binary = *BinaryOrErr.get().getBinary();
-
-  if (Archive *a = dyn_cast<Archive>(&Binary))
-    DumpArchive(a);
-  else if (ObjectFile *o = dyn_cast<ObjectFile>(&Binary)) {
-    if (o->getArch() == Triple::x86_64) {
-      const ELF64LEObjectFile *Elf64LEObjFile = dyn_cast<ELF64LEObjectFile>(o);
-      if (Elf64LEObjFile == nullptr) {
-        errs() << "\n\n*** " << file << " : Not 64-bit ELF binary\n"
-               << "*** Currently only 64-bit ELF binary raising supported.\n"
-               << "*** Please consider contributing support to raise other "
-                  "binary formats. Thanks!\n";
-        exit(1);
-      }
-      // Raise x86_64 relocatable binaries (.o files) is not supported.
-      auto EType = Elf64LEObjFile->getELFFile().getHeader().e_type;
-      if ((EType == ELF::ET_DYN) || (EType == ELF::ET_EXEC))
-        DumpObject(o);
-      else {
-        errs() << "Raising x64 relocatable (.o) x64 binaries not supported\n";
-        exit(1);
-      }
-    } else if (o->getArch() == Triple::arm)
-      DumpObject(o);
-    else {
-      errs() << "\n\n*** No support to raise Binaries other than x64 and ARM\n"
-             << "*** Please consider contributing support to raise other "
-                "ISAs. Thanks!\n";
+    default:
+      WithColor(errs(), HighlightColor::Error)
+        << "Encountered unsupported file type " << Type << "\n";
       exit(1);
-    }
-  } else
-    report_error(errorCodeToError(object_error::invalid_file_type), file);
+  }
 }
 
 int main(int argc, char **argv) {
@@ -1623,7 +1450,6 @@ int main(int argc, char **argv) {
     }
   }
   // Disassemble contents of .text section.
-  Disassemble = true;
   FilterSections.addValue(".text");
 
   llvm::setCurrentDebugType(DEBUG_TYPE);

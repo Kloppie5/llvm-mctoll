@@ -15,6 +15,7 @@
 #define LLVM_TOOLS_LLVM_MCTOLL_ARM_ARMMODULERAISER_H
 
 #include "ModuleRaiser.h"
+#include "MCInstRaiser.h"
 
 using namespace llvm;
 
@@ -25,11 +26,8 @@ public:
   }
   ARMModuleRaiser() : ModuleRaiser() { Arch = Triple::arm; }
 
-  // Create a new MachineFunctionRaiser object and add it to the list of
-  // MachineFunction raiser objects of this module.
-  MachineFunctionRaiser *
-  CreateAndAddMachineFunctionRaiser(Function *f, const ModuleRaiser *mr,
-                                    uint64_t start, uint64_t end) override;
+  MachineFunctionRaiser* NewMachineFunctionRaiser(StringRef FunctionName, MCInstRaiser *MCIR);
+
   bool collectDynamicRelocations() override;
 
   void collectRodataInstAddr(uint64_t instAddr) {

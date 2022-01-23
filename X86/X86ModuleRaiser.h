@@ -22,9 +22,8 @@ class X86ModuleRaiser : public ModuleRaiser {
 public:
   X86ModuleRaiser() : ModuleRaiser() { Arch = Triple::x86_64; };
 
-  MachineFunctionRaiser *
-  CreateAndAddMachineFunctionRaiser(Function *F, const ModuleRaiser *MR,
-                                    uint64_t Start, uint64_t End) override;
+  MachineFunctionRaiser* NewMachineFunctionRaiser(StringRef FunctionName, MCInstRaiser *MCIR);
+
   bool collectDynamicRelocations() override;
 };
 

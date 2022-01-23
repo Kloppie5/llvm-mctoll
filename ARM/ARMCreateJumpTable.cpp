@@ -116,7 +116,7 @@ bool ARMCreateJumpTable::UpdatetheBranchInst(MachineBasicBlock &MBB) {
 }
 
 /// Raise the machine jumptable according to the CFG.
-bool ARMCreateJumpTable::raiseMaichineJumpTable(MachineFunction &MF) {
+bool ARMCreateJumpTable::raiseMachineJumpTable(MachineFunction &MF) {
   // A vector to record MBBs that need to be erased upon jump table creation.
   std::vector<MachineBasicBlock *> MBBsToBeErased;
 
@@ -344,7 +344,7 @@ bool ARMCreateJumpTable::getJTlist(std::vector<JumpTableInfo> &List) {
 bool ARMCreateJumpTable::create() {
   LLVM_DEBUG(dbgs() << "ARMCreateJumpTable start.\n");
 
-  raiseMaichineJumpTable(*MF);
+  raiseMachineJumpTable(*MF);
 
   // For debugging.
   LLVM_DEBUG(MF->dump());

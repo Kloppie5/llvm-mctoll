@@ -1,6 +1,6 @@
 // REQUIRES: system-linux
 // RUN: clang -O1 -fno-inline -o %t %s
-// RUN: llvm-mctoll -d -I /usr/include/stdio.h %t
+// RUN: llvm-mctoll -I /usr/include/stdio.h %t
 // RUN: clang -o %t1 %t-dis.ll
 // RUN: %t1 2>&1 | FileCheck %s
 // CHECK: 0x4045400000000000, 0x422a0000

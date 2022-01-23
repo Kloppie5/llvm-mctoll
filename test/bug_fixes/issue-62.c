@@ -1,6 +1,6 @@
 // REQUIRES: system-linux
 // RUN: clang -O3 -o %t %s
-// RUN: llvm-mctoll -d -I /usr/include/stdio.h -I /usr/include/stdlib.h %t
+// RUN: llvm-mctoll -I /usr/include/stdio.h -I /usr/include/stdlib.h %t
 // RUN: clang -O3 -o %t1 %t-dis.ll
 // RUN: %t1 2>&1 | FileCheck %s
 // CHECK: Val : 99

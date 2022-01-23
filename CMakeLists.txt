@@ -56,9 +56,7 @@ add_llvm_tool(llvm-mctoll
   COFFDump.cpp
   IncludedFileInfo.cpp
   FunctionFilter.cpp
-  MachODump.cpp
   ModuleRaiser.cpp
-  MachineFunctionRaiser.cpp
   MCInstOrData.cpp
   MCInstRaiser.cpp
   EmitRaisedOutputPass.cpp

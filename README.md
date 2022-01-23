@@ -70,7 +70,6 @@ ninja check-mctoll
 | Command | Description |
 | --- | --- |
 | `-dh` or `--help` |  Display available options |
-| `-d <binary>` | Generate LLVM IR for a binary and place the result in `<binary>-dis.ll` |
 | `--filter-functions-file=<file>` | Text file with C functions to exclude or include during raising |
 | `--include-files=[file1,file2,file3,...]` or  `-I file1 -I file2 -I file3` | Specify full path of one or more files with function prototypes to use|
 | `-debug` | Print all debug output |
@@ -81,7 +80,7 @@ ninja check-mctoll
 
 This is what you came here for :-). Please [file an issue](https://github.com/microsoft/llvm-mctoll/issues) if you find a problem.
 ```
-llvm-mctoll -d a.out
+llvm-mctoll a.out
 ```
 
 See [usage document](./doc/Usage.md) for additional details of command-line options.

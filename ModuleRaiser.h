@@ -10,6 +10,7 @@
 #define LLVM_TOOLS_LLVM_MCTOLL_MODULERAISER_H
 
 #include "FunctionFilter.h"
+#include "MCInstRaiser.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/MC/MCDisassembler/MCDisassembler.h"
@@ -19,12 +20,10 @@
 #include <vector>
 
 using namespace llvm;
-using namespace std;
+using namespace object;
 
 class MachineFunctionRaiser;
 class MachineInstructionRaiser;
-
-using namespace object;
 
 using JumpTableBlock = std::pair<ConstantInt *, MachineBasicBlock *>;
 
@@ -43,6 +42,9 @@ struct JumpTableInfo {
 // module.
 class ModuleRaiser {
 public:
+  Module *M;
+  FunctionFilter *FFT;
+
   ModuleRaiser()
       : M(nullptr), TM(nullptr), MMI(nullptr), MIA(nullptr), MII(nullptr),
         Obj(nullptr), DisAsm(nullptr), TextSectionIndex(-1),
@@ -72,31 +74,21 @@ public:
   // creation of MachineFunction. The Function object representing raising
   // of MachineFunction is accessible by calling getRaisedFunction()
   // on the MachineFunctionRaiser object.
-  virtual MachineFunctionRaiser *
-  CreateAndAddMachineFunctionRaiser(Function *F, const ModuleRaiser *,
-                                    uint64_t Start, uint64_t End) = 0;
+  virtual MachineFunctionRaiser* NewMachineFunctionRaiser(StringRef FunctionName, MCInstRaiser *MCIR) = 0;
+  virtual FunctionType* getRaisedFunctionPrototype() = 0;
 
-  MachineFunctionRaiser *getCurrentMachineFunctionRaiser() {
+  MachineFunctionRaiser* getCurrentMachineFunctionRaiser() {
     if (mfRaiserVector.size() > 0)
       return mfRaiserVector.back();
     return nullptr;
   }
 
-  // Insert the map of raised function R to place-holder function PH pointer
-  // that inturn has the to corresponding MachineFunction.
-
-  bool insertPlaceholderRaisedFunctionMap(Function *R, Function *PH) {
-    auto V = PlaceholderRaisedFunctionMap.insert(std::make_pair(R, PH));
-    return V.second;
-  }
-
   bool collectTextSectionRelocs(const SectionRef &);
   virtual bool collectDynamicRelocations() = 0;
 
-  MachineFunction *getMachineFunction(Function *);
+  /// Get the data type corresponding to type string.
+  Type *getPrimitiveDataType(const StringRef &TypeStr);
 
-  // Member getters
-  Module *getModule() const { return M; }
   const TargetMachine *getTargetMachine() const { return TM; }
   MachineModuleInfo *getMachineModuleInfo() const { return MMI; }
   const MCInstrAnalysis *getMCInstrAnalysis() const { return MIA; }
@@ -104,6 +96,8 @@ public:
   const ObjectFile *getObjectFile() const { return Obj; }
   const MCDisassembler *getMCDisassembler() const { return DisAsm; }
   Triple::ArchType getArchType() { return Arch; }
+  FunctionFilter *getFunctionFilter() const { return FFT; }
+
 
   bool runMachineFunctionPasses();
 
@@ -126,14 +120,6 @@ public:
   int64_t getTextSectionAddress() const;
 
   bool changeRaisedFunctionReturnType(Function *, Type *);
-  virtual ~ModuleRaiser() {
-    if (FFT != nullptr)
-      delete FFT;
-  }
-  // Get the function filter for current Module.
-  FunctionFilter *getFunctionFilter() const { return FFT; }
-  // Get the current architecture type.
-  Triple::ArchType getArch() const { return Arch; }
 
 protected:
   // A sequential list of MachineFunctionRaiser objects created
@@ -143,16 +129,12 @@ protected:
   // by data bytes) whose start is denoted by a function symbol in
   // the binary.
   std::vector<MachineFunctionRaiser *> mfRaiserVector;
-  // A map of raised function pointer to place-holder function pointer
-  // that links to the MachineFunction.
-  DenseMap<Function *, Function *> PlaceholderRaisedFunctionMap;
   // Sorted vector of text relocations
   std::vector<RelocationRef> TextRelocs;
   // Vector of dynamic relocation records
   std::vector<RelocationRef> DynRelocs;
 
   // Commonly used data structures
-  Module *M;
   const TargetMachine *TM;
   MachineModuleInfo *MMI;
   const MCInstrAnalysis *MIA;
@@ -162,7 +144,6 @@ protected:
   // Index of text section whose instructions are raised
   int64_t TextSectionIndex;
   Triple::ArchType Arch;
-  FunctionFilter *FFT;
   // Flag to indicate that fields are set. Resetting is not allowed/expected.
   bool InfoSet;
 };

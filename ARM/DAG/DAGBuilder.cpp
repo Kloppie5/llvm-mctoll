@@ -28,14 +28,14 @@ void DAGBuilder::visit(const MachineInstr &mi) {
                                         E = mi.operands_end();
        B != E; ++B) {
     const MachineOperand &mo = *B;
-
+    // TODO: switch on mo.getType()
     if (mo.isReg() && !mo.isDebug()) {
-      EVT evt = EVT::getEVT(FuncInfo.getDefaultType());
+      EVT evt = EVT::getEVT(FuncInfo.getDefaultType()); // NOTE: Why are these two the same yet different?
       SDValue sdv = DAG.getRegister(mo.getReg(), evt);
       vctv.push_back(sdv);
       vctt.push_back(evt);
     } else if (mo.isImm()) {
-      EVT evt = FuncInfo.getDefaultEVT();
+      EVT evt = FuncInfo.getDefaultEVT(); // NOTE: Why are these two the same yet different?
       SDValue sdv = DAG.getConstant(mo.getImm(), SDLoc(nullptr, 0), evt);
       vctv.push_back(sdv);
       vctt.push_back(evt);
@@ -46,7 +46,8 @@ void DAGBuilder::visit(const MachineInstr &mi) {
         AllocaInst *v = const_cast<AllocaInst *>(mfi.getObjectAllocation(fi));
         EVT evt = EVT::getEVT(v->getAllocatedType());
         SDValue sdv = DAG.getFrameIndex(fi, evt, false);
-        DAGInfo.setRealValue(sdv.getNode(), v);
+        DAGInfo.NPMap[sdv.getNode()] = new NodePropertyInfo();
+        DAGInfo.NPMap[sdv.getNode()]->Val = v;
         vctv.push_back(sdv);
         vctt.push_back(evt);
       } else if (FuncInfo.isArgumentIndex(fi)) {
@@ -54,7 +55,8 @@ void DAGBuilder::visit(const MachineInstr &mi) {
             const_cast<Argument *>(FuncInfo.getCRF()->arg_begin() + (fi - 1));
         EVT evt = EVT::getEVT(v->getType());
         SDValue sdv = DAG.getFrameIndex(fi, evt, false);
-        DAGInfo.setRealValue(sdv.getNode(), v);
+        DAGInfo.NPMap[sdv.getNode()] = new NodePropertyInfo();
+        DAGInfo.NPMap[sdv.getNode()]->Val = v;
         vctv.push_back(sdv);
         vctt.push_back(evt);
       } else if (FuncInfo.isReturnIndex(fi)) {
@@ -75,7 +77,8 @@ void DAGBuilder::visit(const MachineInstr &mi) {
           FuncInfo.MR->getModule()->getNamedGlobal(mo.getSymbolName());
       EVT evt = EVT::getEVT(v->getValueType(), true);
       SDValue sdv = DAG.getExternalSymbol(mo.getSymbolName(), evt);
-      DAGInfo.setRealValue(sdv.getNode(), v);
+      DAGInfo.NPMap[sdv.getNode()] = new NodePropertyInfo();
+      DAGInfo.NPMap[sdv.getNode()]->Val = v;
       vctv.push_back(sdv);
       vctt.push_back(evt);
     } else if (mo.isMetadata()) {
@@ -102,15 +105,14 @@ void DAGBuilder::visit(const MachineInstr &mi) {
   MachineSDNode *mnode =
       DAG.getMachineNode(mi.getOpcode(), sdl, DAG.getVTList(VTs), Ops);
 
-  NodePropertyInfo *npi = new NodePropertyInfo();
-  npi->MI = &mi;
-  DAGInfo.NPMap[mnode] = npi;
+  DAGInfo.NPMap[mnode] = new NodePropertyInfo();
+  DAGInfo.NPMap[mnode]->MI = &mi;
 
   // TODO: Now the predicate operand not stripped, so the two-address operands
   // more than two.
   // Set the Node is two-address. The default is three-address.
   if (vctv.size() < 4)
-    npi->IsTwoAddress = true;
+    DAGInfo.NPMap[mnode]->IsTwoAddress = true;
 
   visitCC(mi, mnode);
 }

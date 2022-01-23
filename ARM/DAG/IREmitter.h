@@ -41,10 +41,12 @@ public:
             FunctionRaisingInfo *funcInfo);
   /// Generate SDNode code for a node and needed dependencies.
   void emitNode(SDNode *Node) {
-    if (!Node->isMachineOpcode())
-      emitSDNode(Node);
+    if(Node->isMachineOpcode())
+      emitMachineOpcodeNode(Node);
+    else if (Node->isTargetOpcode())
+      emitTargetDependentNode(Node);
     else
-      emitSpecialNode(Node);
+      emitTargetIndependentNode(Node);
   }
   BasicBlock *getBlock() { return BB; }
   void setBlock(BasicBlock *bb) { BB = bb; }
@@ -59,10 +61,11 @@ public:
 private:
   /// Generate SDNode code for a target-independent node.
   /// Emit SDNode to Instruction and add to BasicBlock.
-  void emitSDNode(SDNode *Node);
+  void emitMachineOpcodeNode ( SDNode *Node );
+  void emitTargetDependentNode ( SDNode *Node );
+  void emitTargetIndependentNode ( SDNode *Node );
   /// Emit SDNodes of binary operations.
   void emitBinary(SDNode *Node);
-  void emitSpecialNode(SDNode *Node);
   void emitCondCode(unsigned CondValue, BasicBlock *BB, BasicBlock *IfBB,
                     BasicBlock *ElseBB);
   void emitBinaryCPSR(Value *Inst, BasicBlock *BB, unsigned Opcode,
