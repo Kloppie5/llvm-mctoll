@@ -3,7 +3,6 @@ include_directories(
   ${LLVM_BINARY_DIR}/lib/Target/ARM
   ${CMAKE_CURRENT_SOURCE_DIR}/..
   ${CMAKE_CURRENT_SOURCE_DIR}/.
-  ${CMAKE_CURRENT_SOURCE_DIR}/DAG
 )
 
 if(NOT LLVM_MCTOLL_BUILT_STANDALONE)
@@ -13,19 +12,18 @@ endif()
 add_llvm_library(ARMRaiser STATIC
   ARMModuleRaiser.cpp
   ARMFunctionPrototype.cpp
-  ARMMIRevising.cpp
-  ARMEliminatePrologEpilog.cpp
-  ARMCreateJumpTable.cpp
-  ARMArgumentRaiser.cpp
-  ARMFrameBuilder.cpp
-  ARMInstructionSplitting.cpp
-  DAG/FunctionRaisingInfo.cpp
-  DAG/DAGRaisingInfo.cpp
-  DAG/DAGBuilder.cpp
-  DAG/InstSelector.cpp
-  DAG/IREmitter.cpp
-  ARMSelectionDAGISel.cpp
-  ARMMachineFunctionRaiser.cpp
+  ARMBenchmarker.cpp
+  ARMLinearRaiserPass.cpp
+  ARMRaiser/ARMRaiser.cpp
+  ARMRaiser/ARMRaiserCDE.cpp
+  ARMRaiser/ARMRaiserMVE.cpp
+  ARMRaiser/ARMRaiserNEON.cpp
+  ARMRaiser/ARMRaiserThumb.cpp
+  ARMRaiser/ARMRaiserThumb2.cpp
+  ARMRaiser/ARMRaiserVFP.cpp
+  ARMDisassembler.cpp
+  ARMConcurrencyPatternMatcher.cpp
+  ARMMachineInstructionRaiser.cpp
 
   DEPENDS
     ${LLVM_MCTOLL_DEPS}

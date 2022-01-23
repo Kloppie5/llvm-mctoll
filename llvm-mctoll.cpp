@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm-mctoll.h"
+#include "ARM/ARMDisassembler.h"
 #include "EmitRaisedOutputPass.h"
 #include "IncludedFileInfo.h"
 #include "MCInstOrData.h"
@@ -823,11 +824,11 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
   if (!STI)
     report_error(Obj->getFileName(),
                  "no subtarget info for target " + TripleName);
-  std::unique_ptr<const MCInstrInfo> MII(TheTarget->createMCInstrInfo());
-  if (!MII)
+  std::unique_ptr<const MCInstrInfo> MCII(TheTarget->createMCInstrInfo());
+  if (!MCII)
     report_error(Obj->getFileName(),
                  "no instruction info for target " + TripleName);
-  Monitor::registerMCInstrInfo(MII.get());
+  Monitor::registerMCInstrInfo(MCII.get());
 
   MCObjectFileInfo MOFI;
   MCContext Ctx(Triple(TripleName), AsmInfo.get(), MCRI.get(), STI.get());
@@ -841,11 +842,11 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
                  "no disassembler for target " + TripleName);
 
   std::unique_ptr<const MCInstrAnalysis> MIA(
-      TheTarget->createMCInstrAnalysis(MII.get()));
+      TheTarget->createMCInstrAnalysis(MCII.get()));
 
   int AsmPrinterVariant = AsmInfo->getAssemblerDialect();
   std::unique_ptr<MCInstPrinter> IP(TheTarget->createMCInstPrinter(
-      Triple(TripleName), AsmPrinterVariant, *AsmInfo, *MII, *MCRI));
+      Triple(TripleName), AsmPrinterVariant, *AsmInfo, *MCII, *MCRI));
   if (!IP)
     report_error(Obj->getFileName(),
                  "no instruction printer for target " + TripleName);
@@ -874,7 +875,7 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
   // Set data of module raiser
   moduleRaiser->setModuleRaiserInfo(&module, Target.get(),
                                     &machineModuleInfo->getMMI(), MIA.get(),
-                                    MII.get(), Obj, DisAsm.get());
+                                    MCII.get(), Obj, DisAsm.get());
 
   // Collect dynamic relocations.
   moduleRaiser->collectDynamicRelocations();
@@ -1097,8 +1098,7 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
       if (isAFunctionSymbol(Obj, Symbols[si])) {
         auto &SymStr = Symbols[si].Name;
 
-        bool raiseFuncSymbol = true;
-        if ((!FilterFunctionSet.getValue().empty())) {
+        if (FilterFunctionSet.getNumOccurrences() != 0) {
           // Check the symbol name whether it should be excluded or not.
           // Check in a non-empty exclude list
           if (!FuncFilter->isFilterSetEmpty(FunctionFilter::FILTER_EXCLUDE)) {
@@ -1265,6 +1265,8 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
         );
         MFRaiser->MCIR->addMCInstOrData(Index, Inst);
 
+        mcInstRaiser->addMCInstOrData(Index, Inst);
+
         // Find branch target and record it. Call targets are not
         // recorded as they are not needed to build per-function CFG.
         if (MIA && MIA->isBranch(Inst)) {
@@ -1316,7 +1318,6 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
       FuncFilter->dump(FunctionFilter::FILTER_INCLUDE);
     }
   }
-
   // Add the pass manager
   Triple TheTriple = Triple(TripleName);
 
@@ -1369,11 +1370,53 @@ static void RaiseELFObjectFile(const ObjectFile *Obj) {
   PM.run(module);
 }
 
-static void RaiseInput(StringRef Filename) {
-  ErrorOr<std::unique_ptr<MemoryBuffer>> BufferPtrOrError = MemoryBuffer::getFile(Filename, false, false, false);
-  if (std::error_code EC = BufferPtrOrError.getError()) {
-    WithColor(errs(), HighlightColor::Error) << "Failed to create MemoryBuffer for file; " << EC.message() << "\n";
-    exit(1);
+static void DumpARMObject(ObjectFile *o) {
+  // Avoid other output when using a raw option.
+  LLVM_DEBUG(dbgs() << '\n');
+  LLVM_DEBUG(dbgs() << "; " << o->getFileName());
+  LLVM_DEBUG(dbgs() << ":\tfile format " << o->getFileFormatName() << "\n\n");
+
+  // (char* triple, uint8_t* Data, uint64_t Size)
+  ARMDisassembler* DisAsm = new ARMDisassembler((uint8_t*) o->getData().data(),
+                                                (uint64_t) o->getData().size());
+  DisAsm->dump();
+}
+
+static void DumpObject(ObjectFile *o, const Archive *a = nullptr) {
+  // Avoid other output when using a raw option.
+  LLVM_DEBUG(dbgs() << '\n');
+  if (a)
+    LLVM_DEBUG(dbgs() << a->getFileName() << "(" << o->getFileName() << ")");
+  else
+    LLVM_DEBUG(dbgs() << "; " << o->getFileName());
+  LLVM_DEBUG(dbgs() << ":\tfile format " << o->getFileFormatName() << "\n\n");
+
+  assert(Disassemble && "Disassemble not set!");
+  DisassembleObject(o, /* InlineRelocations */ false);
+}
+
+static void DumpObject(const COFFImportFile *I, const Archive *A) {
+  assert(false &&
+         "This function needs to be deleted and is not expected to be called.");
+}
+
+/// @brief Dump each object file in \a a;
+static void DumpArchive(const Archive *a) {
+  Error Err = Error::success();
+  for (auto &C : a->children(Err)) {
+    Expected<std::unique_ptr<Binary>> ChildOrErr = C.getAsBinary();
+    if (!ChildOrErr) {
+      if (auto E = isNotObjectErrorInvalidFileType(ChildOrErr.takeError()))
+        report_error(std::move(E), a->getFileName(), C);
+      continue;
+    }
+    if (ObjectFile *o = dyn_cast<ObjectFile>(&*ChildOrErr.get()))
+      DumpObject(o, a);
+    else if (COFFImportFile *I = dyn_cast<COFFImportFile>(&*ChildOrErr.get()))
+      DumpObject(I, a);
+    else
+      report_error(errorCodeToError(object_error::invalid_file_type),
+                   a->getFileName());
   }
   std::unique_ptr<MemoryBuffer> &BufferPtr = BufferPtrOrError.get();
 
@@ -1390,8 +1433,21 @@ static void RaiseInput(StringRef Filename) {
         WithColor(errs(), HighlightColor::Error) << "Encountered an error initializing ELFObjectFile; " << E << "\n";
         exit(1);
       }
-      RaiseELFObjectFile(FilePtrExpected->get());
-      break;
+      // Raise x86_64 relocatable binaries (.o files) is not supported.
+      auto EType = Elf64LEObjFile->getELFFile().getHeader().e_type;
+      if ((EType == ELF::ET_DYN) || (EType == ELF::ET_EXEC))
+        DumpObject(o);
+      else {
+        errs() << "Raising x64 relocatable (.o) x64 binaries not supported\n";
+        exit(1);
+      }
+    } else if (o->getArch() == Triple::arm)
+      DumpARMObject(o);
+    else {
+      errs() << "\n\n*** No support to raise Binaries other than x64 and ARM\n"
+             << "*** Please consider contributing support to raise other "
+                "ISAs. Thanks!\n";
+      exit(1);
     }
     default:
       WithColor(errs(), HighlightColor::Error)

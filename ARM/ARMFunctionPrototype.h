@@ -36,7 +36,7 @@ private:
     return Type::getIntNTy(*CTX, MF->getDataLayout().getPointerSizeInBits());
   };
   /// Check the first reference of the reg is USE.
-  bool isUsedRegiser(unsigned reg, const MachineBasicBlock &mbb);
+  bool isUsedRegister(unsigned reg, MachineFunction *MF);
   /// Check the first reference of the reg is DEF.
   bool isDefinedRegiser(unsigned reg, const MachineBasicBlock &mbb);
   /// Get all arguments types of current MachineFunction.
