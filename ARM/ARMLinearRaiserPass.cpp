@@ -5,13 +5,13 @@
 
 #include "ARMModuleRaiser.h"
 #include "ARMSubtarget.h"
-#include "ExternalFunctions.h"
+#include "IncludedFileInfo.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/Object/ELF.h"
 #include "llvm/Object/ELFObjectFile.h"
 
-#include "ARMRaiser.h"
+#include "ARMRaiser/ARMRaiser.h"
 
 using namespace llvm;
 

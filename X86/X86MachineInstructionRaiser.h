@@ -1,4 +1,4 @@
-//===-- X86MachineFunctionRaiser.h ---------------------------*- C++ -*-===//
+//===-- X86MachineInstructionRaiser.h ---------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file contains the declaration of X86MachineFunctionRaiser
+// This file contains the declaration of X86MachineInstructionRaiser
 // class for use by llvm-mctoll.
 //
 //===----------------------------------------------------------------------===//
@@ -14,7 +14,7 @@
 #ifndef LLVM_TOOLS_LLVM_MCTOLL_X86_X86MACHINEINSTRUCTIONRAISER_H
 #define LLVM_TOOLS_LLVM_MCTOLL_X86_X86MACHINEINSTRUCTIONRAISER_H
 
-#include "MachineFunctionRaiser.h"
+#include "MachineInstructionRaiser.h"
 #include "X86AdditionalInstrInfo.h"
 #include "llvm/IR/Instructions.h"
 
@@ -46,8 +46,13 @@ class X86RegisterInfo;
 struct X86AddressMode;
 } // namespace llvm
 
-class X86MachineFunctionRaiser : public MachineFunctionRaiser {
+class X86MachineInstructionRaiser : public MachineInstructionRaiser {
 public:
+  X86MachineInstructionRaiser() = delete;
+  X86MachineInstructionRaiser(MachineFunction &MF, const ModuleRaiser *MR,
+                              MCInstRaiser *MIR);
+  bool raise() override;
+
   // Return the 64-bit super-register of PhysReg.
   unsigned int find64BitSuperReg(unsigned int PhysReg);
   // Return the Type of the physical register.
@@ -61,7 +66,7 @@ public:
   bool recordDefsToPromote(unsigned PhysReg, unsigned MBBNo, Value *Alloca);
   StoreInst *promotePhysregToStackSlot(int PhysReg, Value *ReachingValue,
                                        int MBBNo, Instruction *Alloca);
-  int getArgumentNumber(unsigned PReg);
+  int getArgumentNumber(unsigned PReg) override;
   auto getRegisterInfo() const { return x86RegisterInfo; }
   bool instrNameStartsWith(const MachineInstr &MI, StringRef name) const;
   X86RaisedValueTracker *getRaisedValues() { return raisedValues; }
@@ -98,8 +103,8 @@ private:
   const X86RegisterInfo *x86RegisterInfo;
 
   bool buildFuncArgTypeVector(const std::set<MCPhysReg> &,
-                              std::vector<Type *> &);
-  Value *getRegOrArgValue(unsigned PReg, int MBBNo);
+                              std::vector<Type *> &) override;
+  Value *getRegOrArgValue(unsigned PReg, int MBBNo) override;
 
   bool raiseMachineFunction();
   FunctionType *getRaisedFunctionPrototype() override;

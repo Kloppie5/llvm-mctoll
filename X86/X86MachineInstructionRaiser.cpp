@@ -4399,7 +4399,7 @@ bool X86MachineInstructionRaiser::raiseGenericMachineInstr(
 // Raise a return instruction.
 bool X86MachineInstructionRaiser::raiseReturnMachineInstr(
     const MachineInstr &MI) {
-  Type *RetType = F->getReturnType();
+  Type *RetType = raisedFunction->getReturnType();
   Value *RetValue = nullptr;
 
   // Get the BasicBlock corresponding to MachineBasicBlock of MI.
@@ -4464,15 +4464,15 @@ bool X86MachineInstructionRaiser::raiseReturnMachineInstr(
       ReturnInst::Create(MF.getFunction().getContext(), RetValue);
   RaisedBB->getInstList().push_back(retInstr);
 
-  // Make sure that the return type of F is void. Else change it to
+  // Make sure that the return type of raisedFunction is void. Else change it to
   // void type as reaching definition computation is more accurate than that
   // deduced earlier just looking at the per-basic block definitions.
-  Type *RaisedFuncReturnTy = F->getReturnType();
+  Type *RaisedFuncReturnTy = raisedFunction->getReturnType();
   if (RetValue == nullptr) {
     if (!RaisedFuncReturnTy->isVoidTy()) {
       ModuleRaiser *NonConstMR = const_cast<ModuleRaiser *>(MR);
       NonConstMR->changeRaisedFunctionReturnType(
-          F, Type::getVoidTy(MF.getFunction().getContext()));
+          raisedFunction, Type::getVoidTy(MF.getFunction().getContext()));
     }
   }
 
@@ -4481,7 +4481,7 @@ bool X86MachineInstructionRaiser::raiseReturnMachineInstr(
 
 bool X86MachineInstructionRaiser::raiseBranchMachineInstrs() {
   LLVM_DEBUG(outs() << "CFG : Before Raising Terminator Instructions\n");
-  LLVM_DEBUG(F->dump());
+  LLVM_DEBUG(raisedFunction->dump());
 
   // Raise branch instructions with control transfer records
   bool success = true;
@@ -4550,7 +4550,7 @@ bool X86MachineInstructionRaiser::raiseBranchMachineInstrs() {
     }
   }
   LLVM_DEBUG(outs() << "CFG : After Raising Terminator Instructions\n");
-  LLVM_DEBUG(F->dump());
+  LLVM_DEBUG(raisedFunction->dump());
 
   return true;
 }
@@ -4902,7 +4902,7 @@ bool X86MachineInstructionRaiser::raiseCallMachineInstr(
       else {
         RetInstr = ReturnInst::Create(Ctx, callInst);
         ModuleRaiser *NonConstMR = const_cast<ModuleRaiser *>(MR);
-        NonConstMR->changeRaisedFunctionReturnType(F,
+        NonConstMR->changeRaisedFunctionReturnType(raisedFunction,
                                                    callInst->getType());
       }
       RaisedBB->getInstList().push_back(RetInstr);
@@ -5165,7 +5165,7 @@ bool X86MachineInstructionRaiser::raise() {
   if (Success) {
     // Delete empty basic blocks with no predecessors
     SmallVector<BasicBlock *, 4> UnConnectedBEmptyBs;
-    for (BasicBlock &BB : *F) {
+    for (BasicBlock &BB : *raisedFunction) {
       if (BB.hasNPredecessors(0) && BB.size() == 0)
         UnConnectedBEmptyBs.push_back(&BB);
     }
@@ -5175,7 +5175,7 @@ bool X86MachineInstructionRaiser::raise() {
     // Unify all exit nodes of the raised function
     legacy::PassManager PM;
     PM.add(createUnifyFunctionExitNodesPass());
-    PM.run(*(F->getParent()));
+    PM.run(*(raisedFunction->getParent()));
   }
   return Success;
 }

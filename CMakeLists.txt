@@ -52,14 +52,15 @@ configure_file(
 add_subdirectory(test)
 
 add_llvm_tool(llvm-mctoll
-  llvm-mctoll.cpp
-  COFFDump.cpp
-  IncludedFileInfo.cpp
+  EmitRaisedOutputPass.cpp
   FunctionFilter.cpp
-  ModuleRaiser.cpp
+  IncludedFileInfo.cpp
+  llvm-mctoll.cpp
+  MachineFunctionRaiser.cpp
+  MachODump.cpp
   MCInstOrData.cpp
   MCInstRaiser.cpp
-  EmitRaisedOutputPass.cpp
+  ModuleRaiser.cpp
   PeepholeOptimizationPass.cpp
   RuntimeFunction.cpp
 )
@@ -73,4 +74,3 @@ if(HAVE_LIBXAR)
   message(STATUS "Linking xar")
   target_link_libraries(llvm-mctoll PRIVATE ${XAR_LIB})
 endif()
-

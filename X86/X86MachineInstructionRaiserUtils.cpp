@@ -2275,14 +2275,14 @@ Value *X86MachineInstructionRaiser::getRegOrArgValue(unsigned PReg, int MBBNo) {
     if (pos > 0) {
       // Get the value only if the function has an argument at
       // pos.
-      if (pos <= (int)F->arg_size()) {
+      if (pos <= (int)raisedFunction->arg_size()) {
         bool isRegFloatingPointType = isSSE2Reg(PReg);
         int actualPos = 0; // SSE regs and int regs are scrambled
         int i = 0;
 
-        while (actualPos < (int)F->arg_size() && i < pos) {
+        while (actualPos < (int)raisedFunction->arg_size() && i < pos) {
           bool isArgFloatingPointType =
-              F->getArg(i)->getType()->isFloatingPointTy();
+              raisedFunction->getArg(i)->getType()->isFloatingPointTy();
 
           if (isArgFloatingPointType == isRegFloatingPointType) {
             i++;
@@ -2291,7 +2291,7 @@ Value *X86MachineInstructionRaiser::getRegOrArgValue(unsigned PReg, int MBBNo) {
         }
 
         Function::arg_iterator argIter =
-            F->arg_begin() + actualPos - 1;
+            raisedFunction->arg_begin() + actualPos - 1;
         PRegValue = argIter;
       }
     }

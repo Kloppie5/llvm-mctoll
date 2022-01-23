@@ -10,14 +10,14 @@ endif()
 
 llvm_add_library(X86Raiser STATIC
   X86AdditionalInstrInfo.cpp
-  X86ModuleRaiser.cpp
-  X86MachineFunctionRaiser.cpp
-  X86MachineFunctionRaiserUtils.cpp
-  X86MachineFunctionRaiserSSE.cpp
+  X86FuncPrototypeDiscovery.cpp
   X86JumpTables.cpp
+  X86MachineInstructionRaiser.cpp
+  X86MachineInstructionRaiserSSE.cpp
+  X86MachineInstructionRaiserUtils.cpp
+  X86ModuleRaiser.cpp
   X86RaisedValueTracker.cpp
   X86RegisterUtils.cpp
-  X86FuncPrototypeDiscovery.cpp
 
   DEPENDS
     ${LLVM_MCTOLL_DEPS}

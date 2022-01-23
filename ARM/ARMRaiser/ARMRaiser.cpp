@@ -4,7 +4,7 @@
 #include "Monitor.h"
 
 #include "ARMModuleRaiser.h"
-#include "ExternalFunctions.h"
+#include "IncludedFileInfo.h"
 
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/IR/Instruction.h"
@@ -1010,7 +1010,8 @@ using namespace llvm;
 
       Monitor::event_raw() << "Found called function " << CalledFuncSymName.get() << "\n";
 
-      CalledFunc = ExternalFunctions::Create(*CalledFuncSymName, AMR);
+
+      CalledFunc = IncludedFileInfo::CreateFunction(*CalledFuncSymName, AMR);
       assert(CalledFunc && "Failed to create external function");
 
       AMR.setSyscallMapping(target, CalledFunc);
@@ -1184,7 +1185,7 @@ using namespace llvm;
 
       Monitor::event_raw() << "Found called function " << CalledFuncSymName.get() << "\n";
 
-      CalledFunc = ExternalFunctions::Create(*CalledFuncSymName, AMR);
+      CalledFunc = IncludedFileInfo::CreateFunction(*CalledFuncSymName, AMR);
       assert(CalledFunc && "Failed to create external function");
 
       AMR.setSyscallMapping(target, CalledFunc);
@@ -1393,7 +1394,7 @@ using namespace llvm;
 
         Monitor::event_raw() << "Found called function " << CalledFuncSymName.get() << "\n";
 
-        CalledFunc = ExternalFunctions::Create(*CalledFuncSymName, AMR);
+        CalledFunc = IncludedFileInfo::CreateFunction(*CalledFuncSymName, AMR);
         assert(CalledFunc && "Failed to create external function");
 
         AMR.setSyscallMapping(target, CalledFunc);

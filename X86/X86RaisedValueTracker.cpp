@@ -25,15 +25,15 @@ using namespace X86RegisterUtils;
 using namespace mctoll;
 
 X86RaisedValueTracker::X86RaisedValueTracker(
-    X86MachineFunctionRaiser *MIRaiser)
-    : MFR(MIRaiser) {
+    X86MachineInstructionRaiser *MIRaiser)
+    : x86MIRaiser(MIRaiser) {
 
   // Initialize entries for function register arguments in physToValueMap
   // Only first 6 arguments are passed as registers
   unsigned GPRegArgCount = X86RegisterUtils::GPR64ArgRegs64Bit.size();
   unsigned SSERegArgCount = X86RegisterUtils::SSEArgRegs64Bit.size();
-  MachineFunction &MF = MFR->getMF();
-  Function *CurFunction = MFR->getRaisedFunction();
+  MachineFunction &MF = x86MIRaiser->getMF();
+  Function *CurFunction = x86MIRaiser->getRaisedFunction();
 
   unsigned GPArgNum = 0;
   unsigned SSEArgNum = 0;
@@ -83,7 +83,7 @@ X86RaisedValueTracker::X86RaisedValueTracker(
             (PhysReg == X86::FPCW))
           continue;
 
-        unsigned int SuperReg = MFR->find64BitSuperReg(PhysReg);
+        unsigned int SuperReg = x86MIRaiser->find64BitSuperReg(PhysReg);
         // No value assigned yet for the definition of SuperReg in CurMBBNo.
         // The value will be updated as the block is raised.
         if (isSSE2Instruction(MI.getOpcode())) {
@@ -110,10 +110,10 @@ bool X86RaisedValueTracker::setPhysRegSSAValue(unsigned int PhysReg, int MBBNo,
   assert((PhysReg != X86::NoRegister) &&
          "Attempt to set value of an invalid register");
   // Always convert PhysReg to the 64-bit version.
-  unsigned int SuperReg = MFR->find64BitSuperReg(PhysReg);
+  unsigned int SuperReg = x86MIRaiser->find64BitSuperReg(PhysReg);
 
   if (!Val->hasName() && PhysReg < X86::NUM_TARGET_REGS)
-    Val->setName(MFR->getRegisterInfo()->getName(PhysReg));
+    Val->setName(x86MIRaiser->getRegisterInfo()->getName(PhysReg));
   physRegDefsInMBB[SuperReg][MBBNo].second = Val;
   if (Val->getType()->isFloatingPointTy()) {
     auto BitPrecision = Val->getType()->getPrimitiveSizeInBits();
@@ -141,7 +141,7 @@ X86RaisedValueTracker::getGlobalReachingDefs(unsigned int PhysReg, int MBBNo,
   // Recursively walk the predecessors of current block to get
   // the reaching definition for PhysReg.
 
-  MachineFunction &MF = MFR->getMF();
+  MachineFunction &MF = x86MIRaiser->getMF();
   MachineBasicBlock *CurMBB = MF.getBlockNumbered(MBBNo);
   // Look for the most recent definition of SuperReg in current block.
   const std::pair<int, Value *> LocalDef =
@@ -221,7 +221,7 @@ std::pair<int, Value *>
 X86RaisedValueTracker::getInBlockRegOrArgDefVal(unsigned int PhysReg,
                                                 int MBBNo) {
   // Always convert PhysReg to the 64-bit version.
-  unsigned int SuperReg = MFR->find64BitSuperReg(PhysReg);
+  unsigned int SuperReg = x86MIRaiser->find64BitSuperReg(PhysReg);
 
   Value *DefValue = nullptr;
   int DefMBBNo = INVALID_MBB;
@@ -244,12 +244,12 @@ X86RaisedValueTracker::getInBlockRegOrArgDefVal(unsigned int PhysReg,
   // If MBBNo is entry and ReachingDef was not found, check to see
   // if this is an argument value.
   if ((DefValue == nullptr) && (MBBNo == 0)) {
-    int pos = MFR->getArgumentNumber(PhysReg);
+    int pos = x86MIRaiser->getArgumentNumber(PhysReg);
 
     // If PReg is an argument register, get its value from function
     // argument list.
     if (pos > 0) {
-      Function *RaisedFunction = MFR->getRaisedFunction();
+      Function *RaisedFunction = x86MIRaiser->getRaisedFunction();
 
       int actualPos = pos;
       if (isSSE2Reg(PhysReg)) {
@@ -286,7 +286,7 @@ X86RaisedValueTracker::getInBlockRegOrArgDefVal(unsigned int PhysReg,
 unsigned X86RaisedValueTracker::getInBlockPhysRegSize(unsigned int PhysReg,
                                                       int MBBNo) {
   // Always convert PhysReg to the 64-bit version.
-  unsigned int SuperReg = MFR->find64BitSuperReg(PhysReg);
+  unsigned int SuperReg = x86MIRaiser->find64BitSuperReg(PhysReg);
 
   // TODO : Support outside of GPRs need to be implemented.
   // Find the per-block definitions SuperReg
@@ -320,11 +320,12 @@ unsigned X86RaisedValueTracker::getInBlockPhysRegSize(unsigned int PhysReg,
 
 Value *X86RaisedValueTracker::getReachingDef(unsigned int PhysReg, int MBBNo,
                                              bool AllPreds, bool AnySubReg) {
-  MachineFunction &MF = MFR->getMF();
+  MachineFunction &MF = x86MIRaiser->getMF();
   LLVMContext &Ctxt(MF.getFunction().getContext());
   Value *RetValue = nullptr;
 
   std::vector<std::pair<int, Value *>> ReachingDefs;
+  const ModuleRaiser *MR = x86MIRaiser->getModuleRaiser();
   ReachingDefs = getGlobalReachingDefs(PhysReg, MBBNo, AllPreds);
   int RDVecSz = ReachingDefs.size();
   // If there are more than one distinct incoming reaching defs
@@ -337,7 +338,7 @@ Value *X86RaisedValueTracker::getReachingDef(unsigned int PhysReg, int MBBNo,
     // 4. Return loaded value - RetValue
 
     // 1. Allocate stack slot
-    const DataLayout &DL = MFR->MR->getModule()->getDataLayout();
+    const DataLayout &DL = MR->getModule()->getDataLayout();
     unsigned allocaAddrSpace = DL.getAllocaAddrSpace();
 
     // Get the super-type of all reaching definition values
@@ -419,7 +420,7 @@ Value *X86RaisedValueTracker::getReachingDef(unsigned int PhysReg, int MBBNo,
     MF.getFrameInfo().setObjectOffset(StackFrameIndex, Offset);
 
     // Add the alloca instruction to entry block
-    MFR->insertAllocaInEntryBlock(Alloca, Offset, StackFrameIndex);
+    x86MIRaiser->insertAllocaInEntryBlock(Alloca, Offset, StackFrameIndex);
 
     // If PhysReg is defined in MBBNo, store the defined value in the
     // newly created stack slot.
@@ -427,7 +428,7 @@ Value *X86RaisedValueTracker::getReachingDef(unsigned int PhysReg, int MBBNo,
         getInBlockRegOrArgDefVal(PhysReg, MBBNo);
     Value *DefValue = MBBNoRDPair.second;
     if (DefValue != nullptr) {
-      BasicBlock &RaisedBB = MFR->getRaisedFunction()->getEntryBlock();
+      BasicBlock &RaisedBB = x86MIRaiser->getRaisedFunction()->getEntryBlock();
       new StoreInst(DefValue, Alloca, &RaisedBB);
     }
     // The store instruction simply stores value defined on stack. No defines
@@ -442,13 +443,13 @@ Value *X86RaisedValueTracker::getReachingDef(unsigned int PhysReg, int MBBNo,
         // This is an incoming edge from a block that is not yet
         // raised. Record this in the set of incomplete promotions that will
         // be handled after all blocks are raised.
-        MFR->recordDefsToPromote(PhysReg, MBBVal.first, Alloca);
+        x86MIRaiser->recordDefsToPromote(PhysReg, MBBVal.first, Alloca);
       } else {
         Instruction *I = dyn_cast<Instruction>(MBBVal.second);
         if (!hasRODataAccess(Alloca) && (I != nullptr)) {
           Alloca->copyMetadata(*I);
         }
-        StoreInst *StInst = MFR->promotePhysregToStackSlot(
+        StoreInst *StInst = x86MIRaiser->promotePhysregToStackSlot(
             PhysReg, MBBVal.second, MBBVal.first, Alloca);
         assert(StInst != nullptr &&
                "Failed to promote reaching definition to stack slot");
@@ -460,7 +461,7 @@ Value *X86RaisedValueTracker::getReachingDef(unsigned int PhysReg, int MBBNo,
     LdReachingVal =
         setInstMetadataRODataContent(dyn_cast<LoadInst>(LdReachingVal));
     // Insert load instruction
-    MFR->getRaisedBasicBlock(MF.getBlockNumbered(MBBNo))
+    x86MIRaiser->getRaisedBasicBlock(MF.getBlockNumbered(MBBNo))
         ->getInstList()
         .push_back(LdReachingVal);
     if (!AnySubReg) {
@@ -469,7 +470,7 @@ Value *X86RaisedValueTracker::getReachingDef(unsigned int PhysReg, int MBBNo,
       // liveness discovery.
       Type *RegType = (isEflagBit(PhysReg))
                           ? Type::getInt1Ty(Ctxt)
-                          : MFR->getPhysRegType(PhysReg);
+                          : x86MIRaiser->getPhysRegType(PhysReg);
       Type *LdReachingValType = LdReachingVal->getType();
       assert((LdReachingValType->isIntegerTy() ||
               LdReachingValType->isFloatingPointTy() ||
@@ -512,11 +513,11 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
          "Unknown EFLAGS bit specified");
 
   int MBBNo = MI.getParent()->getNumber();
-  MachineFunction &MF = MFR->getMF();
+  MachineFunction &MF = x86MIRaiser->getMF();
   LLVMContext &Ctx = MF.getFunction().getContext();
 
   BasicBlock *RaisedBB =
-      MFR->getRaisedBasicBlock(MF.getBlockNumbered(MBBNo));
+      x86MIRaiser->getRaisedBasicBlock(MF.getBlockNumbered(MBBNo));
 
   unsigned int ResTyNumBits =
       TestResultVal->getType()->getPrimitiveSizeInBits();
@@ -556,7 +557,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
   case X86RegisterUtils::EFLAGS::OF: {
     auto IntrinsicOF = Intrinsic::not_intrinsic;
     Value *TestArg[2];
-    Module *M = MFR->MR->M;
+    Module *M = x86MIRaiser->getModuleRaiser()->getModule();
 
     // If TestVal is a cast value, it is most likely cast to match the
     // source of the compare instruction. Get to the value prior to casting.
@@ -591,7 +592,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
       // Extract OF and set it
       physRegDefsInMBB[FlagBit][MBBNo].second =
           ExtractValueInst::Create(GetOF, 1, "OF", RaisedBB);
-    } else if (MFR->instrNameStartsWith(MI, "ADD")) {
+    } else if (x86MIRaiser->instrNameStartsWith(MI, "ADD")) {
       IntrinsicOF = Intrinsic::sadd_with_overflow;
       TestArg[0] = TestInst->getOperand(0);
       TestArg[1] = TestInst->getOperand(1);
@@ -610,7 +611,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
       // Extract OF and set it
       physRegDefsInMBB[FlagBit][MBBNo].second =
           ExtractValueInst::Create(GetOF, 1, "OF", RaisedBB);
-    } else if (MFR->instrNameStartsWith(MI, "ROL")) {
+    } else if (x86MIRaiser->instrNameStartsWith(MI, "ROL")) {
       // OF flag is defined only for 1-bit rotates i.e., ROLr*1).
       // It is undefined in all other cases. OF flag is set to the exclusive OR
       // of CF after rotate and the most-significant bit of the result.
@@ -654,7 +655,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
             BinaryOperator::CreateXor(ResultCF, MSBIsSet, "OF", RaisedBB);
         physRegDefsInMBB[FlagBit][MBBNo].second = ResultOF;
       }
-    } else if (MFR->instrNameStartsWith(MI, "ROR")) {
+    } else if (x86MIRaiser->instrNameStartsWith(MI, "ROR")) {
       // OF flag is defined only for 1-bit rotates i.e., RORr*1).
       // It is undefined in all other cases. OF flag is set to the exclusive OR
       // of the two most-significant bits of the result.
@@ -704,7 +705,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
             BinaryOperator::CreateXor(MSBIsSet, PreMSBIsSet, "OF", RaisedBB);
         physRegDefsInMBB[FlagBit][MBBNo].second = ResultOF;
       }
-    } else if (MFR->instrNameStartsWith(MI, "TEST")) {
+    } else if (x86MIRaiser->instrNameStartsWith(MI, "TEST")) {
       // Set CF to 0 and make type to i1
       physRegDefsInMBB[FlagBit][MBBNo].second =
           ConstantInt::get(Type::getInt1Ty(Ctx), 0);
@@ -751,7 +752,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
     physRegDefsInMBB[FlagBit][MBBNo].second = PFTest;
   } break;
   case X86RegisterUtils::EFLAGS::CF: {
-    Module *M = MFR->MR->M;
+    Module *M = x86MIRaiser->getModuleRaiser()->getModule();
     Value *NewCF = nullptr;
 
     // If TestVal is a cast value, it is most likely cast to match the
@@ -762,7 +763,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
       castInst = dyn_cast<CastInst>(TestResultVal);
     }
 
-    if (MFR->instrNameStartsWith(MI, "NEG")) {
+    if (x86MIRaiser->instrNameStartsWith(MI, "NEG")) {
       // Set CF to 0 if source operand is 0 else to 1
       Instruction *TestInst = dyn_cast<Instruction>(TestResultVal);
       assert((TestInst != nullptr) && "Expect test producing instruction while "
@@ -810,7 +811,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
       RaisedBB->getInstList().push_back(GetCF);
       // Extract flag-bit
       NewCF = ExtractValueInst::Create(GetCF, 1, "CF", RaisedBB);
-    } else if (MFR->instrNameStartsWith(MI, "ADD")) {
+    } else if (x86MIRaiser->instrNameStartsWith(MI, "ADD")) {
       Value *TestArg[2];
       Instruction *TestInst = dyn_cast<Instruction>(TestResultVal);
       assert((TestInst != nullptr) && "Expect test producing instruction while "
@@ -830,7 +831,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
       RaisedBB->getInstList().push_back(GetCF);
       // Extract flag-bit
       NewCF = ExtractValueInst::Create(GetCF, 1, "CF", RaisedBB);
-    } else if (MFR->instrNameStartsWith(MI, "SHRD")) {
+    } else if (x86MIRaiser->instrNameStartsWith(MI, "SHRD")) {
       // TestInst should have been a call to intrinsic llvm.fshr.*
       CallInst *IntrinsicCall = dyn_cast<CallInst>(TestResultVal);
       assert((IntrinsicCall != nullptr) &&
@@ -889,7 +890,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
       Value *DstArgVal = nullptr;
       Value *CountArgVal = nullptr;
       // If this is a funnel shift
-      if (MFR->instrNameStartsWith(MI, "SHLD")) {
+      if (x86MIRaiser->instrNameStartsWith(MI, "SHLD")) {
         // TestInst should have been a call to intrinsic llvm.fshl.*
         CallInst *IntrinsicCall = dyn_cast<CallInst>(TestResultVal);
         assert((IntrinsicCall != nullptr) &&
@@ -962,7 +963,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
       RaisedBB->getInstList().push_back(SelectCF);
 
       NewCF = SelectCF;
-    } else if (MFR->instrNameStartsWith(MI, "ROL")) {
+    } else if (x86MIRaiser->instrNameStartsWith(MI, "ROL")) {
       // CF flag receives a copy of the bit that was shifted from one end to
       // the other. Find the least-significant bit, which is the bit shifted
       // from the most-significant location.
@@ -978,7 +979,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
       // Insert compare instruction
       RaisedBB->getInstList().push_back(ResultCF);
       NewCF = ResultCF;
-    } else if (MFR->instrNameStartsWith(MI, "ROR")) {
+    } else if (x86MIRaiser->instrNameStartsWith(MI, "ROR")) {
       // CF flag receives a copy of the bit that was shifted from one end to
       // the other. Find the most-significant bit, which is the bit shifted
       // from the least-significant location.
@@ -1004,7 +1005,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
                                            BitSetResult, ZeroValue, "MSB-SET");
       RaisedBB->getInstList().push_back(dyn_cast<Instruction>(MSBIsSet));
       NewCF = MSBIsSet;
-    } else if (MFR->instrNameStartsWith(MI, "IMUL")) {
+    } else if (x86MIRaiser->instrNameStartsWith(MI, "IMUL")) {
       // TestInst should have been mul instruction
       BinaryOperator *TestInst = dyn_cast<BinaryOperator>(TestResultVal);
       assert((TestInst != nullptr) && (TestInst->getNumOperands() == 2) &&
@@ -1030,7 +1031,7 @@ bool X86RaisedValueTracker::testAndSetEflagSSAValue(unsigned int FlagBit,
       NewCF = NewOF;
       // Set OF to the same value of CF
       physRegDefsInMBB[EFLAGS::OF][MBBNo].second = NewCF;
-    } else if (MFR->instrNameStartsWith(MI, "TEST")) {
+    } else if (x86MIRaiser->instrNameStartsWith(MI, "TEST")) {
       // Set CF to 0 and make type to i1
       NewCF = ConstantInt::get(Type::getInt1Ty(Ctx), 0);
     } else {
@@ -1071,7 +1072,7 @@ bool X86RaisedValueTracker::setEflagBoolean(unsigned int FlagBit, int MBBNo,
   assert((FlagBit >= X86RegisterUtils::EFLAGS::CF) &&
          (FlagBit < X86RegisterUtils::EFLAGS::UNDEFINED) &&
          "Unknown EFLAGS bit specified");
-  LLVMContext &Ctx = MFR->getMF().getFunction().getContext();
+  LLVMContext &Ctx = x86MIRaiser->getMF().getFunction().getContext();
   Value *Val = Set ? ConstantInt::getTrue(Ctx) : ConstantInt::getFalse(Ctx);
   setEflagValue(FlagBit, MBBNo, Val);
   return true;

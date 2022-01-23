@@ -9,7 +9,7 @@
 
 #include "ModuleRaiser.h"
 #include "MachineFunctionRaiser.h"
-#include "MachineFunctionRaiser.h"
+#include "MachineInstructionRaiser.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/Debug.h"
 
@@ -18,8 +18,8 @@
 Function *ModuleRaiser::getRaisedFunctionAt(uint64_t Index) const {
   int64_t TextSecAddr = getTextSectionAddress();
   for (auto MFR : mfRaiserVector)
-    if ((MFR->MCIR->getFuncStart() + TextSecAddr) == Index)
-      return MFR->F;
+    if ((MFR->getMCInstRaiser()->getFuncStart() + TextSecAddr) == Index)
+      return MFR->getRaisedFunction();
 
   return nullptr;
 }
@@ -62,9 +62,10 @@ Function *ModuleRaiser::getCalledFunctionUsingTextReloc(uint64_t Loc,
     Expected<StringRef> Sym = TextReloc->getSymbol()->getName();
     assert(Sym && "Failed to find call target symbol");
     for (auto MFR : mfRaiserVector) {
-      assert(MFR->F && "Unexpected null function pointer encountered");
-      if (Sym->equals(MFR->F->getName()))
-        return MFR->F;
+      Function *F = MFR->getRaisedFunction();
+      assert(F && "Unexpected null function pointer encountered");
+      if (Sym->equals(F->getName()))
+        return F;
     }
   }
   return nullptr;
@@ -73,10 +74,19 @@ Function *ModuleRaiser::getCalledFunctionUsingTextReloc(uint64_t Loc,
 bool ModuleRaiser::runMachineFunctionPasses() {
   bool Success = true;
 
+  for (auto MFR : mfRaiserVector) {
+    LLVM_DEBUG(dbgs() << "Function: "
+                      << MFR->getMachineFunction().getName().data() << "\n");
+    LLVM_DEBUG(dbgs() << "Parsed MCInst List\n");
+    LLVM_DEBUG(MFR->getMCInstRaiser()->dump());
+  }
+
   // For each of the functions, run passes to set up for instruction raising.
   for (auto MFR : mfRaiserVector) {
-    // 1. Build CFG - Populates the MachineFunction with CFG.
-    MFR->MCIR->buildCFG(MFR->MF, MIA, MII);
+    // 1. Build CFG
+    MCInstRaiser *MCIR = MFR->getMCInstRaiser();
+    // Populates the MachineFunction with CFG.
+    MCIR->buildCFG(MFR->getMachineFunction(), MIA, MII);
   }
 
   // Construct function prototypes for each of the MachineFunctions.
@@ -91,28 +101,36 @@ bool ModuleRaiser::runMachineFunctionPasses() {
     AllPrototypesConstructed = true;
     for (auto MFR : mfRaiserVector) {
       LLVM_DEBUG(dbgs() << "Build Prototype for : "
-                        << MFR->MF.getName().data() << "\n");
-      Function *RF = MFR->F;
+                        << MFR->getMachineFunction().getName().data() << "\n");
+      Function *RF = MFR->getRaisedFunction();
       if (RF == nullptr) {
         FunctionType *FT =
-            MFR->getRaisedFunctionPrototype();
+            MFR->getMachineInstrRaiser()->getRaisedFunctionPrototype();
         AllPrototypesConstructed |= (FT != nullptr);
       }
     }
     LLVM_DEBUG(dbgs() << "Raised Function Prototypes: \n");
     LLVM_DEBUG({
       for (auto MFR : mfRaiserVector) {
-        MFR->F->dump();
+        MFR->getRaisedFunction()->dump();
       }
     });
   }
   assert(AllPrototypesConstructed && "Failed to construct all prototypes");
-
   // Run instruction raiser passes.
   for (auto MFR : mfRaiserVector)
-    Success |= MFR->raise();
+    Success |= MFR->runRaiserPasses();
 
   return Success;
+}
+
+// Get the MachineFunction associated with the placeholder
+// function corresponding to raised function.
+MachineFunction *ModuleRaiser::getMachineFunction(Function *RF) {
+  auto V = PlaceholderRaisedFunctionMap.find(RF);
+  assert(V != PlaceholderRaisedFunctionMap.end() &&
+         "Failed to find place-holder function");
+  return MMI->getMachineFunction(*V->getSecond());
 }
 
 bool ModuleRaiser::collectTextSectionRelocs(const SectionRef &TextSec) {
@@ -176,7 +194,7 @@ bool ModuleRaiser::changeRaisedFunctionReturnType(Function *TargetFunc,
   // Get the MachineFunction of TargetFunc
   MachineFunctionRaiser *TargetFuncMFRaiser = nullptr;
   for (auto MIR : mfRaiserVector) {
-    if (MIR->F == TargetFunc) {
+    if (MIR->getRaisedFunction() == TargetFunc) {
       TargetFuncMFRaiser = MIR;
       break;
     }
@@ -282,9 +300,8 @@ bool ModuleRaiser::changeRaisedFunctionReturnType(Function *TargetFunc,
     TargetFunc->getParent()->getFunctionList().remove(
         TargetFunc->getIterator());
     // Update raised function
-    TargetFuncMFRaiser->F = NewF;
+    TargetFuncMFRaiser->setRaisedFunction(NewF);
     Changed = true;
   }
   return Changed;
 }
-#undef DEBUG_TYPE

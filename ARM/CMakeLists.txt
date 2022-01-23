@@ -9,11 +9,12 @@ if(NOT LLVM_MCTOLL_BUILT_STANDALONE)
   set(LLVM_MCTOLL_DEPS intrinsics_gen ARMCommonTableGen)
 endif()
 
-add_llvm_library(ARMRaiser STATIC
-  ARMModuleRaiser.cpp
-  ARMFunctionPrototype.cpp
+add_llvm_library(ARMRaiser
   ARMBenchmarker.cpp
+  ARMFunctionPrototype.cpp
   ARMLinearRaiserPass.cpp
+  ARMMachineInstructionRaiser.cpp
+  ARMModuleRaiser.cpp
   ARMRaiser/ARMRaiser.cpp
   ARMRaiser/ARMRaiserCDE.cpp
   ARMRaiser/ARMRaiserMVE.cpp
@@ -21,9 +22,6 @@ add_llvm_library(ARMRaiser STATIC
   ARMRaiser/ARMRaiserThumb.cpp
   ARMRaiser/ARMRaiserThumb2.cpp
   ARMRaiser/ARMRaiserVFP.cpp
-  ARMDisassembler.cpp
-  ARMConcurrencyPatternMatcher.cpp
-  ARMMachineInstructionRaiser.cpp
 
   DEPENDS
     ${LLVM_MCTOLL_DEPS}

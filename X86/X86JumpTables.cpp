@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "X86MachineFunctionRaiser.h"
+#include "X86MachineInstructionRaiser.h"
 #include "llvm-mctoll.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
@@ -26,12 +26,13 @@
 using namespace llvm;
 using namespace mctoll;
 
-bool X86MachineFunctionRaiser::raiseMachineJumpTable() {
+bool X86MachineInstructionRaiser::raiseMachineJumpTable() {
   // A vector to record MBBS that need be erased upon jump table creation.
   std::vector<MachineBasicBlock *> MBBsToBeErased;
 
   // Address of text section.
-  int64_t TextSectionAddress = MR.getTextSectionAddress();
+  int64_t TextSectionAddress = MR->getTextSectionAddress();
+  MCInstRaiser *MCIR = getMCInstRaiser();
 
   // Get the MIs which potentially load the jumptable base address.
   for (MachineBasicBlock &JmpTblBaseCalcMBB : MF) {
@@ -58,7 +59,7 @@ bool X86MachineFunctionRaiser::raiseMachineJumpTable() {
         JmpTblBaseReg = JmpTblBaseCalcMI.getOperand(0).getReg();
         // Get the contents of the section with JmpTblBaseMemAddress
         const ELF64LEObjectFile *Elf64LEObjFile =
-            dyn_cast<ELF64LEObjectFile>(MR.getObjectFile());
+            dyn_cast<ELF64LEObjectFile>(MR->getObjectFile());
         assert(Elf64LEObjFile != nullptr &&
                "Only 64-bit ELF binaries supported at present.");
         const unsigned char *DataContent = nullptr;
@@ -71,7 +72,7 @@ bool X86MachineFunctionRaiser::raiseMachineJumpTable() {
           if ((SecStart <= JmpTblBaseMemAddress) &&
               (SecEnd >= JmpTblBaseMemAddress)) {
             StringRef Contents = unwrapOrError(
-                SecIter->getContents(), MR.getObjectFile()->getFileName());
+                SecIter->getContents(), MR->getObjectFile()->getFileName());
             DataContent =
                 static_cast<const unsigned char *>(Contents.bytes_begin());
             DataSize = SecIter->getSize();
@@ -133,7 +134,7 @@ bool X86MachineFunctionRaiser::raiseMachineJumpTable() {
               // This value should be an absolute offset into a rodata section.
               // Get the contents of the section with JmpTblBase
               const ELF64LEObjectFile *Elf64LEObjFile =
-                  dyn_cast<ELF64LEObjectFile>(MR.getObjectFile());
+                  dyn_cast<ELF64LEObjectFile>(MR->getObjectFile());
               assert(Elf64LEObjFile != nullptr &&
                      "Only 64-bit ELF binaries supported at present.");
               StringRef Contents;
@@ -150,7 +151,7 @@ bool X86MachineFunctionRaiser::raiseMachineJumpTable() {
                     (SecEnd >= (unsigned)JmpTblBaseAddress) &&
                     SecIter->isData()) {
                   Contents = unwrapOrError(SecIter->getContents(),
-                                           MR.getObjectFile()->getFileName());
+                                           MR->getObjectFile()->getFileName());
                   DataSize = SecIter->getSize();
                   JmpTblBaseOffset = JmpTblBaseAddress - SecStart;
                   break;
@@ -371,7 +372,7 @@ bool X86MachineFunctionRaiser::raiseMachineJumpTable() {
 // Return the Value * representing the value used to be searched in the given
 // MachineBasicBlock with a jmp to jump-table.
 Value *
-X86MachineFunctionRaiser::getSwitchCompareValue(MachineBasicBlock &MBB) {
+X86MachineInstructionRaiser::getSwitchCompareValue(MachineBasicBlock &MBB) {
   Value *switchOnVal = nullptr;
   // Walk the basic block backwards to find the most recent
   // instruction that implicitly defines eflags.
